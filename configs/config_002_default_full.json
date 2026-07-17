@@ -1,0 +1,25 @@
+{
+  "experiment_id": "config_002_default_full",
+  "lookback_hours": 24,
+  "horizon_hours": 24,
+  "window_stride": 1,
+  "train_ratio": 0.74,
+  "val_ratio": 0.11,
+  "hidden_sizes": [
+    64,
+    32
+  ],
+  "dropout_rate": 0.3,
+  "city_embedding_dim": 4,
+  "learning_rate": 0.001,
+  "batch_size": 128,
+  "max_epochs": 100,
+  "early_stop_patience": 10,
+  "lr_reduce_factor": 0.5,
+  "lr_reduce_patience": 7,
+  "nonneg_penalty_weight": 0.1,
+  "n_bootstrap": 8,
+  "mc_dropout_passes": 100,
+  "bootstrap_block_length": 168,
+  "seed": 42
+}
