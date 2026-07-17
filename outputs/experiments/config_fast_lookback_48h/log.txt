@@ -1,0 +1,6 @@
+train_end=2024-06-27 19:00:00 val_end=2025-03-26 01:00:00
+train: 218625 windows
+val: 32195 windows
+test: 44035 windows
+replica 0: final val_loss=0.0768 epochs=8
+total_training_time_sec=653.6

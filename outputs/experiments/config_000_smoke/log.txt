@@ -1,0 +1,7 @@
+device=cpu
+train_end=2024-06-27 19:00:00 val_end=2025-03-26 01:00:00
+train: 218745 windows
+val: 32315 windows
+test: 44155 windows
+replica 0: final val_loss=0.0756 epochs=5
+total_training_time_sec=162.2
