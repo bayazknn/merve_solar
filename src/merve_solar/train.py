@@ -10,13 +10,15 @@ import torch
 import torch.nn as nn
 
 from merve_solar.datasets import make_dataloader
+from merve_solar.utils import get_device
 
 
 def nonneg_penalty(pred: torch.Tensor) -> torch.Tensor:
     return torch.relu(-pred).pow(2).mean()
 
 
-def train_model(model: nn.Module, train_data: dict, val_data: dict, config, device: str = "cpu"):
+def train_model(model: nn.Module, train_data: dict, val_data: dict, config, device: str | None = None):
+    device = device or get_device()
     train_loader = make_dataloader(
         train_data["X"], train_data["y"], train_data["city_id"], config.batch_size, shuffle=True
     )

@@ -7,6 +7,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from merve_solar.utils import get_device
+
 
 def mc_dropout_predict(
     model: nn.Module,
@@ -14,9 +16,10 @@ def mc_dropout_predict(
     city_id: np.ndarray,
     T: int,
     batch_size: int = 512,
-    device: str = "cpu",
+    device: str | None = None,
 ) -> np.ndarray:
     """Returns predictions of shape (T, N, horizon)."""
+    device = device or get_device()
     model.to(device)
     model.train()  # dropout active — deliberately not .eval()
 

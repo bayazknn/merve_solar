@@ -23,7 +23,7 @@ from merve_solar.metrics import (
 from merve_solar.model import SolarLSTM
 from merve_solar.scaling import apply_scaler, fit_scaler, inverse_transform_target, save_scaler
 from merve_solar.train import train_model
-from merve_solar.utils import plot_forecast_with_ci, plot_metric_vs_horizon, set_seed
+from merve_solar.utils import get_device, plot_forecast_with_ci, plot_metric_vs_horizon, set_seed
 from merve_solar.windows import build_experiment_windows, compute_split_boundaries
 
 
@@ -76,7 +76,8 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
 
     splits = build_experiment_windows(scaled_df, config, train_end, val_end)
 
-    log_lines = [f"train_end={train_end} val_end={val_end}"]
+    device = get_device()
+    log_lines = [f"device={device}", f"train_end={train_end} val_end={val_end}"]
     for name, d in splits.items():
         log_lines.append(f"{name}: {d['X'].shape[0]} windows")
 
@@ -90,10 +91,12 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
             replica_train = resample_train_split(splits["train"], config.bootstrap_block_length, rng)
 
         model = SolarLSTM(len(NUMERIC_FEATURE_COLUMNS), len(CITIES), config)
-        model, history = train_model(model, replica_train, splits["val"], config)
+        model, history = train_model(model, replica_train, splits["val"], config, device=device)
         torch.save(model.state_dict(), exp_dir / "checkpoints" / f"bootstrap_model_{b}.pt")
 
-        preds = mc_dropout_predict(model, splits["test"]["X"], splits["test"]["city_id"], config.mc_dropout_passes)
+        preds = mc_dropout_predict(
+            model, splits["test"]["X"], splits["test"]["city_id"], config.mc_dropout_passes, device=device
+        )
         bootstrap_preds.append(preds)
         log_lines.append(f"replica {b}: final val_loss={history[-1]['val_loss']:.4f} epochs={len(history)}")
 

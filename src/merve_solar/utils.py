@@ -12,6 +12,15 @@ def set_seed(seed: int) -> None:
     torch.manual_seed(seed)
 
 
+def get_device() -> str:
+    """Best available torch device: MPS (Apple Silicon) > CUDA (Nvidia) > CPU."""
+    if torch.backends.mps.is_available():
+        return "mps"
+    if torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
+
+
 def save_checkpoint(model: torch.nn.Module, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), path)
