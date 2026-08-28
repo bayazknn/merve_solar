@@ -196,6 +196,15 @@ kadar iddiayı "beklenir" kipinde yazın.
 
 Aşağıdakiler kod ve veri üzerinde birebir doğrulandı:
 
+> **Sonradan eklenen uyarı (D7).** Aşağıdaki "§3 betimleyici istatistik tablosunun beş satırı da
+> ondalığına kadar doğru" tespiti geçerlidir — tablo veriyle birebir uyuşuyor. Ancak **Van'ın
+> 1215,88 W/m² maksimumu bir veri artefaktıdır**: o satırda kt = ALLSKY/CLRSKY = **3,28**, yani
+> açık gökyüzü limitinin 3,3 katı, üstelik Şubat ayında −3,4 °C'de. Tüm veri setinde kt > 1,2 olan
+> yalnızca **4 satır** vardır; dördü de Van, dördü de Ocak/Şubat (kt 1,21 / 1,25 / 1,42 / 3,28).
+> Van'ın savunulabilir maksimumu **1068,72** W/m²'dir. Eğitim için zararsızdır, ama `max` kotalayan
+> her tabloda görüneceği için makalede alıntılanmamalıdır. (Paralel EDA oturumunun bulgusu;
+> bu denetimde bağımsız olarak doğrulandı.)
+
 - **Veri:** il başına 59.184 satır, toplam 295.920; ham 61.392/il; kesilen 2.208/il; aralık
   2019-06-30 00:00 – 2026-03-30 23:00; kuyruk boşluğu 2026-03-31 00:00 – 2026-06-30 23:00 ve her
   iki ışınım sütununun bu aralıkta tümüyle −999 olması; `ALLSKY_KT` −999 oranı ≈%50 (ölçülen
