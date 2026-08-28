@@ -32,8 +32,15 @@ def load_scaler(path) -> StandardScaler:
 
 
 def inverse_transform_target(scaler: StandardScaler, scaled_values: np.ndarray) -> np.ndarray:
-    """Inverse-transform an array of scaled target values back to W/m^2."""
+    """Inverse-transform an array of scaled target values back to W/m^2.
+
+    Preserves the input dtype (float32 in -> float32 out). The pooled prediction array is
+    ~3.4 GB at the default n_bootstrap=8 x mc_dropout_passes=100; promoting it to float64
+    here is what made the full-fidelity run exhaust memory. Precision cost is nil: float32
+    represents 1216 W/m^2 to within ~1.5e-4, six orders of magnitude below an RMSE of ~50-80.
+    """
     target_idx = NUMERIC_FEATURE_COLUMNS.index(TARGET_COLUMN)
-    mean = scaler.mean_[target_idx]
-    scale = scaler.scale_[target_idx]
+    dtype = np.result_type(scaled_values.dtype, np.float32)
+    mean = dtype.type(scaler.mean_[target_idx])
+    scale = dtype.type(scaler.scale_[target_idx])
     return scaled_values * scale + mean

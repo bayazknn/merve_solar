@@ -14,14 +14,33 @@ import pandas as pd
 TARGET_CI_COVERAGE = 0.95
 
 
-def summarize_predictive_distribution(pooled_preds: np.ndarray) -> dict:
-    """pooled_preds: (n_samples, N, horizon) -> mean/std/lower/upper, each (N, horizon)."""
-    return {
-        "mean": pooled_preds.mean(axis=0),
-        "std": pooled_preds.std(axis=0),
-        "lower": np.percentile(pooled_preds, 2.5, axis=0),
-        "upper": np.percentile(pooled_preds, 97.5, axis=0),
-    }
+# Block sizes for the chunked reductions below, in array elements (S * columns). The pooled
+# prediction array is ~3.4 GB at the default B=8 x T=100; np.percentile and the CRPS estimator
+# both allocate a full-size copy, which is what exhausted memory on the first full run. Chunking
+# over the window axis bounds that copy without changing any result.
+CHUNK_ELEMENTS = 16_000_000
+
+
+def summarize_predictive_distribution(pooled_preds: np.ndarray, chunk_elements: int = CHUNK_ELEMENTS) -> dict:
+    """pooled_preds: (n_samples, N, horizon) -> mean/std/lower/upper, each (N, horizon).
+
+    Reductions run independently per (window, horizon) element, so chunking over the window
+    axis is exact, not an approximation. Percentiles are taken in one call rather than two so
+    the block is sorted once.
+    """
+    n_samples, n_windows, horizon = pooled_preds.shape
+    out = {k: np.empty((n_windows, horizon), dtype=np.float32) for k in ("mean", "std", "lower", "upper")}
+    step = max(1, chunk_elements // max(1, n_samples * horizon))
+
+    for start in range(0, n_windows, step):
+        stop = min(start + step, n_windows)
+        block = pooled_preds[:, start:stop, :]
+        out["mean"][start:stop] = block.mean(axis=0, dtype=np.float64)
+        out["std"][start:stop] = block.std(axis=0, dtype=np.float64)
+        lower, upper = np.percentile(block, [2.5, 97.5], axis=0)
+        out["lower"][start:stop] = lower
+        out["upper"][start:stop] = upper
+    return out
 
 
 def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -57,7 +76,7 @@ def coverage_width_criterion(pinw: float, cp: float, target: float = TARGET_CI_C
     return float(pinw * (1 + penalty * np.exp(-eta * (cp - target))))
 
 
-def empirical_crps(pooled_preds: np.ndarray, y_true: np.ndarray) -> float:
+def empirical_crps(pooled_preds: np.ndarray, y_true: np.ndarray, chunk_elements: int = CHUNK_ELEMENTS) -> float:
     """CRPS(F, y) = E|X-y| - 0.5*E|X-X'|, X,X' ~ F, estimated from a finite sample.
 
     Uses the O(S log S) rearrangement E|X-X'| = (2/S^2) * sum_i (2i-S-1)*x_(i)
@@ -66,15 +85,23 @@ def empirical_crps(pooled_preds: np.ndarray, y_true: np.ndarray) -> float:
     S = pooled_preds.shape[0]
     flat_preds = pooled_preds.reshape(S, -1)
     flat_y = y_true.reshape(-1)
+    n_cols = flat_y.size
+    if n_cols == 0:
+        return float("nan")
 
-    term1 = np.mean(np.abs(flat_preds - flat_y[None, :]), axis=0)
+    weights = (2 * np.arange(1, S + 1, dtype=np.float64) - S - 1).reshape(-1, 1)
+    step = max(1, chunk_elements // max(1, S))
+    total = 0.0  # float64 accumulator: a float32 running sum over ~1e6 columns loses 3-4 digits
 
-    sorted_preds = np.sort(flat_preds, axis=0)
-    i = np.arange(1, S + 1).reshape(-1, 1)
-    weights = 2 * i - S - 1
-    half_pairwise = (weights * sorted_preds).sum(axis=0) / (S**2)  # already the 0.5-scaled term
+    for start in range(0, n_cols, step):
+        stop = min(start + step, n_cols)
+        preds_block = flat_preds[:, start:stop]
+        term1 = np.abs(preds_block - flat_y[None, start:stop]).mean(axis=0, dtype=np.float64)
+        sorted_block = np.sort(preds_block, axis=0)
+        half_pairwise = (weights * sorted_block).sum(axis=0, dtype=np.float64) / (S**2)
+        total += float((term1 - half_pairwise).sum())
 
-    return float(np.mean(term1 - half_pairwise))
+    return float(total / n_cols)
 
 
 def compute_metrics_for_subset(pooled_preds: np.ndarray, y_true: np.ndarray) -> dict:
