@@ -112,3 +112,39 @@ def test_descriptive_table_has_one_row_per_city_and_variable():
     assert len(table) == 3 * 9  # 2 cities + pooled, 9 variables
     assert table.groupby("city")["variable"].nunique().eq(9).all()
     assert table.loc[table["city"] == eda.POOLED_LABEL, "n"].iloc[0] == len(df)
+
+
+def test_acf_and_pacf_recover_a_known_ar1():
+    """An AR(1) with coefficient phi has acf[k] = phi^k and pacf[k] = 0 for k >= 2."""
+    rng = np.random.default_rng(0)
+    phi = 0.7
+    x = np.zeros(20000)
+    for t in range(1, len(x)):
+        x[t] = phi * x[t - 1] + rng.normal()
+    acf = eda._acf(x, 5)
+    pacf = eda._pacf_from_acf(acf)
+    assert acf[1] == pytest.approx(phi, abs=0.03)
+    assert acf[2] == pytest.approx(phi ** 2, abs=0.03)
+    assert pacf[1] == pytest.approx(phi, abs=0.03)
+    assert abs(pacf[2]) < 0.05
+    assert abs(pacf[3]) < 0.05
+
+
+def test_acf_tolerates_gaps():
+    """Night masking leaves NaNs; the pairwise ACF must still recover the AR(1) structure."""
+    rng = np.random.default_rng(1)
+    x = np.zeros(20000)
+    for t in range(1, len(x)):
+        x[t] = 0.7 * x[t - 1] + rng.normal()
+    gapped = x.copy()
+    gapped[::5] = np.nan
+    assert eda._acf(gapped, 3)[1] == pytest.approx(0.7, abs=0.05)
+
+
+def test_daylight_blocks_are_shorter_than_a_lookback_plus_horizon():
+    """The evidence behind TODOs.md item A: no daylight-only run reaches 48 hours."""
+    df = _synthetic(periods=24 * 120)
+    blocks = eda.daylight_block_table(df)
+    assert (blocks["share_blocks_ge_48h"] == 0).all()
+    assert (blocks["block_len_max"] < 24).all()
+    assert (blocks["n_blocks"] == 120).all()

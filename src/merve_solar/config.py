@@ -16,6 +16,13 @@ EDA_DIR = OUTPUTS_DIR / "eda"
 EDA_FIGURES_DIR = EDA_DIR / "figures"
 EDA_TABLES_DIR = EDA_DIR / "tables"
 
+# Clear-sky reference cache, built on demand by eda.load_clearsky_reference().
+# CLRSKY_SFC_SW_DWN is in DROPPED_COLUMNS and must never become a model feature (it is a
+# near-deterministic envelope of the target). It is read back here for DESCRIPTIVE USE ONLY
+# -- the clearness index kt = ALLSKY / CLRSKY is what makes the cities comparable on
+# cloudiness rather than on latitude. Nothing under experiment.py reads this file.
+CLEARSKY_REFERENCE_PATH = OUTPUTS_DIR / "processed" / "clearsky_reference.parquet"
+
 CITIES = ["Ankara", "Antalya", "Konya", "Rize", "Van"]
 CITY_TO_ID = {city: i for i, city in enumerate(CITIES)}
 

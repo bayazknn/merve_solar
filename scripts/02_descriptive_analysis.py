@@ -116,6 +116,18 @@ def main() -> None:
     _write_csv(eda.seasonal_target_stats(df, daily), "seasonal_target_stats.csv")
     _write_csv(eda.clearness_table(daily), "daily_clearness_by_city.csv")
 
+    # Clear-sky reference (descriptive use only -- CLRSKY never becomes a model feature).
+    df_kt = eda.attach_clearness(df)
+    kt_table = eda.clearness_index_table(df_kt)
+    acf_table = eda.autocorrelation_table(df_kt)
+    baseline = eda.persistence_baseline_table(df_kt)
+    seasonal = eda.seasonal_target_stats(df, daily)
+    _write_csv(kt_table, "clearness_index_by_city.csv")
+    _write_csv(acf_table, "autocorrelation_clearness.csv")
+    _write_csv(eda.ramp_table(df_kt), "ramp_stats_by_city.csv")
+    _write_csv(eda.daylight_block_table(df), "daylight_block_structure.csv")
+    _write_csv(baseline, "persistence_baseline.csv")
+
     corr = eda.correlation_tables(df_daylight)
     for method in ("pearson", "spearman"):
         for city, matrix in corr[method].items():
@@ -150,6 +162,15 @@ def main() -> None:
 
     eda.plot_seasonal_diurnal_profile(df, _figure("seasonal_diurnal_profile"))
     eda.plot_seasonal_dayofyear(daily, _figure("seasonal_dayofyear"))
+
+    eda.plot_target_histogram(df, _figure("target_histogram"))
+    eda.plot_monthly_boxplot_all_years(daily, _figure("monthly_boxplot_all_years"))
+    eda.plot_autocorrelation(acf_table, "saatlik", _figure("autocorrelation_hourly"))
+    eda.plot_autocorrelation(acf_table, "günlük", _figure("autocorrelation_daily"))
+    eda.plot_ramp_distribution(df_kt, _figure("ramp_distribution"))
+    eda.plot_persistence_baseline(baseline, _figure("persistence_baseline"))
+    eda.plot_rize_comparison(kt_table, seasonal, baseline, df_kt,
+                             _figure("rize_comparison"))
 
     print(f"\n{len(WRITTEN)} dosya yazıldı → {EDA_DIR}")
     for path in WRITTEN:

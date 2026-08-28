@@ -804,3 +804,621 @@ def plot_seasonal_dayofyear(daily: pd.DataFrame, save_path: Path) -> None:
         )
         fig.tight_layout(rect=(0.03, 0, 1, 0.94))
         save_figure(fig, save_path)
+
+
+# ---------------------------------------------------------------------------------------
+# clear-sky reference (descriptive use only)
+# ---------------------------------------------------------------------------------------
+def build_clearsky_reference() -> pd.DataFrame:
+    """Read CLRSKY_SFC_SW_DWN back out of the source xlsx and cache it.
+
+    `CLRSKY_SFC_SW_DWN` is in DROPPED_COLUMNS: it is a near-deterministic geometric envelope
+    of the target, so using it as a model feature would turn part of the task into a
+    clear-sky-index fit and inflate skill relative to what is available operationally. That
+    argument is about *model input* and does not apply to describing the dataset, where the
+    clearness index kt = ALLSKY / CLRSKY is the standard way to compare sites on cloudiness
+    instead of on latitude.
+
+    This cache is written to a separate parquet that nothing under experiment.py reads.
+    """
+    import openpyxl  # noqa: F401  (pandas needs the engine)
+
+    from merve_solar.config import (
+        CLEARSKY_REFERENCE_PATH,
+        EXPECTED_TRIMMED_ROWS_PER_SHEET,
+        LAST_VALID_TIMESTAMP,
+        MISSING_SENTINEL,
+        RAW_XLSX_PATH,
+    )
+
+    frames = []
+    for city in CITIES:
+        raw = pd.read_excel(
+            RAW_XLSX_PATH, sheet_name=city, engine="openpyxl",
+            usecols=["YEAR", "MO", "DY", "HR", "CLRSKY_SFC_SW_DWN"],
+        )
+        raw["datetime"] = pd.to_datetime(
+            raw[["YEAR", "MO", "DY", "HR"]].rename(
+                columns={"YEAR": "year", "MO": "month", "DY": "day", "HR": "hour"}
+            )
+        )
+        raw = raw.sort_values("datetime").reset_index(drop=True)
+        before = len(raw)
+        raw = raw[raw["datetime"] <= pd.Timestamp(LAST_VALID_TIMESTAMP)].reset_index(drop=True)
+        if before - len(raw) != EXPECTED_TRIMMED_ROWS_PER_SHEET:
+            raise ValueError(
+                f"{city}: clear-sky sheet trimmed {before - len(raw)} rows, expected "
+                f"{EXPECTED_TRIMMED_ROWS_PER_SHEET}"
+            )
+        if (raw["CLRSKY_SFC_SW_DWN"] == MISSING_SENTINEL).any():
+            raise ValueError(f"{city}: -999 remains in CLRSKY_SFC_SW_DWN after trimming.")
+        raw["city"] = city
+        frames.append(raw[["datetime", "city", "CLRSKY_SFC_SW_DWN"]])
+
+    out = pd.concat(frames, ignore_index=True)
+    CLEARSKY_REFERENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    out.to_parquet(CLEARSKY_REFERENCE_PATH, index=False)
+    return out
+
+
+def load_clearsky_reference() -> pd.DataFrame:
+    """Cached clear-sky reference; builds it from the xlsx on first call (~1-2 min)."""
+    from merve_solar.config import CLEARSKY_REFERENCE_PATH
+
+    if CLEARSKY_REFERENCE_PATH.exists():
+        return pd.read_parquet(CLEARSKY_REFERENCE_PATH)
+    return build_clearsky_reference()
+
+
+def attach_clearness(df: pd.DataFrame) -> pd.DataFrame:
+    """Add CLRSKY_SFC_SW_DWN and the clearness index kt = ALLSKY / CLRSKY.
+
+    kt is defined only where the clear-sky reference is positive (i.e. astronomical
+    daylight); elsewhere it is NaN rather than 0/0.
+    """
+    clr = load_clearsky_reference()
+    out = df.merge(clr, on=["datetime", "city"], how="left", validate="one_to_one")
+    if out["CLRSKY_SFC_SW_DWN"].isna().any():
+        raise ValueError("clear-sky reference does not cover every (datetime, city) row.")
+    out["kt"] = np.where(
+        out["CLRSKY_SFC_SW_DWN"] > 0, out[TARGET_COLUMN] / out["CLRSKY_SFC_SW_DWN"], np.nan
+    )
+    return out
+
+
+# ---------------------------------------------------------------------------------------
+# predictability analyses (added after the first EDA round)
+# ---------------------------------------------------------------------------------------
+CLEARSKY_MIN_FOR_KT = 20.0  # W/m^2; below this, ALLSKY/CLRSKY is a twilight division blow-up
+
+
+def clearness_index_table(df_kt: pd.DataFrame) -> pd.DataFrame:
+    """Physical clearness index kt = ALLSKY / CLRSKY, per (city, season).
+
+    Reported both hourly (restricted to CLRSKY > CLEARSKY_MIN_FOR_KT, since near sunrise and
+    sunset the ratio is a division of two near-zero numbers) and daily (ratio of the two
+    daily sums, which needs no threshold and is the quantity solar-resource papers report).
+    """
+    work = add_season(df_kt.assign(_date=df_kt["datetime"].dt.normalize()))
+    hourly = work[work["CLRSKY_SFC_SW_DWN"] > CLEARSKY_MIN_FOR_KT]
+    daily = (
+        work.groupby(["city", "_date"], observed=True)[[TARGET_COLUMN, "CLRSKY_SFC_SW_DWN"]]
+        .sum()
+        .assign(kt_daily=lambda d: d[TARGET_COLUMN] / d["CLRSKY_SFC_SW_DWN"])
+        .reset_index()
+    )
+    daily["season"] = pd.Categorical(
+        daily["_date"].dt.month.map(MONTH_TO_SEASON_TR), categories=SEASONS_TR, ordered=True
+    )
+    rows = []
+    for city in CITIES:
+        for season in [POOLED_LABEL] + SEASONS_TR:
+            h = hourly[hourly["city"] == city]
+            d = daily[daily["city"] == city]
+            if season != POOLED_LABEL:
+                h = h[h["season"] == season]
+                d = d[d["season"] == season]
+            rows.append(
+                {
+                    "city": city,
+                    "season": season,
+                    "n_hours": int(len(h)),
+                    "n_days": int(len(d)),
+                    "kt_hourly_mean": h["kt"].mean(),
+                    "kt_hourly_median": h["kt"].median(),
+                    "clear_hour_share": (h["kt"] > 0.7).mean(),
+                    "overcast_hour_share": (h["kt"] < 0.3).mean(),
+                    "kt_daily_mean": d["kt_daily"].mean(),
+                    "kt_daily_median": d["kt_daily"].median(),
+                    "kt_daily_std": d["kt_daily"].std(),
+                    "clear_day_share": (d["kt_daily"] > 0.7).mean(),
+                    "overcast_day_share": (d["kt_daily"] < 0.3).mean(),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _acf(values: np.ndarray, max_lag: int) -> np.ndarray:
+    """Sample ACF with pairwise deletion, so a NaN-gapped (night-masked) series works."""
+    out = np.full(max_lag + 1, np.nan)
+    out[0] = 1.0
+    for lag in range(1, max_lag + 1):
+        a, b = values[:-lag], values[lag:]
+        ok = ~(np.isnan(a) | np.isnan(b))
+        if ok.sum() > 30:
+            sa, sb = a[ok], b[ok]
+            if sa.std() > 0 and sb.std() > 0:
+                out[lag] = np.corrcoef(sa, sb)[0, 1]
+    return out
+
+
+def _pacf_from_acf(acf: np.ndarray) -> np.ndarray:
+    """Durbin-Levinson recursion. Stops early if the (pairwise) ACF is not consistent."""
+    max_lag = len(acf) - 1
+    pacf = np.full(max_lag + 1, np.nan)
+    pacf[0] = 1.0
+    phi = np.zeros((max_lag + 1, max_lag + 1))
+    if max_lag >= 1 and not np.isnan(acf[1]):
+        phi[1, 1] = acf[1]
+        pacf[1] = acf[1]
+    for k in range(2, max_lag + 1):
+        if np.isnan(acf[k]) or np.isnan(pacf[k - 1]):
+            break
+        num = acf[k] - sum(phi[k - 1, j] * acf[k - j] for j in range(1, k))
+        den = 1.0 - sum(phi[k - 1, j] * acf[j] for j in range(1, k))
+        if abs(den) < 1e-10:
+            break
+        phi[k, k] = num / den
+        for j in range(1, k):
+            phi[k, j] = phi[k - 1, j] - phi[k, k] * phi[k - 1, k - j]
+        pacf[k] = phi[k, k]
+        if abs(pacf[k]) > 1.5:  # pairwise ACF lost positive-definiteness
+            pacf[k] = np.nan
+            break
+    return pacf
+
+
+def autocorrelation_table(df_kt: pd.DataFrame, max_hourly_lag: int = 72,
+                          max_daily_lag: int = 30) -> pd.DataFrame:
+    """ACF/PACF of the clearness index, per city -- the evidence behind `lookback_hours`.
+
+    Run on kt rather than on raw irradiance: the ACF of raw GHI is dominated by the
+    deterministic 24 h cycle and says nothing about how far back *weather* information
+    reaches. kt removes the geometry, so what is left is the predictable part.
+
+    Two resolutions: hourly (night masked to NaN, pairwise ACF) answers "does a 24 h
+    lookback capture the useful lags"; daily answers "how many days does a weather regime
+    persist".
+    """
+    work = df_kt.copy()
+    work.loc[work["CLRSKY_SFC_SW_DWN"] <= CLEARSKY_MIN_FOR_KT, "kt"] = np.nan
+    # The hourly PACF is only reported for short lags. Night masking makes the ACF a
+    # pairwise-deleted estimate, which is not guaranteed positive-definite, and past roughly
+    # one daylight block the Durbin-Levinson recursion starts producing spurious spikes
+    # (Rize showed |0.79| at lag 22). A daylight block is 10-15 h, so 12 is the safe cap.
+    hourly_pacf_max_lag = 12
+    rows = []
+    for city, g in work.groupby("city", observed=True):
+        g = g.sort_values("datetime")
+        hourly = g.set_index("datetime")["kt"].asfreq("h").to_numpy()
+        acf_h = _acf(hourly, max_hourly_lag)
+        pacf_h = _pacf_from_acf(acf_h)
+        for lag in range(1, max_hourly_lag + 1):
+            rows.append({"city": city, "resolution": "saatlik", "lag": lag,
+                         "acf": acf_h[lag],
+                         "pacf": pacf_h[lag] if lag <= hourly_pacf_max_lag else np.nan})
+
+        daily = (
+            g.assign(_date=g["datetime"].dt.normalize())
+            .groupby("_date", observed=True)[[TARGET_COLUMN, "CLRSKY_SFC_SW_DWN"]]
+            .sum()
+        )
+        kt_daily = (daily[TARGET_COLUMN] / daily["CLRSKY_SFC_SW_DWN"]).asfreq("D").to_numpy()
+        acf_d = _acf(kt_daily, max_daily_lag)
+        pacf_d = _pacf_from_acf(acf_d)
+        for lag in range(1, max_daily_lag + 1):
+            rows.append({"city": city, "resolution": "günlük", "lag": lag,
+                         "acf": acf_d[lag], "pacf": pacf_d[lag]})
+    return pd.DataFrame(rows)
+
+
+def ramp_table(df_kt: pd.DataFrame) -> pd.DataFrame:
+    """Hour-to-hour change distribution, per (city, season).
+
+    Two flavours, because they answer different questions: raw GHI ramps are what a
+    prediction interval must actually cover, while kt ramps isolate the weather-driven part
+    from the deterministic sunrise/sunset ramp.
+    """
+    work = add_season(df_kt.sort_values(["city", "datetime"]))
+    work["d_ghi"] = work.groupby("city", observed=True)[TARGET_COLUMN].diff()
+    work.loc[work.groupby("city", observed=True)["datetime"].diff() != pd.Timedelta("1h"),
+             "d_ghi"] = np.nan
+    kt_masked = work["kt"].where(work["CLRSKY_SFC_SW_DWN"] > CLEARSKY_MIN_FOR_KT)
+    work["d_kt"] = kt_masked.groupby(work["city"], observed=True).diff()
+    # align by index, not by position: `work` has been re-sorted above
+    work = work[daylight_mask(df_kt).reindex(work.index).to_numpy()]
+
+    rows = []
+    for city in CITIES:
+        for season in [POOLED_LABEL] + SEASONS_TR:
+            sub = work[work["city"] == city]
+            if season != POOLED_LABEL:
+                sub = sub[sub["season"] == season]
+            g = sub["d_ghi"].dropna().abs()
+            k = sub["d_kt"].dropna().abs()
+            rows.append(
+                {
+                    "city": city, "season": season, "n": int(len(g)),
+                    "abs_d_ghi_mean": g.mean(),
+                    "abs_d_ghi_median": g.median(),
+                    "abs_d_ghi_p90": g.quantile(0.90),
+                    "abs_d_ghi_p99": g.quantile(0.99),
+                    "abs_d_ghi_p999": g.quantile(0.999),
+                    "abs_d_ghi_max": g.max(),
+                    "share_above_200": (g > 200).mean(),
+                    "abs_d_kt_mean": k.mean(),
+                    "abs_d_kt_median": k.median(),
+                    "abs_d_kt_p90": k.quantile(0.90),
+                    "abs_d_kt_p99": k.quantile(0.99),
+                    "share_kt_above_0.3": (k > 0.3).mean(),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def daylight_block_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Contiguous-run lengths if night rows were deleted from the series.
+
+    The permanent evidence behind TODOs.md item A: a 24 h lookback + 24 h horizon needs 48
+    contiguous hours, and a daylight-only series has none, so night must be masked in the
+    loss rather than deleted from the data.
+    """
+    is_day = daylight_mask(df)
+    d = df[is_day].sort_values(["city", "datetime"])
+    rows = []
+    for city, g in d.groupby("city", observed=True):
+        breaks = (g["datetime"].diff() != pd.Timedelta("1h")).cumsum()
+        runs = g.groupby(breaks, observed=True).size()
+        rows.append(
+            {
+                "city": city,
+                "n_daylight_hours": int(len(g)),
+                "n_blocks": int(len(runs)),
+                "block_len_min": int(runs.min()),
+                "block_len_median": float(runs.median()),
+                "block_len_max": int(runs.max()),
+                "share_blocks_ge_24h": float((runs >= 24).mean()),
+                "share_blocks_ge_48h": float((runs >= 48).mean()),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def persistence_baseline_table(df_kt: pd.DataFrame, config=None) -> pd.DataFrame:
+    """Reference forecast floor on the same chronological test window the model uses.
+
+    Three references, all leakage-free (nothing is fitted on test rows):
+
+    - **Kalıcılık (persistence):** yhat(T) = y(T - 24 h). For a 24 h-ahead forecast this is
+      the same number at every horizon step, so its skill is flat across the horizon --
+      which is exactly the contrast a learned model has to beat at the far steps.
+    - **Akıllı kalıcılık (smart persistence):** carry yesterday's clearness forward and
+      re-apply today's clear-sky reference: yhat(T) = kt(T - 24 h) * CLRSKY(T). This is the
+      honest floor in solar forecasting -- plain persistence is easy to beat only because it
+      ignores the deterministic geometry.
+    - **Klimatoloji:** the (city, month, hour) mean of the TRAINING rows only.
+
+    This is a descriptive reference, deliberately NOT a ledger row: the publishable
+    comparison must run through `run_experiment` so it shares the windows, the scaler and
+    metrics.py (see CLAUDE.md, Comparability rules).
+    """
+    from merve_solar.config import ExperimentConfig
+    from merve_solar.windows import compute_split_boundaries
+
+    if config is None:
+        config = ExperimentConfig(experiment_id="eda_reference")
+    _, val_end = compute_split_boundaries(df_kt, config)
+
+    work = df_kt.sort_values(["city", "datetime"]).reset_index(drop=True)
+    work["month"] = work["datetime"].dt.month
+    lag = config.horizon_hours
+
+    grouped = work.groupby("city", observed=True)
+    work["persistence"] = grouped[TARGET_COLUMN].shift(lag)
+    # kt is undefined at night (CLRSKY = 0). Carrying that NaN forward would silently drop
+    # every night row from this reference only, making its scope="24 saat" row incomparable
+    # with the others. Yesterday's night carries clearness 0, and CLRSKY(T) = 0 tonight, so
+    # the prediction is 0 either way -- which is the correct forecast.
+    kt_lag = grouped["kt"].shift(lag).clip(upper=1.1).fillna(0.0)
+    work["smart_persistence"] = (kt_lag * work["CLRSKY_SFC_SW_DWN"]).clip(lower=0.0)
+    # ...but a genuinely missing lag (the first 24 h of the record) must stay missing.
+    work.loc[grouped[TARGET_COLUMN].shift(lag).isna(), "smart_persistence"] = np.nan
+
+    train_rows = work[work["datetime"] <= val_end]
+    clim = train_rows.groupby(["city", "month", "HR"], observed=True)[TARGET_COLUMN].mean()
+    work["climatology"] = work.set_index(["city", "month", "HR"]).index.map(clim)
+
+    test = work[work["datetime"] > val_end]
+    is_day = daylight_mask(df_kt).reindex(work.index)
+    rows = []
+    for scope, sub in (("24 saat", test), ("gündüz", test[is_day.reindex(test.index).to_numpy()])):
+        for city in CITIES + [POOLED_LABEL]:
+            s = sub if city == POOLED_LABEL else sub[sub["city"] == city]
+            y = s[TARGET_COLUMN].to_numpy(dtype=float)
+            for name, col in (("kalıcılık", "persistence"),
+                              ("akıllı kalıcılık", "smart_persistence"),
+                              ("klimatoloji", "climatology")):
+                yhat = s[col].to_numpy(dtype=float)
+                ok = ~(np.isnan(y) | np.isnan(yhat))
+                yt, yp = y[ok], yhat[ok]
+                err = yp - yt
+                sst = ((yt - yt.mean()) ** 2).sum()
+                rows.append(
+                    {
+                        "city": city, "scope": scope, "reference": name, "n": int(ok.sum()),
+                        "RMSE": float(np.sqrt((err ** 2).mean())),
+                        "MAE": float(np.abs(err).mean()),
+                        "R2": float(1.0 - (err ** 2).sum() / sst) if sst > 0 else np.nan,
+                        "bias": float(err.mean()),
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def plot_target_histogram(df: pd.DataFrame, save_path: Path) -> None:
+    """Daylight irradiance distribution per city -- shows the two modes behind the flat
+    (excess kurtosis ~ -0.9) shape: a clear-sky mode and an overcast mode."""
+    plt = _plt()
+
+    d = df[daylight_mask(df)]
+    with plt.rc_context(PAPER_RC):
+        fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.0))
+        for ax, city in zip(flat[:5], CITIES):
+            ax.hist(d.loc[d["city"] == city, TARGET_COLUMN], bins=60, color=ACCENT,
+                    alpha=0.75, edgecolor="white", linewidth=0.3)
+            ax.set_title(city)
+            grid_y_only(ax)
+        _finish_city_panels(plt, fig, flat, "Işınım (W/m²)", "Saat sayısı")
+        fig.suptitle("Gündüz saatlik ışınımın dağılımı", x=0.03, ha="left",
+                     fontsize=11, fontweight="semibold")
+        fig.tight_layout(rect=(0.03, 0, 1, 0.94))
+        save_figure(fig, save_path)
+
+
+def plot_monthly_boxplot_all_years(daily: pd.DataFrame, save_path: Path) -> None:
+    """Month-of-year box plot pooled over every year (~200 days per box).
+
+    Complements the last-12-months figure: that one shows the year actually observed, this
+    one shows the seasonal regime free of a single year's weather.
+    """
+    plt = _plt()
+    import seaborn as sns
+
+    work = daily.copy()
+    work["month_label"] = pd.Categorical(
+        work["MO"].map(MONTH_ABBR_TR), categories=[MONTH_ABBR_TR[m] for m in range(1, 13)],
+        ordered=True,
+    )
+    order = list(work["month_label"].cat.categories)
+    with plt.rc_context(PAPER_RC):
+        fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.4))
+        for ax, city in zip(flat[:5], CITIES):
+            sns.boxplot(
+                data=work[work["city"] == city], x="month_label", y="daily_kwh", order=order,
+                ax=ax, color=ACCENT, width=0.62, fliersize=1.2, linewidth=0.7,
+                boxprops={"alpha": 0.55},
+                medianprops={"color": "#7a2d0f", "linewidth": 1.2},
+                flierprops={"markerfacecolor": INK_SECONDARY, "markeredgewidth": 0,
+                            "alpha": 0.35},
+            )
+            ax.set_title(city)
+            grid_y_only(ax)
+            plt.setp(ax.get_xticklabels(), rotation=45, ha="right", fontsize=7)
+        _finish_city_panels(plt, fig, flat, "", "Günlük toplam ışınım (kWh/m²)")
+        fig.suptitle(
+            "Aylara göre günlük toplam ışınım (2019–2026, tüm yıllar havuzlanmış)",
+            x=0.03, ha="left", fontsize=11, fontweight="semibold",
+        )
+        fig.tight_layout(rect=(0.03, 0, 1, 0.94))
+        save_figure(fig, save_path)
+
+
+def plot_autocorrelation(acf_df: pd.DataFrame, resolution: str, save_path: Path) -> None:
+    """ACF and PACF of the clearness index, per city.
+
+    Run on kt, not on raw irradiance: the ACF of GHI just re-derives the 24 h solar cycle.
+    """
+    plt = _plt()
+
+    sub = acf_df[acf_df["resolution"] == resolution]
+    hourly = resolution == "saatlik"
+    with plt.rc_context(PAPER_RC):
+        fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.2))
+        for ax, city in zip(flat[:5], CITIES):
+            g = sub[sub["city"] == city]
+            if hourly:
+                for mark in (24, 48):
+                    ax.axvline(mark, color=SEASON_COLORS["Sonbahar"], linewidth=0.8,
+                               linestyle=":", alpha=0.7)
+            ax.axhline(0, color=INK_SECONDARY, linewidth=0.8)
+            ax.plot(g["lag"], g["acf"], color=ACCENT, linewidth=1.6, label="ACF")
+            ax.vlines(g["lag"], 0, g["pacf"], color=SEASON_COLORS["Yaz"], linewidth=1.4,
+                      alpha=0.85, label="PACF")
+            ax.set_title(city)
+            ax.set_ylim(-0.35, 1.02)
+            grid_y_only(ax)
+        _finish_city_panels(
+            plt, fig, flat,
+            "Gecikme (saat)" if hourly else "Gecikme (gün)", "Korelasyon",
+        )
+        handles, labels = flat[0].get_legend_handles_labels()
+        seen, uniq = set(), []
+        for h_, l_ in zip(handles, labels):
+            if l_ not in seen:
+                seen.add(l_); uniq.append((h_, l_))
+        flat[5].legend([h_ for h_, _ in uniq], [l_ for _, l_ in uniq], loc="center",
+                       frameon=False)
+        title = ("Berraklık indeksinin saatlik otokorelasyonu (noktalı çizgiler: 24 ve 48 saat)"
+                 if hourly else "Berraklık indeksinin günlük otokorelasyonu")
+        fig.suptitle(title, x=0.03, ha="left", fontsize=11, fontweight="semibold")
+        fig.tight_layout(rect=(0.03, 0, 1, 0.94))
+        save_figure(fig, save_path)
+
+
+def plot_ramp_distribution(df_kt: pd.DataFrame, save_path: Path) -> None:
+    """Empirical CDF of |hourly change in irradiance|, by season, per city.
+
+    What a 95% prediction interval has to cover is these ramps; the seasonal spread here is
+    the descriptive counterpart of the CP/PINW trade-off.
+    """
+    plt = _plt()
+
+    work = add_season(df_kt.sort_values(["city", "datetime"]))
+    work["d_ghi"] = work.groupby("city", observed=True)[TARGET_COLUMN].diff().abs()
+    work.loc[work.groupby("city", observed=True)["datetime"].diff() != pd.Timedelta("1h"),
+             "d_ghi"] = np.nan
+    work = work[daylight_mask(df_kt).reindex(work.index).to_numpy()]
+    with plt.rc_context(PAPER_RC):
+        fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.2))
+        for ax, city in zip(flat[:5], CITIES):
+            g = work[work["city"] == city]
+            for season in SEASONS_TR:
+                v = np.sort(g.loc[g["season"] == season, "d_ghi"].dropna().to_numpy())
+                if not len(v):
+                    continue
+                ax.plot(v, np.arange(1, len(v) + 1) / len(v),
+                        color=SEASON_COLORS[season], linestyle=SEASON_LINESTYLES[season],
+                        linewidth=SEASON_LINEWIDTHS[season], label=season)
+            ax.set_title(city)
+            ax.set_xlim(0, 400)
+            grid_y_only(ax)
+        _finish_city_panels(plt, fig, flat, "|Saatlik değişim| (W/m²)", "Birikimli oran")
+        handles, labels = flat[0].get_legend_handles_labels()
+        flat[5].legend(handles, labels, loc="center", title="Mevsim", frameon=False)
+        fig.suptitle("Saatlik ışınım rampalarının birikimli dağılımı (gündüz)",
+                     x=0.03, ha="left", fontsize=11, fontweight="semibold")
+        fig.tight_layout(rect=(0.03, 0, 1, 0.94))
+        save_figure(fig, save_path)
+
+
+def plot_persistence_baseline(baseline: pd.DataFrame, save_path: Path) -> None:
+    """The forecast floor the model has to beat, per city, daylight hours only."""
+    plt = _plt()
+
+    refs = ["kalıcılık", "akıllı kalıcılık", "klimatoloji"]
+    colors = [SEASON_COLORS["Kış"], SEASON_COLORS["İlkbahar"], SEASON_COLORS["Yaz"]]
+    sub = baseline[baseline["scope"] == "gündüz"]
+    order = CITIES + [POOLED_LABEL]
+    x = np.arange(len(order))
+    width = 0.26
+    with plt.rc_context(PAPER_RC):
+        fig, axes = plt.subplots(1, 2, figsize=(FULL_WIDTH_IN, 2.9))
+        for ax, metric, label in zip(axes, ["RMSE", "R2"],
+                                     ["RMSE (W/m²)", "R² (gündüz)"]):
+            for i, (ref, color) in enumerate(zip(refs, colors)):
+                vals = [sub[(sub["city"] == c) & (sub["reference"] == ref)][metric].iloc[0]
+                        for c in order]
+                ax.bar(x + (i - 1) * width, vals, width * 0.92, color=color, alpha=0.85,
+                       label=ref)
+            ax.set_xticks(x)
+            ax.set_xticklabels(order, rotation=30, ha="right", fontsize=8)
+            ax.set_ylabel(label)
+            grid_y_only(ax)
+            if metric == "R2":
+                ax.set_ylim(0.6, 1.0)
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="upper right", ncol=3, frameon=False, fontsize=8,
+                   bbox_to_anchor=(0.99, 0.99))
+        fig.suptitle(
+            "Referans tahmin zemini: 24 saat ilerisi, modelin test penceresi, gündüz saatleri",
+            x=0.02, y=0.99, ha="left", va="top", fontsize=11, fontweight="semibold",
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.86))
+        save_figure(fig, save_path)
+
+
+def plot_rize_comparison(kt_table: pd.DataFrame, seasonal: pd.DataFrame,
+                         baseline: pd.DataFrame, df_kt: pd.DataFrame,
+                         save_path: Path) -> None:
+    """Rize against the other four provinces on the four axes that separate them.
+
+    The dataset is two regimes, not five: Ankara/Antalya/Konya/Van sit inside a 6% band and
+    Rize is a different climate. This is the figure that makes that argument at a glance.
+    """
+    plt = _plt()
+
+    others = [c for c in CITIES if c != "Rize"]
+    rize_color, other_color = SEASON_COLORS["Yaz"], ACCENT
+    daily = (
+        df_kt.assign(_date=df_kt["datetime"].dt.normalize())
+        .groupby(["city", "_date"], observed=True)[[TARGET_COLUMN, "CLRSKY_SFC_SW_DWN"]]
+        .sum()
+    )
+    daily["kt_daily"] = daily[TARGET_COLUMN] / daily["CLRSKY_SFC_SW_DWN"]
+    daily = daily.reset_index()
+    daily["month"] = daily["_date"].dt.month
+
+    with plt.rc_context(PAPER_RC):
+        fig, axes = plt.subplots(2, 2, figsize=(FULL_WIDTH_IN, 5.0))
+
+        ax = axes[0, 0]
+        for city in CITIES:
+            v = np.sort(daily.loc[daily["city"] == city, "kt_daily"].dropna().to_numpy())
+            is_rize = city == "Rize"
+            ax.plot(v, np.arange(1, len(v) + 1) / len(v),
+                    color=rize_color if is_rize else other_color,
+                    linewidth=2.0 if is_rize else 1.2, alpha=1.0 if is_rize else 0.55,
+                    label="Rize" if is_rize else ("Diğer 4 il" if city == others[0] else None))
+        ax.set_xlabel("Günlük berraklık indeksi kt")
+        ax.set_ylabel("Birikimli oran")
+        ax.set_title("Berraklık dağılımı")
+        ax.legend(fontsize=8)
+        grid_y_only(ax)
+
+        ax = axes[0, 1]
+        for city in CITIES:
+            m = daily[daily["city"] == city].groupby("month", observed=True)["kt_daily"].mean()
+            is_rize = city == "Rize"
+            ax.plot(m.index, m.to_numpy(), color=rize_color if is_rize else other_color,
+                    linewidth=2.0 if is_rize else 1.2, alpha=1.0 if is_rize else 0.55,
+                    marker="o" if is_rize else None, markersize=3)
+        ax.set_xticks(range(1, 13))
+        ax.set_xticklabels([str(m) for m in range(1, 13)], fontsize=7)
+        ax.set_xlabel("Ay")
+        ax.set_ylabel("Ortalama kt")
+        ax.set_title("Aylık berraklık")
+        grid_y_only(ax)
+
+        ax = axes[1, 0]
+        x = np.arange(len(SEASONS_TR))
+        for i, city in enumerate(CITIES):
+            vals = [seasonal[(seasonal["city"] == city) & (seasonal["season"] == s)]
+                    ["daily_kwh_cv"].iloc[0] for s in SEASONS_TR]
+            is_rize = city == "Rize"
+            ax.plot(x, vals, color=rize_color if is_rize else other_color,
+                    linewidth=2.0 if is_rize else 1.2, alpha=1.0 if is_rize else 0.55,
+                    marker="o" if is_rize else None, markersize=3)
+        ax.set_xticks(x)
+        ax.set_xticklabels(SEASONS_TR, fontsize=8)
+        ax.set_ylabel("Günler arası CV")
+        ax.set_title("Mevsimsel değişkenlik")
+        grid_y_only(ax)
+
+        ax = axes[1, 1]
+        sub = baseline[(baseline["scope"] == "gündüz")
+                       & (baseline["reference"] == "akıllı kalıcılık")]
+        vals = [sub[sub["city"] == c]["R2"].iloc[0] for c in CITIES]
+        ax.bar(range(len(CITIES)), vals,
+               color=[rize_color if c == "Rize" else other_color for c in CITIES],
+               alpha=0.85, width=0.6)
+        ax.set_xticks(range(len(CITIES)))
+        ax.set_xticklabels(CITIES, rotation=30, ha="right", fontsize=8)
+        ax.set_ylabel("R² (akıllı kalıcılık)")
+        ax.set_ylim(0.6, 1.0)
+        ax.set_title("Referans tahmin edilebilirliği")
+        grid_y_only(ax)
+
+        fig.suptitle("Rize, diğer dört ilden ayrı bir rejim", x=0.02, ha="left",
+                     fontsize=11, fontweight="semibold")
+        fig.tight_layout(rect=(0, 0, 1, 0.94))
+        save_figure(fig, save_path)

@@ -251,16 +251,118 @@ CLAUDE.md bu uyarıyı zaten taşıyor; bu tablolar onu sayısallaştırıyor. *
 yapılmalı. Aksi halde raporlanan RMSE, literatürdeki gündüz-only rakamlarla kıyaslandığında
 haksız biçimde iyi görünür.
 
+### 9. Modelin aşması gereken zemin: klimatoloji, RMSE 105 W/m² ve R² 0.86
+
+`persistence_baseline.csv` — üçü de aynı kronolojik test penceresinde, hiçbiri test
+satırlarına bakmadan, gündüz saatleri üzerinden:
+
+| Referans | RMSE (W/m²) | MAE | R² |
+|---|---|---|---|
+| Kalıcılık (dün aynı saat) | 114.5 | 66.0 | 0.839 |
+| Akıllı kalıcılık (dünün berraklığı × bugünün açık-hava referansı) | 107.5 | **58.4** | 0.858 |
+| **Klimatoloji** ((il, ay, saat) eğitim ortalaması) | **105.0** | 71.1 | **0.864** |
+
+Üç sonuç, üçü de makaleye girmeli:
+
+- **LSTM'in anlamlı olması için gündüz RMSE'sinin 105 W/m²'nin, R²'sinin 0.864'ün altına/
+  üstüne geçmesi gerekiyor.** Bu rakam olmadan raporlanan bir "RMSE = 90 W/m²" hakem için
+  yorumlanamaz. Kaynak: `persistence_baseline.csv`, figür: `persistence_baseline`.
+- **Klimatoloji RMSE'de kazanıyor ama MAE'de kaybediyor** (71.1 vs 58.4). Klasik ayrım:
+  klimatoloji koşullu ortalama olduğu için kareli hatayı minimize eder; akıllı kalıcılık
+  günü takip ettiği için tipik günlerde daha iyi, uç günlerde daha kötüdür. Modelin ikisini
+  birden geçmesi gerekir — sadece RMSE raporlamak bunu gizler.
+- **24 saatlik ölçüm zemini bedavaya iyileştiriyor.** Aynı klimatoloji referansı 24 saat
+  üzerinden RMSE 76.7 / R² 0.923 veriyor, gündüzde 105.0 / 0.864. Yani gece satırları
+  RMSE'yi **%27 düşürüyor** ve R²'yi 0.06 şişiriyor — hiçbir öğrenme olmadan. Literatürle
+  kıyaslanabilir rakam gündüz olanıdır.
+
+Rize burada da ayrışıyor: en iyi referansı R² 0.733, diğer dört ilde 0.882–0.894.
+
+### 10. Lookback kararı: 24 saatin ötesi az şey katıyor
+
+`autocorrelation_clearness.csv`, berraklık indeksi kt üzerinde (ham ışınım üzerinde ACF
+almak anlamsız olurdu — sadece 24 saatlik güneş döngüsünü yeniden türetir).
+
+**Saatlik ölçekte kt neredeyse bir AR(1):** PACF gecikme 1'de 0.93–0.97, gecikme 2'de
+−0.15…+0.13, gecikme 3'te ≈ −0.09. Yani bir saat öncesi neredeyse her şeyi taşıyor,
+2. ve sonraki gecikmeler bağımsız bilgi katmıyor.
+
+**Günlük ölçekte:**
+
+| Gecikme | Ankara | Antalya | Konya | Rize | Van |
+|---|---|---|---|---|---|
+| ACF 1 gün | 0.538 | 0.534 | 0.563 | **0.405** | 0.560 |
+| ACF 2 gün | 0.371 | 0.371 | 0.385 | **0.169** | 0.393 |
+| **PACF 1 gün** | 0.538 | 0.534 | 0.563 | **0.405** | 0.560 |
+| **PACF 2 gün** | 0.115 | 0.121 | 0.100 | **0.006** | 0.116 |
+| PACF 3 gün | 0.116 | 0.144 | 0.085 | 0.053 | 0.122 |
+
+**24 saat ilerisi tahmin için önemli olan günlük ölçektir**, çünkü en son gözlem hedefin
+24 saat öncesindedir. Orada bilgi neredeyse tamamen 1 gecikmede: PACF 1. günde 0.41–0.56,
+2. günde 0.006–0.12'ye düşüyor.
+
+→ **`lookback_hours`'u 24'ten 48'e çıkarmanın kazancı sınırlı olmalı**: 48 saat, kısmi
+korelasyonu ~0.1 olan ikinci günü ekliyor. Sıfır değil ama küçük. Ucuz test: tek bir
+`lookback_hours=48` konfigürasyonu, yeni `experiment_id` ile. Bu, `TODOs.md`'deki
+"time window lag (24h)?" sorusunun veriye dayalı cevabıdır.
+
+**Uyarı — ACF'nin kuyruğuna aldanmayın.** Günlük ACF 30. gecikmede hâlâ 0.18–0.25
+görünüyor; bu gerçek bir hafıza değil, kt'nin kendi mevsimsel döngüsünün artığı (kış kt'si
+düşük, yaz kt'si yüksek — bkz. mevsimsel kt tablosu aşağıda). Kısa gecikmeleri temizleyen
+PACF çöktüğü için doğru okuma PACF'tir. Aynı nedenle saatlik PACF yalnız 12. gecikmeye
+kadar raporlanır: gece maskesi ACF'yi çift-yönlü eksik gözlemle tahmin ettiriyor, sonuçta
+Durbin-Levinson özyinelemesi uzun gecikmelerde sahte sivrilikler üretiyor.
+
+### 11. Berraklık indeksi ve rampalar: UQ katmanının kapsaması gereken şey
+
+**Fiziksel berraklık indeksi** (`clearness_index_by_city.csv`, kt = ALLSKY / CLRSKY) daha
+önceki ampirik proxy'yi doğruluyor ve keskinleştiriyor:
+
+| | Ankara | Antalya | Konya | **Rize** | Van |
+|---|---|---|---|---|---|
+| Günlük kt ortalaması | 0.806 | 0.840 | 0.816 | **0.697** | 0.827 |
+| Günlük kt std | 0.207 | 0.178 | 0.202 | **0.244** | 0.174 |
+| Açık gün payı (kt > 0.7) | %73 | %82 | %75 | **%55** | %79 |
+| Kapalı gün payı (kt < 0.3) | %2.8 | %1.4 | %2.3 | **%8.0** | %1.0 |
+
+Mevsimsel kt (Kış → Yaz): Ankara 0.679 → 0.922, Antalya 0.716 → 0.953, Van 0.750 → 0.938,
+Rize 0.626 → **0.772**. Rize'nin en açık mevsimi bile diğer illerin kışına yakın.
+
+**Rampalar** (`ramp_stats_by_city.csv`, gündüz saatlik |Δ|): medyan 79–113 W/m², %90'lık
+165–194, %99'luk 210–218, maksimum 424–1114 W/m². Dağılım dar bir gövde + uzun bir kuyruk:
+gövde günün deterministik yükseliş/alçalışı, kuyruk bulut geçişleri. `|Δkt|` medyanı ise
+sadece 0.014–0.030, %99'luğu 0.19–0.24 — yani hava kaynaklı ani değişim seyrek ama sert.
+
+**UQ için anlamı:** %95 aralığın kapsaması gereken şey bu kuyruktur. Aralık genişliği
+(PINW/MPIW) tüm saatlerde sabit tutulursa, gövdede gereksiz geniş, kuyrukta yetersiz olur —
+CP ≈ 0.95 tutturulsa bile. **Öneri:** CP/PINW sonuçları rampa büyüklüğüne göre kırılarak da
+raporlanmalı (ör. |Δ| > %90'lık dilim olan saatler ayrı). Rize'nin aralıklarının neden
+zorunlu olarak geniş olması gerektiği de burada görünür.
+
+**Ölçüm uyarısı:** NASA POWER saatlik verisi saat *ortalamasıdır*, dolayısıyla saat-içi
+bulut geçişlerini yumuşatır. Buradaki rampa büyüklükleri gerçek anlık rampaların alt
+sınırıdır; makalede bir cümleyle belirtilmeli.
+
 ### Modelleme için çıkan iş listesi
 
-Öncelik sırasıyla, hepsi bu tablolardan doğrudan çıkıyor:
+Öncelik sırasıyla, hepsi bu tablolardan doğrudan çıkıyor. Ayrıntılı gerekçeler
+`TODOs.md`'nin "EDA bulgularından çıkan görevler" bölümünde.
 
-1. `metrics.py`: gündüz-only kırılım + mevsim kırılımı (madde 8 ve 2). Halen raporlanan
-   rakamlar literatürle kıyaslanabilir değil.
-2. `scaling.py`: `PRECTOTCORR` için `log1p` (madde 7).
-3. 15 öznitelikli ablasyon konfigürasyonu — `T2MDEW` ve `WS50M` çıkarılmış (madde 5).
-4. Sonuçlarda Rize'nin ayrı tartışılması ve "Rize hariç" agregat satırı (madde 1).
-5. Makale metninde: sıcaklığın ham korelasyonunun neden şişkin olduğu ve kısmi korelasyon
+1. **Gündüz-only eğitim, gece satırlarını silerek değil maskeleyerek yapılmalı**
+   (`daylight_block_structure.csv`): satırlar silinirse seri il başına 2 466 bloğa
+   parçalanıyor, medyan blok 13 saat, ≥48 saatlik blok oranı 0.000 — yani hiç pencere
+   üretilemez. TODOs.md A maddesi.
+2. `metrics.py`: gündüz-only kırılım + mevsim kırılımı (madde 8 ve 2) **ve referans
+   zemininin rapora eklenmesi** (madde 9). Halen raporlanan rakamlar literatürle
+   kıyaslanabilir değil.
+3. `scaling.py`: `PRECTOTCORR` için `log1p` (madde 7). TODOs.md B maddesi.
+4. 15 öznitelikli ablasyon — `T2MDEW` ve `WS50M` `NUMERIC_FEATURE_COLUMNS`'tan çıkarılmış
+   (madde 5). TODOs.md C maddesi.
+5. Tek bir `lookback_hours=48` konfigürasyonu (madde 10) — beklenti düşük kazanç, ama
+   `TODOs.md`'deki açık soruyu kapatır.
+6. Sonuçlarda Rize'nin ayrı tartışılması ve "Rize hariç" agregat satırı (madde 1 ve 9).
+   TODOs.md D maddesi.
+7. Makale metninde: sıcaklığın ham korelasyonunun neden şişkin olduğu ve kısmi korelasyon
    tablosu (madde 4) — bu, öznitelik seçimini gerekçelendiren asıl argüman.
 
 ## Tablolar (`tables/`)
@@ -286,6 +388,11 @@ verisidir ve bilerek 2025-04 → 2026-03 ile sınırlıdır. Figürlerde iki ist
 | `seasonal_target_stats.csv` | Mevsim bazında saatlik ve günlük toplam özetleri. | tam veri (2 466 gün/il) |
 | `daily_clearness_by_city.csv` | Ampirik berraklık oranı (günlük toplam ÷ aynı yılın-günü için gözlenen 95. persentil), açık/kapalı gün payları — illeri enlemden bağımsız olarak bulutluluk üzerinden kıyaslar. | tam veri (2 464 gün/il; 29 Şubat'lar hizalama için düşülür) |
 | `monthly_target_stats.csv` | Son 12 ayın günlük toplam özetleri — kutu grafiğinin verisi. | **SADECE 2025-04 → 2026-03** (364 gün/il) |
+| `clearness_index_by_city.csv` | **Fiziksel berraklık indeksi** kt = ALLSKY / CLRSKY, saatlik ve günlük, il × mevsim. Kaynak xlsx'teki açık-hava sütunundan; ayrı bir cache'e (`outputs/processed/clearsky_reference.parquet`) yazılır ve **modele asla öznitelik olarak girmez**. | tam veri |
+| `autocorrelation_clearness.csv` | kt'nin ACF ve PACF'i, saatlik (gecikme 1–72) ve günlük (1–30), il bazında. `lookback_hours` kararının dayanağı. | tam veri |
+| `ramp_stats_by_city.csv` | Saatlik \|ΔIşınım\| ve \|Δkt\| dağılımı, il × mevsim. | tam veri (gündüz) |
+| `daylight_block_structure.csv` | Gece satırları silinseydi oluşacak kesintisiz blok uzunlukları. TODOs.md A maddesinin kanıtı. | tam veri (gündüz) |
+| `persistence_baseline.csv` | Referans tahmin zemini: kalıcılık, akıllı kalıcılık, klimatoloji için RMSE/MAE/R²/yanlılık. | **modelin test penceresi** (val_end sonrası) |
 
 **Basıklık Fisher (fazlalık) tanımıdır:** normal dağılım için 0, 3 değil. Gündüz verisinde
 hedefin çarpıklığı 0.47, fazlalık basıklığı −0.92 — yani ağır kuyruklu değil, basık/iki
@@ -325,6 +432,12 @@ siyah-beyaz baskıda ve renk körlüğünde kimlik korunur.
 | `month_year_anomaly_panel` | Aynı verinin 2B anomali görünümü | 24 saat (toplam) |
 | `seasonal_diurnal_profile` | Mevsimlere göre günlük profil, LST saati | **24 saat** |
 | `seasonal_dayofyear` | Yıl içi gün × günlük toplam, mevsim bantlı | 24 saat (toplam) |
+| `target_histogram` | Gündüz ışınımının il bazında dağılımı (iki tepeli yapı) | gündüz |
+| `monthly_boxplot_all_years` | Ay bazında kutu grafiği, tüm yıllar havuzlanmış (~200 gün/kutu) | 24 saat (toplam) |
+| `autocorrelation_hourly`, `autocorrelation_daily` | kt'nin ACF/PACF'i, il bazında | gündüz (kt tanımlı saatler) |
+| `ramp_distribution` | \|Saatlik değişim\| birikimli dağılımı, mevsim bazında | gündüz |
+| `persistence_baseline` | Modelin aşması gereken RMSE ve R² zemini | gündüz |
+| `rize_comparison` | Rize'yi diğer dört ile karşı dört eksende toplayan panel | karışık (alt panellerde yazılı) |
 
 **Günlük profil figüründe gündüz filtresi bilinçli olarak uygulanmaz:** gece sıfırları
 fiziksel bilgidir, filtrelenirse eğri sıfırdan yükselip sıfıra dönmez ve kış sabahı gibi az

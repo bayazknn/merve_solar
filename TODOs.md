@@ -1,6 +1,12 @@
 ## Model Configurations
 - Layer count and neuron sizes?
-- time window lag (24h)?
+- ~~time window lag (24h)?~~ **EDA cevabı (2026-08-28):** 24 saat büyük ölçüde yeterli.
+  Berraklık indeksinin otokorelasyonu (`outputs/eda/tables/autocorrelation_clearness.csv`):
+  saatlik ölçekte kt neredeyse AR(1) (PACF gecikme 1 = 0.93–0.97, gecikme 2 ≈ 0). 24 saat
+  ilerisi tahminde belirleyici olan günlük ölçekte ise PACF 1. günde 0.41–0.56, 2. günde
+  0.006–0.12. Yani 48 saatlik lookback yalnız kısmi korelasyonu ~0.1 olan ikinci günü
+  ekler. **Yapılacak:** tek bir `lookback_hours=48` konfigürasyonu ile ampirik doğrulama
+  (yeni experiment_id). Beklenti: küçük ama sıfır olmayan kazanç.
 
 ## Dataset Yapılacaklar: (TAMAMLANDI - 2026-08-28)
 - [x] "CLRSKY_SFC_SW_DWN" sütunu silinecek -> `DROPPED_COLUMNS` (src/merve_solar/config.py)
@@ -175,3 +181,26 @@ Dört il %6'lık bir bant içinde; Rize hepsinden ayrı bir rejim ve **her ölç
 **Yapılacak.** (a) `results_summary.csv`'ye ek olarak "Rize hariç agregat" satırı — şehir
 gömülemesinin katkısı ancak böyle görünür hale gelir; (b) makale metninde Rize'nin ayrı bir
 paragrafta "en zor il" olarak tartışılması, yukarıdaki tablo ile birlikte.
+
+### E. Referans tahmin zemini (makaleye zorunlu)
+
+`outputs/eda/tables/persistence_baseline.csv` — modelin kullandığı kronolojik test
+penceresinde, gündüz saatleri, 24 saat ilerisi:
+
+| Referans | RMSE (W/m²) | MAE | R² |
+|---|---|---|---|
+| Kalıcılık | 114.5 | 66.0 | 0.839 |
+| Akıllı kalıcılık | 107.5 | 58.4 | 0.858 |
+| **Klimatoloji** | **105.0** | 71.1 | **0.864** |
+
+LSTM'in anlamlı sayılması için gündüz RMSE < 105 W/m² ve R² > 0.864 olmalı. Klimatoloji
+RMSE'de, akıllı kalıcılık MAE'de kazanıyor — model ikisini birden geçmeli.
+
+Not: bu tablo bir *tanımlayıcı* referanstır, ledger satırı değildir. Yayınlanabilir
+karşılaştırma için bu üç referansın `run_experiment` içinden model varyantı olarak
+koşulması gerekir (CLAUDE.md, *Comparability rules*) — planlanan SVM/GRU/RF
+karşılaştırmasıyla aynı boru hattından.
+
+Ayrıca gece satırlarının metrikleri ne kadar şişirdiği ölçüldü: aynı klimatoloji referansı
+24 saat üzerinden RMSE 76.7 / R² 0.923, gündüz üzerinden 105.0 / 0.864. Yani gece
+satırları RMSE'yi %27 düşürüyor.
