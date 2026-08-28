@@ -36,7 +36,7 @@
 `scripts/02_descriptive_analysis.py` → `outputs/eda/` (tablolar + figürler, Türkçe).
 Ayrıntı ve uyarılar: `outputs/eda/README.md`. Üç karar makaleye yazılmalı:
 - "Gündüz" klimatolojik tanımlı ((il, ay, saat) hücre ortalaması > 0); `ışınım > 0` filtresi
-  bağımlı değişkene koşullama yapıp 5 266 bulutlu saati siliyordu.
+  gündüz tanımı `CLRSKY_SFC_SW_DWN > 0` (bkz. D maddesi altındaki düzeltme).
 - Aylık kutu grafiği günlük toplam üzerinden; saatlik değerlerle kışın daha stabil görünüyordu.
 - Saat ekseni il-bazlı yerel güneş saati (LST); saatler iller arasında karşılaştırılamaz.
 
@@ -56,7 +56,7 @@ silinirse `windows.py` hiç pencere üretemez.** Ölçüldü:
 
 - Gündüz satırları bırakıldığında seri il başına **2 466 ayrı bloğa** parçalanıyor
   (her gün bir blok).
-- Blok uzunlukları: medyan **13 saat**, min 10, maks 15.
+- Blok uzunlukları: medyan **12 saat**, min 9, maks 15.
 - **24 saat lookback + 24 saat horizon = 48 saatlik kesintisiz pencere gerekiyor.
   ≥24 saatlik blok oranı: 0.000.** Yani üretilebilecek pencere sayısı sıfır.
 
@@ -86,13 +86,13 @@ yeni `experiment_id`'lerle yeniden koşulmalı.
 
 | Ölçüt | PRECTOTCORR | Karşılaştırma: diğer öznitelikler |
 |---|---|---|
-| Çarpıklık | **8.24** | −0.65 … +1.13 |
-| Fazlalık basıklık | **101.97** | −1.10 … +2.22 |
+| Çarpıklık | **8.22** | −0.65 … +1.14 |
+| Fazlalık basıklık | **101.29** | −1.09 … +2.25 |
 | Ortalama | 1.69 mm/saat | — |
 | Std | 6.28 | — |
 | Maks | 347.72 mm/saat | — |
 
-İl bazında ortalama: Rize 3.74, Antalya 1.80, Ankara 1.04, Konya 0.97, Van 0.92 mm/saat.
+İl bazında ortalama: Rize 3.72, Antalya 1.80, Ankara 1.05, Konya 0.97, Van 0.92 mm/saat.
 
 **Sorun.** `scaling.py` `StandardScaler` kullanıyor; ortalama ve standart sapma birkaç uç
 değer tarafından belirleniyor. Sonuçta ölçeklenmiş sütunun ezici çoğunluğu sıfıra yakın çok
@@ -122,8 +122,8 @@ girmeli (bkz. CLAUDE.md *Comparability rules*).
 
 **Bulgu.** `collinear_pairs.csv` (gündüz satırları, havuzlanmış Pearson):
 
+- `WS10M` ↔ `WS50M`: **r = 0.965** (24 saat üzerinden 0.929)
 - `QV2M` ↔ `T2MDEW`: **r = 0.962**
-- `WS10M` ↔ `WS50M`: **r = 0.962** (24 saat üzerinden 0.929)
 
 Bu bir istatistik tesadüfü değil, fizik:
 
@@ -168,7 +168,7 @@ zaten ledger'da bir sütun olduğu için karşılaştırma izlenebilir olacak.
 | Açık gün payı (>0.9) | %45 | %56 | %48 | **%37** | %52 |
 | Kapalı gün payı (<0.5) | %11 | %8 | %10 | **%24** | %6 |
 | Günlük toplam CV | 0.49 | 0.44 | 0.46 | **0.57** | 0.45 |
-| Gündüz bağıl nem | %53.1 | %48.9 | %49.8 | **%73.7** | %46.2 |
+| Gündüz bağıl nem | %52.1 | %48.5 | %48.9 | **%73.3** | %45.5 |
 | Saatin açıkladığı varyans (η², 24s) | 0.730 | 0.778 | 0.756 | **0.664** | 0.768 |
 
 Dört il %6'lık bir bant içinde; Rize hepsinden ayrı bir rejim ve **her ölçütte en az
@@ -189,11 +189,11 @@ penceresinde, gündüz saatleri, 24 saat ilerisi:
 
 | Referans | RMSE (W/m²) | MAE | R² |
 |---|---|---|---|
-| Kalıcılık | 114.5 | 66.0 | 0.839 |
-| Akıllı kalıcılık | 107.5 | 58.4 | 0.858 |
-| **Klimatoloji** | **105.0** | 71.1 | **0.864** |
+| Kalıcılık | 116.4 | 68.2 | 0.829 |
+| Akıllı kalıcılık | 109.3 | 60.4 | 0.850 |
+| **Klimatoloji** | **106.8** | 73.4 | **0.856** |
 
-LSTM'in anlamlı sayılması için gündüz RMSE < 105 W/m² ve R² > 0.864 olmalı. Klimatoloji
+LSTM'in anlamlı sayılması için gündüz RMSE < 106.8 W/m² ve R² > 0.856 olmalı. Klimatoloji
 RMSE'de, akıllı kalıcılık MAE'de kazanıyor — model ikisini birden geçmeli.
 
 Not: bu tablo bir *tanımlayıcı* referanstır, ledger satırı değildir. Yayınlanabilir
@@ -202,5 +202,32 @@ koşulması gerekir (CLAUDE.md, *Comparability rules*) — planlanan SVM/GRU/RF
 karşılaştırmasıyla aynı boru hattından.
 
 Ayrıca gece satırlarının metrikleri ne kadar şişirdiği ölçüldü: aynı klimatoloji referansı
-24 saat üzerinden RMSE 76.7 / R² 0.923, gündüz üzerinden 105.0 / 0.864. Yani gece
-satırları RMSE'yi %27 düşürüyor.
+24 saat üzerinden RMSE 76.7 / R² 0.923, gündüz üzerinden 106.8 / 0.856. Yani gece
+satırları RMSE'yi %28 düşürüyor.
+
+### F. DÜZELTME: gündüz tanımı `CLRSKY_SFC_SW_DWN > 0` oldu (2026-08-28)
+
+Yukarıdaki A–E maddeleri ilk turda klimatolojik bir (il, ay, saat) gündüz maskesiyle
+hesaplanmıştı. **O maske hatalıydı** ve tüm gündüz tabloları yeniden üretildi.
+
+Hata: aylık hücre çok kaba. Bir ay içinde gün doğumu/batımı 30–60 dakika kaydığı için
+hücrenin kenar saati ayın bir kısmında karanlık; hücre ortalaması saatin tamamını gündüz
+sayıyordu. Sonuç: **5 266 gece satırı** gündüz kümesine giriyordu. Bağımsız kanıt: bu
+satırların hepsinde `CLRSKY_SFC_SW_DWN` de tam sıfır — NASA POWER'ın kendi geometrisine
+göre güneş ufkun altında. Ayrıca kenar saatler hariç 132 249 iç gündüz saatinin hiçbirinde
+ışınım tam 0 değil (minimum 3.78 W/m²), yani bu veride sıfır okuma asla "kapalı hava"
+demek değil.
+
+Yeni tanım: **`CLRSKY_SFC_SW_DWN > 0`**. Per-timestamp, saf geometrik (NASA'nın kendi
+ızgara koordinatları ve zaman konvansiyonuyla), hedefe hiç bakmıyor. `ışınım > 0` ile
+birebir aynı 151 643 satırı seçiyor. Aynı tanım metrik kırılımı ve —açılırsa— kayıp
+maskesi için de kullanılmalı; projede tek bir gündüz tanımı olsun.
+
+Not: `CLRSKY_SFC_SW_DWN` **öznitelik olarak kullanılmaya devam etmemeli** (hedefin
+neredeyse deterministik zarfı). Maske olarak kullanılan tek şey `> 0` booleanı, yani
+"güneş doğmuş mu" — kamuya açık astronomik bilgi, hava durumu değil. `config.py`'deki
+guard bu ayrımı korumalı.
+
+Sayısal etki: gündüz satırı 156 909 → 151 643; havuzlanmış gündüz ortalaması
+363.7 → 376.3 W/m²; korelasyonlar ≤ 0.031 kaydı; zemin RMSE 105.0 → 106.8, R² 0.864 →
+0.856. Nitel sonuçların hiçbiri değişmedi.

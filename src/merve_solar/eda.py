@@ -6,9 +6,9 @@ the ledger, or ExperimentConfig. Driven by scripts/02_descriptive_analysis.py.
 Three data-handling decisions drive most of this module; the reasoning is in
 outputs/eda/README.md and repeated briefly at each function:
 
-1. "Daylight" is defined climatologically (a (city, month, hour) cell whose mean is > 0),
-   not as `target > 0`. Filtering on the realised value conditions on the dependent
-   variable and deletes 5,266 overcast daylight hours unevenly across cities.
+1. "Daylight" is defined geometrically, from NASA POWER's own clear-sky column
+   (CLRSKY_SFC_SW_DWN > 0), not from the realised target and not from a monthly cell mean.
+   See daylight_mask() for why both alternatives are wrong.
 2. Anything month-to-month is computed on DAILY TOTALS, not on hourly values. A box of
    daylight-hourly values is ~91% solar geometry, and it makes winter look *less* variable
    than summer -- the opposite of the truth.
@@ -55,18 +55,133 @@ CALM_WIND_MIN = 1.0  # m/s; direction of near-calm hours is noise
 
 
 # ---------------------------------------------------------------------------------------
+# clear-sky reference (descriptive use only)
+# ---------------------------------------------------------------------------------------
+def build_clearsky_reference() -> pd.DataFrame:
+    """Read CLRSKY_SFC_SW_DWN back out of the source xlsx and cache it.
+
+    `CLRSKY_SFC_SW_DWN` is in DROPPED_COLUMNS: it is a near-deterministic geometric envelope
+    of the target, so using it as a model feature would turn part of the task into a
+    clear-sky-index fit and inflate skill relative to what is available operationally. That
+    argument is about *model input* and does not apply to describing the dataset, where the
+    clearness index kt = ALLSKY / CLRSKY is the standard way to compare sites on cloudiness
+    instead of on latitude.
+
+    This cache is written to a separate parquet that nothing under experiment.py reads.
+    """
+    import openpyxl  # noqa: F401  (pandas needs the engine)
+
+    from merve_solar.config import (
+        CLEARSKY_REFERENCE_PATH,
+        EXPECTED_TRIMMED_ROWS_PER_SHEET,
+        LAST_VALID_TIMESTAMP,
+        MISSING_SENTINEL,
+        RAW_XLSX_PATH,
+    )
+
+    frames = []
+    for city in CITIES:
+        raw = pd.read_excel(
+            RAW_XLSX_PATH, sheet_name=city, engine="openpyxl",
+            usecols=["YEAR", "MO", "DY", "HR", "CLRSKY_SFC_SW_DWN"],
+        )
+        raw["datetime"] = pd.to_datetime(
+            raw[["YEAR", "MO", "DY", "HR"]].rename(
+                columns={"YEAR": "year", "MO": "month", "DY": "day", "HR": "hour"}
+            )
+        )
+        raw = raw.sort_values("datetime").reset_index(drop=True)
+        before = len(raw)
+        raw = raw[raw["datetime"] <= pd.Timestamp(LAST_VALID_TIMESTAMP)].reset_index(drop=True)
+        if before - len(raw) != EXPECTED_TRIMMED_ROWS_PER_SHEET:
+            raise ValueError(
+                f"{city}: clear-sky sheet trimmed {before - len(raw)} rows, expected "
+                f"{EXPECTED_TRIMMED_ROWS_PER_SHEET}"
+            )
+        if (raw["CLRSKY_SFC_SW_DWN"] == MISSING_SENTINEL).any():
+            raise ValueError(f"{city}: -999 remains in CLRSKY_SFC_SW_DWN after trimming.")
+        raw["city"] = city
+        frames.append(raw[["datetime", "city", "CLRSKY_SFC_SW_DWN"]])
+
+    out = pd.concat(frames, ignore_index=True)
+    CLEARSKY_REFERENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    out.to_parquet(CLEARSKY_REFERENCE_PATH, index=False)
+    return out
+
+
+_CLEARSKY_CACHE = None
+
+
+def load_clearsky_reference() -> pd.DataFrame:
+    """Cached clear-sky reference; builds it from the xlsx on first call (~1 min).
+
+    Memoised in-process because daylight_mask() is called many times per run.
+    """
+    global _CLEARSKY_CACHE
+    if _CLEARSKY_CACHE is None:
+        from merve_solar.config import CLEARSKY_REFERENCE_PATH
+
+        _CLEARSKY_CACHE = (
+            pd.read_parquet(CLEARSKY_REFERENCE_PATH)
+            if CLEARSKY_REFERENCE_PATH.exists()
+            else build_clearsky_reference()
+        )
+    return _CLEARSKY_CACHE
+
+
+def attach_clearness(df: pd.DataFrame) -> pd.DataFrame:
+    """Add CLRSKY_SFC_SW_DWN and the clearness index kt = ALLSKY / CLRSKY.
+
+    kt is defined only where the clear-sky reference is positive (i.e. astronomical
+    daylight); elsewhere it is NaN rather than 0/0.
+    """
+    clr = load_clearsky_reference()
+    out = df.merge(clr, on=["datetime", "city"], how="left", validate="one_to_one")
+    if out["CLRSKY_SFC_SW_DWN"].isna().any():
+        raise ValueError("clear-sky reference does not cover every (datetime, city) row.")
+    out["kt"] = np.where(
+        out["CLRSKY_SFC_SW_DWN"] > 0, out[TARGET_COLUMN] / out["CLRSKY_SFC_SW_DWN"], np.nan
+    )
+    return out
+
+
+# ---------------------------------------------------------------------------------------
 # data helpers
 # ---------------------------------------------------------------------------------------
 def daylight_mask(df: pd.DataFrame) -> pd.Series:
-    """Climatological daylight: (city, month, hour) cells whose mean irradiance is > 0.
+    """Geometric daylight: NASA POWER's clear-sky reference is positive.
 
-    Deterministic in (city, month, hour) and independent of the realised weather, so it
-    does not condition on the dependent variable the way `target > 0` does.
+    Clear-sky irradiance is a purely geometric quantity, so CLRSKY > 0 means exactly "the
+    sun is above the horizon at this site and hour" -- computed by the data provider with
+    the real grid coordinates and its own time convention, which is why this is preferable
+    to re-deriving solar elevation ourselves.
+
+    Only the boolean is used. A sun-up flag carries public astronomical information, not
+    weather, so it is not the leakage that putting CLRSKY itself in NUMERIC_FEATURE_COLUMNS
+    would be (see DROPPED_COLUMNS in config.py).
+
+    Two alternatives were tried and are wrong:
+
+    - `target > 0` looks like it conditions on the dependent variable. On this dataset it
+      does not: it selects exactly the same 151,643 rows as CLRSKY > 0, to the row. No
+      interior daylight hour is ever exactly 0 (minimum 3.78 W/m^2), so a zero reading
+      always means "sun down", never "overcast". The geometric form is preferred anyway
+      because it stays correct by construction rather than by coincidence.
+    - A climatological (city, month, hour) cell mean > 0 was used in the first EDA round
+      and is too coarse. Within one month sunrise and sunset shift 30-60 minutes, so the
+      edge hour of the cell is lit for part of the month and dark for the rest; the cell
+      mean marks the whole hour as daylight and admits 5,266 rows whose clear-sky value is
+      exactly 0 -- i.e. night. That pulled every city's daylight mean down by 10-14 W/m^2.
     """
-    cell_mean = df.groupby(["city", df["datetime"].dt.month, "HR"], observed=True)[
-        TARGET_COLUMN
-    ].transform("mean")
-    return cell_mean > 0
+    clr = load_clearsky_reference()
+    merged = df[["datetime", "city"]].merge(
+        clr, on=["datetime", "city"], how="left", validate="one_to_one"
+    )
+    if merged["CLRSKY_SFC_SW_DWN"].isna().any():
+        raise ValueError("clear-sky reference does not cover every (datetime, city) row.")
+    return pd.Series(
+        (merged["CLRSKY_SFC_SW_DWN"] > 0).to_numpy(), index=df.index, name="daylight"
+    )
 
 
 def add_season(df: pd.DataFrame) -> pd.DataFrame:
@@ -804,86 +919,6 @@ def plot_seasonal_dayofyear(daily: pd.DataFrame, save_path: Path) -> None:
         )
         fig.tight_layout(rect=(0.03, 0, 1, 0.94))
         save_figure(fig, save_path)
-
-
-# ---------------------------------------------------------------------------------------
-# clear-sky reference (descriptive use only)
-# ---------------------------------------------------------------------------------------
-def build_clearsky_reference() -> pd.DataFrame:
-    """Read CLRSKY_SFC_SW_DWN back out of the source xlsx and cache it.
-
-    `CLRSKY_SFC_SW_DWN` is in DROPPED_COLUMNS: it is a near-deterministic geometric envelope
-    of the target, so using it as a model feature would turn part of the task into a
-    clear-sky-index fit and inflate skill relative to what is available operationally. That
-    argument is about *model input* and does not apply to describing the dataset, where the
-    clearness index kt = ALLSKY / CLRSKY is the standard way to compare sites on cloudiness
-    instead of on latitude.
-
-    This cache is written to a separate parquet that nothing under experiment.py reads.
-    """
-    import openpyxl  # noqa: F401  (pandas needs the engine)
-
-    from merve_solar.config import (
-        CLEARSKY_REFERENCE_PATH,
-        EXPECTED_TRIMMED_ROWS_PER_SHEET,
-        LAST_VALID_TIMESTAMP,
-        MISSING_SENTINEL,
-        RAW_XLSX_PATH,
-    )
-
-    frames = []
-    for city in CITIES:
-        raw = pd.read_excel(
-            RAW_XLSX_PATH, sheet_name=city, engine="openpyxl",
-            usecols=["YEAR", "MO", "DY", "HR", "CLRSKY_SFC_SW_DWN"],
-        )
-        raw["datetime"] = pd.to_datetime(
-            raw[["YEAR", "MO", "DY", "HR"]].rename(
-                columns={"YEAR": "year", "MO": "month", "DY": "day", "HR": "hour"}
-            )
-        )
-        raw = raw.sort_values("datetime").reset_index(drop=True)
-        before = len(raw)
-        raw = raw[raw["datetime"] <= pd.Timestamp(LAST_VALID_TIMESTAMP)].reset_index(drop=True)
-        if before - len(raw) != EXPECTED_TRIMMED_ROWS_PER_SHEET:
-            raise ValueError(
-                f"{city}: clear-sky sheet trimmed {before - len(raw)} rows, expected "
-                f"{EXPECTED_TRIMMED_ROWS_PER_SHEET}"
-            )
-        if (raw["CLRSKY_SFC_SW_DWN"] == MISSING_SENTINEL).any():
-            raise ValueError(f"{city}: -999 remains in CLRSKY_SFC_SW_DWN after trimming.")
-        raw["city"] = city
-        frames.append(raw[["datetime", "city", "CLRSKY_SFC_SW_DWN"]])
-
-    out = pd.concat(frames, ignore_index=True)
-    CLEARSKY_REFERENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    out.to_parquet(CLEARSKY_REFERENCE_PATH, index=False)
-    return out
-
-
-def load_clearsky_reference() -> pd.DataFrame:
-    """Cached clear-sky reference; builds it from the xlsx on first call (~1-2 min)."""
-    from merve_solar.config import CLEARSKY_REFERENCE_PATH
-
-    if CLEARSKY_REFERENCE_PATH.exists():
-        return pd.read_parquet(CLEARSKY_REFERENCE_PATH)
-    return build_clearsky_reference()
-
-
-def attach_clearness(df: pd.DataFrame) -> pd.DataFrame:
-    """Add CLRSKY_SFC_SW_DWN and the clearness index kt = ALLSKY / CLRSKY.
-
-    kt is defined only where the clear-sky reference is positive (i.e. astronomical
-    daylight); elsewhere it is NaN rather than 0/0.
-    """
-    clr = load_clearsky_reference()
-    out = df.merge(clr, on=["datetime", "city"], how="left", validate="one_to_one")
-    if out["CLRSKY_SFC_SW_DWN"].isna().any():
-        raise ValueError("clear-sky reference does not cover every (datetime, city) row.")
-    out["kt"] = np.where(
-        out["CLRSKY_SFC_SW_DWN"] > 0, out[TARGET_COLUMN] / out["CLRSKY_SFC_SW_DWN"], np.nan
-    )
-    return out
 
 
 # ---------------------------------------------------------------------------------------
