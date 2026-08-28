@@ -278,6 +278,17 @@ satırlarına bakmadan, gündüz saatleri üzerinden:
 
 Rize burada da ayrışıyor: en iyi referansı R² 0.733, diğer dört ilde 0.882–0.894.
 
+**Bu tablo tanımlayıcıdır, makalenin sonuç tablosu değildir.** Burada değerlendirme **saat
+başına** yapılıyor: test = `datetime > val_end` (varsayılan 0.74/0.11 ile val_end
+2025-03-26 01:00), il başına 8 878 test saati, bunun 4 731'i klimatolojik gündüz. Aynı
+referanslar `run_experiment` boru hattından koşulduğunda değerlendirme **pencere başına**
+olacak: `window_stride=1` ve `horizon_hours=24` ile her test saati 24'e kadar örtüşen
+pencerede tekrar sayılır, dolayısıyla bölme sınırındaki saatler farklı ağırlık alır ve
+etkin n ~24 katına çıkar. **Aynı tahmin kuralı iki yöntemde birebir aynı sayıyı vermez.**
+Makalede yalnız boru hattından geçen (ledger'a yazılan) sürüm alıntılanmalı; buradaki
+rakamlar çapraz kontrol içindir. Sıralamanın (RMSE'de klimatoloji, MAE'de akıllı kalıcılık
+önde) iki yöntemde de aynı çıkması beklenir; çıkmıyorsa birinde hata vardır.
+
 ### 10. Lookback kararı: 24 saatin ötesi az şey katıyor
 
 `autocorrelation_clearness.csv`, berraklık indeksi kt üzerinde (ham ışınım üzerinde ACF
