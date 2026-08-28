@@ -24,5 +24,6 @@
   "seed": 42,
   "training_scope": "global",
   "model_family": "smart_persistence",
-  "loss_daylight_only": false
+  "loss_daylight_only": false,
+  "per_city_scaler": true
 }

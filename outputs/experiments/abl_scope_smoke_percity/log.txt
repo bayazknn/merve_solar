@@ -1,0 +1,25 @@
+device=cpu
+training_scope=per_city model_family=lstm
+train_end=2024-06-27 19:00:00 val_end=2025-03-26 01:00:00
+test daylight elements: 546130 of 1059720
+Ankara/train: 43749 windows
+Ankara/val: 6463 windows
+Ankara/test: 8831 windows
+Ankara replica 0: val_loss=0.0770 epochs=5  WARNING: hit max_epochs
+Antalya/train: 43749 windows
+Antalya/val: 6463 windows
+Antalya/test: 8831 windows
+Antalya replica 0: val_loss=0.0699 epochs=5  WARNING: hit max_epochs
+Konya/train: 43749 windows
+Konya/val: 6463 windows
+Konya/test: 8831 windows
+Konya replica 0: val_loss=0.0795 epochs=5  WARNING: hit max_epochs
+Rize/train: 43749 windows
+Rize/val: 6463 windows
+Rize/test: 8831 windows
+Rize replica 0: val_loss=0.1190 epochs=5  WARNING: hit max_epochs
+Van/train: 43749 windows
+Van/val: 6463 windows
+Van/test: 8831 windows
+Van replica 0: val_loss=0.0676 epochs=5  WARNING: hit max_epochs
+total_training_time_sec=160.6

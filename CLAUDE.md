@@ -43,7 +43,7 @@ it when either changes.
 Dependencies are managed with `uv` (`pyproject.toml` + `uv.lock`); a `.venv/` already exists.
 
 ```bash
-uv sync --extra dev                                        # install (pytest lives in [project.optional-dependencies])
+uv sync --dev                                              # install
 uv run python -m pytest tests/ -v                          # all tests (loads the real xlsx; slow-ish, no GPU needed)
 uv run python -m pytest tests/test_windows.py -v           # one test file
 uv run python -m pytest tests/test_windows.py::test_no_window_start_predates_its_city_series -v   # one test

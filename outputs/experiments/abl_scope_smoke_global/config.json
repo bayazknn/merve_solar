@@ -1,5 +1,5 @@
 {
-  "experiment_id": "baseline_climatology",
+  "experiment_id": "abl_scope_smoke_global",
   "lookback_hours": 24,
   "horizon_hours": 24,
   "window_stride": 1,
@@ -13,17 +13,17 @@
   "city_embedding_dim": 4,
   "learning_rate": 0.001,
   "batch_size": 128,
-  "max_epochs": 100,
-  "early_stop_patience": 10,
+  "max_epochs": 5,
+  "early_stop_patience": 3,
   "lr_reduce_factor": 0.5,
   "lr_reduce_patience": 7,
   "nonneg_penalty_weight": 0.1,
   "n_bootstrap": 1,
-  "mc_dropout_passes": 1,
+  "mc_dropout_passes": 10,
   "bootstrap_block_length": 168,
   "seed": 42,
   "training_scope": "global",
-  "model_family": "climatology",
+  "model_family": "lstm",
   "loss_daylight_only": false,
   "per_city_scaler": true
 }

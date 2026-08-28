@@ -27,7 +27,7 @@ no code changes needed.
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 cd merve_makale
-uv sync --extra dev
+uv sync --dev
 ```
 
 `uv sync` creates a `.venv/` and installs everything from `pyproject.toml` +
@@ -59,9 +59,9 @@ scripts/...`.
 uv run python -m pytest tests/ -v
 ```
 
-(`uv run python -m pytest` rather than `uv run pytest`: the latter can resolve a
-`pytest` from outside the project venv, which would silently run the suite
-against different library versions than the pinned ones.)
+(`uv run python -m pytest` rather than `uv run pytest`: `-m` pins the
+interpreter to the project venv. Both work, but only the explicit form is
+immune to a stray `pytest` earlier on `PATH`.)
 
 All tests should pass (they load the real dataset and check the cleaning/
 windowing logic — no network or GPU required).

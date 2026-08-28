@@ -14,7 +14,10 @@ dependencies = [
     "seaborn>=0.13,<0.15",
 ]
 
-[project.optional-dependencies]
+# A dependency-group, not an optional-dependency (extra): `uv sync --dev` syncs groups, so
+# declaring pytest as an extra meant the documented install command actively UNINSTALLED it,
+# leaving `uv run pytest` to fall through to whatever pytest was on PATH.
+[dependency-groups]
 dev = ["pytest>=8.0"]
 
 [tool.uv.sources]

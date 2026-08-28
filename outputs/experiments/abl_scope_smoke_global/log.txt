@@ -1,0 +1,9 @@
+device=cpu
+training_scope=global model_family=lstm
+train_end=2024-06-27 19:00:00 val_end=2025-03-26 01:00:00
+test daylight elements: 546130 of 1059720
+train: 218745 windows
+val: 32315 windows
+test: 44155 windows
+replica 0: val_loss=0.0752 epochs=5  WARNING: hit max_epochs
+total_training_time_sec=177.9
