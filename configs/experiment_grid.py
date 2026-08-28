@@ -188,19 +188,21 @@ RIZE_SMOKE_ARMS = ("solo", "plus_ankara")
 
 
 def _rize_curve_configs(fidelity: dict = ABLATION_FULL, suffix: str = "",
-                        arms=None, seeds_override=None) -> list:
+                        arms=None, seeds_override=None, loss: str | None = None,
+                        include_stage1: bool = True, **extra) -> list:
     """The transfer curve, plus a loss-selection stage that must run first.
 
     Stage 1 fixes pooling at all five provinces and varies the loss, so the headline criterion is
     chosen once on a comparison where nothing else moves. Stage 2 fixes that criterion and varies
     pooling. Running the full cross product would multiply cost for no extra claim.
 
-    CAVEAT, recorded here because it is invisible at the call site: stage 2 takes the loss from
-    the ExperimentConfig default ("mse"), NOT from stage 1's winner. If stage 1 selects mae or
-    huber, the curve as defined here does not use it and stage 2 would have to be re-declared
-    with loss_function set explicitly. Stage 1 and stage 2 are then two independent one-axis
-    comparisons that happen to share a fidelity, which is a weaker design than the docstring
-    above implies but is the one the ids describe.
+The `loss` argument is what connects the two stages. Left None, stage 2 runs at the
+    ExperimentConfig default ("mse") -- which is what the `_b1` group did, before stage 1 had
+    been run and therefore before its answer was known. Stage 1 selected `mae`, so the
+    `rize_curve_l1` group passes it explicitly and is the version of the curve that actually
+    follows its own two-stage design. The `_b1` curve is kept as-is: it is a real measurement
+    under a different criterion, and deleting it would discard the only evidence about how much
+    the criterion moves the curve.
 
     `fidelity` and `suffix` exist so a reduced-cost replica of the whole study is provably the
     same study: the arms, provinces, scopes and seeds come from the same code, and only the
@@ -208,13 +210,16 @@ def _rize_curve_configs(fidelity: dict = ABLATION_FULL, suffix: str = "",
     """
     configs = []
 
-    # Stage 1 -- loss selection, all five provinces, one axis moving.
-    for loss in ("mse", "mae", "huber"):
-        configs.append(
-            ExperimentConfig(
-                experiment_id=f"abl_loss_{loss}_s42{suffix}", loss_function=loss, seed=42, **fidelity
+    # Stage 1 -- loss selection, all five provinces, one axis moving. Skipped when the criterion
+    # has already been selected and only the curve is being re-run.
+    if include_stage1:
+        for stage1_loss in ("mse", "mae", "huber"):
+            configs.append(
+                ExperimentConfig(
+                    experiment_id=f"abl_loss_{stage1_loss}_s42{suffix}",
+                    loss_function=stage1_loss, seed=42, **fidelity,
+                )
             )
-        )
 
     # Stage 2 -- the curve. Seeds: the two endpoints carry the headline claim and get three each,
     # since a one-seed gap between two arms is not evidence; the intermediate arms are mechanism
@@ -232,6 +237,8 @@ def _rize_curve_configs(fidelity: dict = ABLATION_FULL, suffix: str = "",
                     training_scope=scope,
                     excluded_cities=excluded,
                     seed=seed,
+                    **({"loss_function": loss} if loss else {}),
+                    **extra,
                     **fidelity,
                 )
             )
@@ -241,6 +248,85 @@ def _rize_curve_configs(fidelity: dict = ABLATION_FULL, suffix: str = "",
 def _rize_curve_b1_configs() -> list:
     """The same twelve arms at the reduced fidelity that fits this host. See ABLATION_B1."""
     return _rize_curve_configs(ABLATION_B1, suffix="_b1")
+
+
+def _rize_curve_l1_configs() -> list:
+    """Stage 2 re-run under L1 -- the criterion stage 1 actually selected -- with three seeds
+    on every arm.
+
+    Two reasons this supersedes the `_b1` curve rather than merely extending it.
+
+    The criterion moves Rize further than pooling does. Stage 1 measured, on the same five
+    provinces, Rize daylight RMSE 112.88 under MSE against 109.56 under L1 -- 3.3 W/m2. The
+    pooling effect the curve exists to measure is 1.5 W/m2. Reading a 1.5 W/m2 effect through an
+    instrument that a criterion change moves by 3.3 is measuring with the wrong instrument, and
+    the criterion is a free choice while the pooling effect is the finding.
+
+    Every arm gets three seeds, not just the endpoints. In the `_b1` curve H2 -- the claim that
+    WHICH province is added matters, which is the study's actual positive result -- rested on two
+    single-seed arms (plus_ankara 109.80 vs plus_antalya 119.66). A 9.86 W/m2 gap against a
+    seed spread of 2.15 is suggestive, but the finding the paper leans on should not be the one
+    with no replication. The intermediate arms are no longer only shape evidence.
+    """
+    return _rize_curve_configs(
+        ABLATION_B1, suffix="_l1", loss="mae",
+        seeds_override=ABLATION_SEEDS, include_stage1=False,
+    )
+
+
+def _sens_scaler_l1_configs() -> list:
+    """The control for the confound most likely to be producing H1's null result.
+
+    The `solo` arm trains on Rize alone with its own target scaler (per_city_scaler defaults to
+    True), so its loss is normalised to Rize's own variance. The pooled arms fit one scaler over
+    all five provinces -- and Rize is the LOW-variance province (sigma 231.5 against the pooled
+    ~280), so in scaled space its targets carry roughly a third less weight than Van's. Under any
+    mean-seeking loss the pooled model therefore under-weights exactly the province the curve is
+    scored on. The comparison is built against the pooled arm, which is the direction that
+    manufactures a null.
+
+    This arm is `solo` with per_city_scaler=False: Rize alone, but scaled by the pooled scaler.
+    If the solo advantage shrinks here, part of H1's null was a scaling artefact rather than an
+    absence of transfer. Three seeds, because a one-seed control cannot rule anything out. Same
+    L1 criterion and fidelity as the curve it controls, so it differs on one axis only.
+    """
+    arms = [a for a in RIZE_CURVE_ARMS if a[0] == "solo"]
+    configs = _rize_curve_configs(
+        ABLATION_B1, suffix="_globalscaler_l1", loss="mae", arms=arms,
+        seeds_override=ABLATION_SEEDS, include_stage1=False, per_city_scaler=False,
+    )
+    assert all(c.per_city_scaler is False for c in configs)
+    return configs
+
+
+def _device_parity_configs() -> list:
+    """Two byte-identical configs under two ids, to be run on two backends.
+
+    An audit raised an unverified claim that nn.LSTM's inter-layer dropout diverges between MPS
+    and CPU. Unverified is not the same as false, and the exposure is real: hidden_sizes=[64, 32]
+    builds nn.LSTM(num_layers=2, dropout=0.3), and that dropout is one of the MC-Dropout noise
+    sources at inference -- so the metrics most exposed would be the interval ones the paper is
+    about. Failure here does not crash, it returns different numbers.
+
+    Rather than trusting or dismissing the claim, measure it. Run `abl_parity_cpu_s42` with
+    MERVE_DEVICE=cpu and `abl_parity_mps_s42` with MERVE_DEVICE=mps; identical configs and
+    identical seeds mean any metric difference is the backend. The ids state the intent and the
+    ledger's `device` column records what actually happened, so running both on one device makes
+    the check visibly void instead of silently meaningless.
+
+    Rize alone at T=100: the cheapest arm that still exercises the two-layer LSTM and the full
+    MC-Dropout pass count.
+    """
+    arms = [a for a in RIZE_CURVE_ARMS if a[0] == "solo"]
+    configs = []
+    for tag in ("cpu", "mps"):
+        [config] = _rize_curve_configs(
+            ABLATION_B1, suffix=f"_PARITY_{tag}", loss="mae", arms=arms,
+            seeds_override=(42,), include_stage1=False,
+        )
+        config.experiment_id = f"abl_parity_{tag}_s42"
+        configs.append(config)
+    return configs
 
 
 def _rize_curve_smoke_configs() -> list:
@@ -260,6 +346,9 @@ EXPERIMENT_GROUPS = {
     "ablation": _ablation_configs,
     "rize_curve": _rize_curve_configs,
     "rize_curve_b1": _rize_curve_b1_configs,
+    "rize_curve_l1": _rize_curve_l1_configs,
+    "sens_scaler_l1": _sens_scaler_l1_configs,
+    "device_parity": _device_parity_configs,
     "rize_curve_smoke": _rize_curve_smoke_configs,
 }
 
