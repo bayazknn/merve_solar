@@ -67,15 +67,15 @@ temel alır. Kritik nokta şudur:
 > Kaynak makale PCNN kullanmış olsa da, aynı UQ yöntemi LSTM ile birebir uygulanabilir.
 > Tahmin = LSTM · Belirsizlik = Bootstrap Ensemble + MC Dropout.
 
-| Bileşen | Kaynak makale | Bu çalışma | Gerekçe |
-|---|---|---|---|
-| Tahmin modeli (backbone) | PCNN | **LSTM** | Saatlik, uzun bağımlılıklı tek değişkenli-çok değişkenli zaman serisi yapısı için tekrarlayan mimari daha uygundur |
-| Hedef değişken | Fotovoltaik güç çıkışı | **Küresel yatay ışınım (`ALLSKY_SFC_SW_DWN`)** | Santral bazlı güç verisi yerine, tesis bağımsız ve genelleştirilebilir meteorolojik büyüklük |
-| Belirsizlik yöntemi | Bootstrap Ensemble × MC Dropout | **Aynen korunmuştur** | Metodolojinin özü |
-| Güven aralığı | Yüzdelik tabanlı (%2.5 – %97.5) | **Aynen korunmuştur** | Normallik varsayımı gerektirmez; bootstrap dağılımıyla tutarlıdır |
-| Bootstrap türü | Zaman serisine duyarlı yeniden örnekleme | **Moving Block Bootstrap (MBB)** | Klasik i.i.d. yeniden örnekleme zamansal otokorelasyonu yok eder |
-| Fiziksel kısıt | Negatif olmama + kapasite tavanı | **Yalnızca negatif olmama cezası** | Işınım da negatif olamaz; ancak "kurulu güç tavanı" kısıtının ışınımda karşılığı yoktur |
-| Metrikler | PICP/PINW + tablo metrikleri | **CP (=PICP), PINW, MPIW, Reliability, CWC, CRPS** | Kaynak makalenin raporlama formatı korunmuş, standart literatür tanımlarıyla tamamlanmıştır |
+| Bileşen                  | Kaynak makale                            | Bu çalışma                                         | Gerekçe                                                                                                            |
+| ------------------------ | ---------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Tahmin modeli (backbone) | PCNN                                     | **LSTM**                                           | Saatlik, uzun bağımlılıklı tek değişkenli-çok değişkenli zaman serisi yapısı için tekrarlayan mimari daha uygundur |
+| Hedef değişken           | Fotovoltaik güç çıkışı                   | **Küresel yatay ışınım (`ALLSKY_SFC_SW_DWN`)**     | Santral bazlı güç verisi yerine, tesis bağımsız ve genelleştirilebilir meteorolojik büyüklük                       |
+| Belirsizlik yöntemi      | Bootstrap Ensemble × MC Dropout          | **Aynen korunmuştur**                              | Metodolojinin özü                                                                                                  |
+| Güven aralığı            | Yüzdelik tabanlı (%2.5 – %97.5)          | **Aynen korunmuştur**                              | Normallik varsayımı gerektirmez; bootstrap dağılımıyla tutarlıdır                                                  |
+| Bootstrap türü           | Zaman serisine duyarlı yeniden örnekleme | **Moving Block Bootstrap (MBB)**                   | Klasik i.i.d. yeniden örnekleme zamansal otokorelasyonu yok eder                                                   |
+| Fiziksel kısıt           | Negatif olmama + kapasite tavanı         | **Yalnızca negatif olmama cezası**                 | Işınım da negatif olamaz; ancak "kurulu güç tavanı" kısıtının ışınımda karşılığı yoktur                            |
+| Metrikler                | PICP/PINW + tablo metrikleri             | **CP (=PICP), PINW, MPIW, Reliability, CWC, CRPS** | Kaynak makalenin raporlama formatı korunmuş, standart literatür tanımlarıyla tamamlanmıştır                        |
 
 ---
 
@@ -86,48 +86,48 @@ Dosya: `SolarData_Merve_All(16July).xlsx`, her il için ayrı bir sayfa (sheet).
 
 **Kapsam (temizleme sonrası):**
 
-| Özellik | Değer |
-|---|---|
-| İller | Ankara, Antalya, Konya, Rize, Van |
-| Zaman çözünürlüğü | Saatlik |
-| Tarih aralığı | 2019-06-30 00:00 – 2026-03-30 23:00 |
-| İl başına satır | 59.184 saat (≈ 6 yıl 9 ay) |
-| Toplam satır | 295.920 |
-| Ham satır (temizleme öncesi) | 61.392 / il |
-| Kesilen satır | 2.208 / il |
+| Özellik                      | Değer                               |
+| ---------------------------- | ----------------------------------- |
+| İller                        | Ankara, Antalya, Konya, Rize, Van   |
+| Zaman çözünürlüğü            | Saatlik                             |
+| Tarih aralığı                | 2019-06-30 00:00 – 2026-03-30 23:00 |
+| İl başına satır              | 59.184 saat (≈ 6 yıl 9 ay)          |
+| Toplam satır                 | 295.920                             |
+| Ham satır (temizleme öncesi) | 61.392 / il                         |
+| Kesilen satır                | 2.208 / il                          |
 
 **İllerin seçimi** rastgele değildir: Antalya (Akdeniz, yüksek ışınım), Konya ve Ankara (İç
 Anadolu karasal, yüksek ışınım–düşük nem), Van (Doğu Anadolu, yüksek rakım), Rize (Karadeniz,
 yüksek bulutluluk ve yağış) farklı iklim rejimlerini temsil eder. Hedef değişkenin il bazında
 betimleyici istatistikleri bu farkı doğrular:
 
-| İl | Ortalama (W/m²) | Std. sapma | Min | Maks |
-|---|---|---|---|---|
-| Ankara | 193,97 | 275,26 | 0,00 | 1029,10 |
-| Antalya | 206,03 | 287,01 | 0,00 | 1043,07 |
-| Konya | 203,01 | 284,44 | 0,00 | 1054,35 |
-| Rize | **153,57** | 231,54 | 0,00 | 988,15 |
-| Van | 207,57 | 287,75 | 0,00 | 1215,88 |
+| İl      | Ortalama (W/m²) | Std. sapma | Min  | Maks    |
+| ------- | --------------- | ---------- | ---- | ------- |
+| Ankara  | 193,97          | 275,26     | 0,00 | 1029,10 |
+| Antalya | 206,03          | 287,01     | 0,00 | 1043,07 |
+| Konya   | 203,01          | 284,44     | 0,00 | 1054,35 |
+| Rize    | **153,57**      | 231,54     | 0,00 | 988,15  |
+| Van     | 207,57          | 287,75     | 0,00 | 1215,88 |
 
 Rize'nin belirgin şekilde düşük ortalaması, bulutluluğun ışınım üzerindeki etkisini gösterir ve
 modelin il gömme vektöründen ne öğrenmesi gerektiğine dair doğrudan kanıttır.
 
 **Ham değişkenler:**
 
-| Sütun | Açıklama | Birim |
-|---|---|---|
-| `YEAR`, `MO`, `DY`, `HR` | Zaman damgası bileşenleri | — |
-| `ALLSKY_SFC_SW_DWN` | **Hedef.** Tüm gökyüzü koşullarında yüzeye gelen kısa dalga ışınım | W/m² |
-| `CLRSKY_SFC_SW_DWN` | Açık gökyüzü (bulutsuz) referans ışınımı | W/m² |
-| `T2M` | 2 m sıcaklık | °C |
-| `RH2M` | 2 m bağıl nem | % |
-| `QV2M` | 2 m özgül nem | g/kg |
-| `T2MDEW` | 2 m çiy noktası sıcaklığı | °C |
-| `PS` | Yüzey basıncı | kPa |
-| `WS10M`, `WS50M` | 10 m / 50 m rüzgâr hızı | m/s |
-| `WD10M`, `WD50M` | 10 m / 50 m rüzgâr yönü | derece |
-| `PRECTOTCORR` | Düzeltilmiş toplam yağış | mm/saat |
-| `ALLSKY_KT` | Açıklık indeksi — **kullanılmadı, silindi** | — |
+| Sütun                    | Açıklama                                                           | Birim   |
+| ------------------------ | ------------------------------------------------------------------ | ------- |
+| `YEAR`, `MO`, `DY`, `HR` | Zaman damgası bileşenleri                                          | —       |
+| `ALLSKY_SFC_SW_DWN`      | **Hedef.** Tüm gökyüzü koşullarında yüzeye gelen kısa dalga ışınım | W/m²    |
+| `CLRSKY_SFC_SW_DWN`      | Açık gökyüzü (bulutsuz) referans ışınımı                           | W/m²    |
+| `T2M`                    | 2 m sıcaklık                                                       | °C      |
+| `RH2M`                   | 2 m bağıl nem                                                      | %       |
+| `QV2M`                   | 2 m özgül nem                                                      | g/kg    |
+| `T2MDEW`                 | 2 m çiy noktası sıcaklığı                                          | °C      |
+| `PS`                     | Yüzey basıncı                                                      | kPa     |
+| `WS10M`, `WS50M`         | 10 m / 50 m rüzgâr hızı                                            | m/s     |
+| `WD10M`, `WD50M`         | 10 m / 50 m rüzgâr yönü                                            | derece  |
+| `PRECTOTCORR`            | Düzeltilmiş toplam yağış                                           | mm/saat |
+| `ALLSKY_KT`              | Açıklık indeksi — **kullanılmadı, silindi**                        | —       |
 
 ---
 
@@ -138,10 +138,12 @@ modelin il gömme vektöründen ne öğrenmesi gerektiğine dair doğrudan kanı
 aynı önbelleği kullanır. Böylece tüm deneyler *aynı* veri temeli üzerinde karşılaştırılabilir.
 
 ### 4.1 Zaman damgası oluşturma
+
 `YEAR`, `MO`, `DY`, `HR` sütunlarından tek bir `datetime` sütunu üretilir ve seri kronolojik
 olarak sıralanır.
 
 ### 4.2 Eksik veri sentinel'i (-999) ve kuyruk kesme
+
 NASA POWER, eksik değerleri `-999` ile kodlar. Veri setinde iki tür `-999` bulunmaktadır:
 
 1. **Kuyruk boşluğu (near-real-time gecikmesi):** 2026-03-31 00:00 – 2026-06-30 23:00 aralığında
@@ -153,6 +155,7 @@ NASA POWER, eksik değerleri `-999` ile kodlar. Veri setinde iki tür `-999` bul
    %50'si `-999`'dur. → Sütun **tümüyle düşürülmüştür**.
 
 ### 4.3 Doğrulama (fail-fast)
+
 Ön işleme adımı sessizce düzeltme yapmaz; beklenmeyen durumda **hata fırlatır**:
 
 - Kesilen satır sayısı tam olarak 2.208 değilse → `ValueError`
@@ -173,6 +176,7 @@ gerçek veri üzerinde test edilmektedir.
 ## 5. Öznitelik mühendisliği
 
 ### 5.1 Döngüsel (cyclical) kodlama
+
 Saat, yılın günü ve rüzgâr yönü **döngüsel** büyüklüklerdir: 23. saat ile 0. saat komşudur,
 359° ile 1° komşudur. Ham sayısal değer olarak verildiğinde model bu komşuluğu göremez ve
 yapay bir süreksizlik oluşur. Bu nedenle her biri sinüs–kosinüs çiftine dönüştürülmüştür:
@@ -197,20 +201,25 @@ döngüyü, gün-of-year kodlaması ise mevsimsel döngüyü modele açıkça su
 bu iki döngü sinyalin baskın bileşenleridir.
 
 ### 5.2 Nihai öznitelik kümesi ($F = 18$)
-`NUMERIC_FEATURE_COLUMNS` (`src/merve_solar/config.py`):
 
-1. `ALLSKY_SFC_SW_DWN` — **hedefin kendi gecikmeli değerleri (özbağlanımlı/autoregressive girdi)**
-2. `CLRSKY_SFC_SW_DWN`
-3. `T2M` · 4. `RH2M` · 5. `QV2M` · 6. `T2MDEW` · 7. `PS`
-8. `WS10M` · 9. `WS50M` · 10. `PRECTOTCORR`
-11–14. `WD10M_sin`, `WD10M_cos`, `WD50M_sin`, `WD50M_cos`
-15–18. `hour_sin`, `hour_cos`, `doy_sin`, `doy_cos`
+`NUMERIC_FEATURE_COLUMNS` (`src/merve_solar/config.py`) — sıra kodda tanımlı sıradır:
+
+| # | Öznitelik | Tür |
+| --- | --- | --- |
+| 1 | `ALLSKY_SFC_SW_DWN` | **Hedefin kendi gecikmeli değerleri (özbağlanımlı girdi)** |
+| 2 | `CLRSKY_SFC_SW_DWN` | Açık gökyüzü referans ışınımı |
+| 3–7 | `T2M`, `RH2M`, `QV2M`, `T2MDEW`, `PS` | Sıcaklık, nem, basınç |
+| 8–10 | `WS10M`, `WS50M`, `PRECTOTCORR` | Rüzgâr hızı, yağış |
+| 11–14 | `WD10M_sin`, `WD10M_cos`, `WD50M_sin`, `WD50M_cos` | Rüzgâr yönü (döngüsel) |
+| 15–16 | `hour_sin`, `hour_cos` | Günlük (diurnal) döngü |
+| 17–18 | `doy_sin`, `doy_cos` | Mevsimsel döngü |
 
 Hedef değişkenin kendisi girdi penceresinde yer alır (özbağlanımlı yapı); bu **veri sızıntısı
 değildir**, çünkü pencere yalnızca geçmiş $L$ saati içerir, tahmin edilen $H$ saat penceredeki
 hiçbir girdide bulunmaz (bkz. §8).
 
 ### 5.3 İl gömmesi (city embedding)
+
 İl kimliği one-hot olarak değil, **öğrenilebilir yoğun vektör** olarak modele girer:
 $\mathbf{e}_c \in \mathbb{R}^{d}$, $d = 4$ (`city_embedding_dim`). Bu vektör LSTM girdisine her
 zaman adımında eklenir (bkz. §9). One-hot yerine gömme kullanılmasının nedeni, modelin iller
@@ -226,11 +235,11 @@ yakın konumlanması); one-hot temsilde tüm iller birbirine eşit uzaklıktadı
 Rastgele bölme **kullanılmamıştır**; zaman serilerinde rastgele bölme geleceği geçmişe sızdırır.
 Veri kronolojik olarak üçe ayrılır (en eski → en yeni):
 
-| Küme | Oran | Tarih aralığı (varsayılan) |
-|---|---|---|
-| Eğitim (train) | `train_ratio = 0,74` | 2019-06-30 00:00 – 2024-06-27 19:00 |
-| Doğrulama (validation) | `val_ratio = 0,11` | 2024-06-27 20:00 – 2025-03-26 01:00 |
-| Test | $1 - 0{,}74 - 0{,}11 = 0{,}15$ | 2025-03-26 02:00 – 2026-03-30 23:00 |
+| Küme                   | Oran                           | Tarih aralığı (varsayılan)          |
+| ---------------------- | ------------------------------ | ----------------------------------- |
+| Eğitim (train)         | `train_ratio = 0,74`           | 2019-06-30 00:00 – 2024-06-27 19:00 |
+| Doğrulama (validation) | `val_ratio = 0,11`             | 2024-06-27 20:00 – 2025-03-26 01:00 |
+| Test                   | $1 - 0{,}74 - 0{,}11 = 0{,}15$ | 2025-03-26 02:00 – 2026-03-30 23:00 |
 
 Sınırlar ilk ilin saat sayısı üzerinden hesaplanır ve tüm illere aynı tarih sınırları uygulanır
 (tüm iller aynı zaman aralığını kapsadığı için bu tutarlıdır).
@@ -294,23 +303,25 @@ $$
    havuzlanır. (Aksi hâlde Van'ın son saatleri Ankara'nın ilk saatleriyle aynı pencerede
    birleşirdi.) Ayrıca her il içinde saatlerin kesintisiz ardışık olduğu doğrulanır; kesinti
    varsa hata fırlatılır.
+
 2. **Pencereler bölme sınırını aşamaz.** Bir pencere ancak *tüm* $(L+H)$ süresi ilgili bölmenin
    tarih aralığına düşüyorsa o bölmeye atanır:
+   
    - eğitim: $\text{pencere\_sonu} \le \text{train\_end}$
    - doğrulama: $\text{pencere\_başı} > \text{train\_end}$ **ve** $\text{pencere\_sonu} \le \text{val\_end}$
    - test: $\text{pencere\_başı} > \text{val\_end}$
-
+   
    Sınırı kesen (straddling) pencereler **atılır**. Bu, eğitim penceresinin hedefinin doğrulama
    dönemine taşmasını, yani sızıntıyı engeller. Kayıp, bölme başına en fazla $(L+H-1)$ penceredir
    ve toplam veri hacmi yanında ihmal edilebilir.
 
 **Varsayılan konfigürasyonla elde edilen pencere sayıları (5 il toplamı):**
 
-| Küme | Pencere sayısı | Tensör boyutu |
-|---|---|---|
-| Eğitim | 218.745 | $(218745,\, 24,\, 18)$ |
-| Doğrulama | 32.315 | $(32315,\, 24,\, 18)$ |
-| Test | 44.155 | $(44155,\, 24,\, 18)$ |
+| Küme      | Pencere sayısı | Tensör boyutu          |
+| --------- | -------------- | ---------------------- |
+| Eğitim    | 218.745        | $(218745,\, 24,\, 18)$ |
+| Doğrulama | 32.315         | $(32315,\, 24,\, 18)$  |
+| Test      | 44.155         | $(44155,\, 24,\, 18)$  |
 
 Test kümesindeki toplam skaler tahmin sayısı: $44.155 \times 24 = 1.059.720$.
 
@@ -338,6 +349,7 @@ Girdi: X (batch, L=24, F=18)   ve   city_id (batch,)
 ```
 
 ### 9.1 `hidden_sizes` parametresinin yorumu (dikkat)
+
 `hidden_sizes` listesi **iki işi birden** yapar:
 
 - `hidden_sizes[0]` → LSTM'in gizli durum boyutu
@@ -352,11 +364,13 @@ Varsayılan `[64, 32]` şu anlama gelir: **2 katmanlı** LSTM (gizli boyut 64) +
 > gösterimi "64 ve 32 nöronlu iki LSTM katmanı" gibi yanlış okunabilir.
 
 ### 9.2 Dropout'un konumu
+
 Dropout üç yerde bulunur ve **hepsi MC Dropout'un rastgelelik kaynağıdır**:
 LSTM katmanları arasında (yalnızca `num_layers > 1` iken PyTorch bunu uygular), LSTM çıkışından
 sonra (`head_dropout`) ve başlıktaki her gizli katmandan sonra.
 
 ### 9.3 BatchNorm neden yok?
+
 Modelde hiçbir yerde `BatchNorm` **kullanılmamıştır**. Gerekçe: MC Dropout çıkarımı modeli
 `.train()` modunda tutar (§11.1); bu modda `BatchNorm` çalışan istatistiklerini (running mean/var)
 güncellemeye devam eder ve çıkarım sırasında modelin durumunu bozar. Normalizasyon ihtiyacı
@@ -369,6 +383,7 @@ girdi tarafında `StandardScaler` ile karşılanmıştır.
 **Uygulama:** `train_model()`, `src/merve_solar/train.py`.
 
 ### 10.1 Kayıp fonksiyonu — fiziksel kısıtlı MSE
+
 $$
 \mathcal{L}(\hat{\mathbf{y}}, \mathbf{y}) \;=\;
 \underbrace{\frac{1}{N H}\sum_{i,h}\left(\hat{y}_{ih} - y_{ih}\right)^2}_{\text{MSE}}
@@ -391,15 +406,15 @@ kısıtının ışınımda karşılığı olmadığından uygulanmamıştır.
 
 ### 10.2 Optimizasyon ayarları
 
-| Bileşen | Değer / Yöntem |
-|---|---|
-| Optimizasyon algoritması | Adam |
-| Başlangıç öğrenme oranı | $10^{-3}$ (`learning_rate`) |
-| Yığın (batch) boyutu | 128 |
-| Maksimum epok | 100 (`max_epochs`) |
+| Bileşen                  | Değer / Yöntem                                                                                                         |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Optimizasyon algoritması | Adam                                                                                                                   |
+| Başlangıç öğrenme oranı  | $10^{-3}$ (`learning_rate`)                                                                                            |
+| Yığın (batch) boyutu     | 128                                                                                                                    |
+| Maksimum epok            | 100 (`max_epochs`)                                                                                                     |
 | Öğrenme oranı planlayıcı | `ReduceLROnPlateau` — doğrulama kaybı 7 epok (`lr_reduce_patience`) iyileşmezse LR $\times 0{,}5$ (`lr_reduce_factor`) |
-| Erken durdurma | Doğrulama kaybı 10 epok (`early_stop_patience`) iyileşmezse eğitim durur |
-| Model seçimi | **En iyi doğrulama kaybını veren epoktaki ağırlıklar** saklanır ve eğitim sonunda geri yüklenir (son epok değil) |
+| Erken durdurma           | Doğrulama kaybı 10 epok (`early_stop_patience`) iyileşmezse eğitim durur                                               |
+| Model seçimi             | **En iyi doğrulama kaybını veren epoktaki ağırlıklar** saklanır ve eğitim sonunda geri yüklenir (son epok değil)       |
 
 Doğrulama kaybı da aynı kısıtlı kayıp fonksiyonuyla, `model.eval()` modunda ve `torch.no_grad()`
 altında hesaplanır. Eğitim ve doğrulama kayıpları epok bazında kaydedilir (`history`) ve deney
@@ -496,6 +511,7 @@ Varsayılan $B = 8$ (`n_bootstrap`); kaynak makale 5–10 aralığını önerir.
 > (smoke test) ve "yalnızca MC Dropout" ablasyonu için kullanılır.
 
 ### 11.3 Hibrit havuzlama
+
 Her replikanın $T$ geçişi, replikalar boyunca birleştirilerek tek bir dağılım oluşturur:
 
 $$
@@ -507,6 +523,7 @@ Havuzlama tensör boyutuyla: $(B \cdot T,\, N,\, H) = (800,\, 44155,\, 24)$. Hav
 **ölçeklenmiş uzayda** yapılır, ardından tüm dağılım W/m²'ye geri dönüştürülür.
 
 ### 11.4 Güven aralığı — yüzdelik tabanlı
+
 $$
 \hat{\mu}_{ih} = \frac{1}{|\mathcal{P}|}\sum_{s} \hat{y}^{(s)}_{ih}, \qquad
 \hat{\sigma}_{ih} = \sqrt{\frac{1}{|\mathcal{P}|}\sum_{s}\left(\hat{y}^{(s)}_{ih} - \hat{\mu}_{ih}\right)^2}
@@ -606,15 +623,17 @@ $$
 W/m² birimindedir; düşük olması iyidir, mükemmel deterministik tahminde 0'dır.
 
 ### 12.3 Raporlama düzeyleri
+
 Her metrik **üç düzeyde** hesaplanır:
 
-| Düzey | Dosya | İçerik |
-|---|---|---|
-| Toplulaştırılmış | ledger satırı | Tüm iller + tüm ufuk adımları havuzlanmış |
-| İl bazında | `metrics/results_summary.csv` | Aggregate + 5 il için birer satır |
-| Ufuk adımı bazında | `metrics/results_by_horizon.csv` | 1 saat ileri … 24 saat ileri, 24 satır |
+| Düzey              | Dosya                            | İçerik                                    |
+| ------------------ | -------------------------------- | ----------------------------------------- |
+| Toplulaştırılmış   | ledger satırı                    | Tüm iller + tüm ufuk adımları havuzlanmış |
+| İl bazında         | `metrics/results_summary.csv`    | Aggregate + 5 il için birer satır         |
+| Ufuk adımı bazında | `metrics/results_by_horizon.csv` | 1 saat ileri … 24 saat ileri, 24 satır    |
 
 ### 12.4 Metriklerin birlikte yorumlanması
+
 Metrikler **tek başına** yorumlanmamalıdır:
 
 - Düşük PINW + düşük CP = **kötü model** (aşırı güvenli, dar aralık). CWC bu durumu yakalar.
@@ -628,26 +647,28 @@ Metrikler **tek başına** yorumlanmamalıdır:
 **Uygulama:** `ExperimentConfig` (`config.py`), `run_experiment()` (`experiment.py`).
 
 ### 13.1 Konfigürasyon = deneyin birimi
+
 Her eğitim+değerlendirme koşusu tek bir `ExperimentConfig` nesnesiyle tanımlanır ve JSON olarak
 saklanır. `experiment_id` hem çıktı klasörünün hem de karşılaştırma tablosundaki satırın adıdır.
 Bu sayede makaledeki her sayı, onu üreten tam konfigürasyona geri izlenebilir.
 
 **Varsayılan hiperparametreler (makaledeki mimari tablosu için):**
 
-| Parametre | Varsayılan | Parametre | Varsayılan |
-|---|---|---|---|
-| `lookback_hours` | 24 | `learning_rate` | $10^{-3}$ |
-| `horizon_hours` | 24 | `batch_size` | 128 |
-| `window_stride` | 1 | `max_epochs` | 100 |
-| `train_ratio` | 0,74 | `early_stop_patience` | 10 |
-| `val_ratio` | 0,11 | `lr_reduce_factor` | 0,5 |
-| `hidden_sizes` | [64, 32] | `lr_reduce_patience` | 7 |
-| `dropout_rate` | 0,3 | `nonneg_penalty_weight` | 0,1 |
-| `city_embedding_dim` | 4 | `n_bootstrap` | 8 |
-| `seed` | 42 | `mc_dropout_passes` | 100 |
-| | | `bootstrap_block_length` | 168 |
+| Parametre            | Varsayılan | Parametre                | Varsayılan |
+| -------------------- | ---------- | ------------------------ | ---------- |
+| `lookback_hours`     | 24         | `learning_rate`          | $10^{-3}$  |
+| `horizon_hours`      | 24         | `batch_size`             | 128        |
+| `window_stride`      | 1          | `max_epochs`             | 100        |
+| `train_ratio`        | 0,74       | `early_stop_patience`    | 10         |
+| `val_ratio`          | 0,11       | `lr_reduce_factor`       | 0,5        |
+| `hidden_sizes`       | [64, 32]   | `lr_reduce_patience`     | 7          |
+| `dropout_rate`       | 0,3        | `nonneg_penalty_weight`  | 0,1        |
+| `city_embedding_dim` | 4          | `n_bootstrap`            | 8          |
+| `seed`               | 42         | `mc_dropout_passes`      | 100        |
+|                      |            | `bootstrap_block_length` | 168        |
 
 ### 13.2 Çıktılar
+
 ```
 outputs/experiments/<experiment_id>/
 ├── config.json                     # koşunun tam konfigürasyonu
@@ -670,6 +691,7 @@ outputs/experiments_ledger.csv      # KOŞU BAŞINA BİR SATIR — makale tablol
 metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan bu dosyadan üretilir.
 
 ### 13.3 Tekrarlanabilirlik
+
 - Tüm rastgelelik kaynakları tohumlanır: `random`, `numpy`, `torch` (`set_seed`).
 - Her bootstrap replikası için tohum kaydırılır ($\text{seed} + b + 1$); böylece replikalar
   birbirinden farklı ama koşudan koşuya aynıdır.
@@ -678,6 +700,7 @@ metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan b
   üretilebilir.
 
 ### 13.4 Karşılaştırılabilirlik kuralları (makale tabloları için kritik)
+
 - Bir `experiment_id` **yeniden kullanılmamalıdır**; ledger'a satır eklenir, üzerine yazılmaz.
 - Bir koşuda **tek bir eksen** değiştirilmelidir; aksi hâlde tablodaki fark hangi değişikliğe
   ait olduğu belirlenemez.
@@ -687,14 +710,15 @@ metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan b
   aynı eğitim-üzerinde-fit ölçekleyici ve aynı metrik kodu** ile çalıştırılmalıdır.
 
 ### 13.5 Hiperparametre taraması
+
 `configs/experiment_grid.py` içindeki eksenler:
 
-| Eksen | Değerler | Kaynak |
-|---|---|---|
-| Gizli katman yapısı | [32,16], [64,32], [128,64] | Kaynak makale Tablo 6 |
-| Dropout oranı | 0,1 / 0,2 / 0,3 | Kaynak makale Tablo 6 |
-| Geçmiş pencere uzunluğu | 12 / 24 / 48 saat | Bu çalışmaya özgü (PCNN'de karşılığı yok) |
-| Bölme oranı | 0,74/0,11/0,15 vs. 0,64/0,16/0,20 | Bizim tasarımımız vs. kaynak makale |
+| Eksen                   | Değerler                          | Kaynak                                    |
+| ----------------------- | --------------------------------- | ----------------------------------------- |
+| Gizli katman yapısı     | [32,16], [64,32], [128,64]        | Kaynak makale Tablo 6                     |
+| Dropout oranı           | 0,1 / 0,2 / 0,3                   | Kaynak makale Tablo 6                     |
+| Geçmiş pencere uzunluğu | 12 / 24 / 48 saat                 | Bu çalışmaya özgü (PCNN'de karşılığı yok) |
+| Bölme oranı             | 0,74/0,11/0,15 vs. 0,64/0,16/0,20 | Bizim tasarımımız vs. kaynak makale       |
 
 ---
 
@@ -773,23 +797,24 @@ metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan b
 
 ## 17. Kod haritası (belge ↔ uygulama)
 
-| Bölüm | Dosya | Ana fonksiyon/sınıf |
-|---|---|---|
-| §3–4 Veri ve ön işleme | `src/merve_solar/data.py` | `load_city_sheet`, `load_all_cities` |
-| §5 Öznitelikler, sabitler | `src/merve_solar/config.py` | `NUMERIC_FEATURE_COLUMNS`, `ExperimentConfig` |
-| §6 Bölme sınırları | `src/merve_solar/windows.py` | `compute_split_boundaries` |
-| §7 Ölçekleme | `src/merve_solar/scaling.py` | `fit_scaler`, `inverse_transform_target` |
-| §8 Pencereleme | `src/merve_solar/windows.py` | `build_experiment_windows` |
-| §9 Model | `src/merve_solar/model.py` | `SolarLSTM` |
-| §10 Eğitim | `src/merve_solar/train.py` | `train_model`, `nonneg_penalty` |
-| §11.1 MC Dropout | `src/merve_solar/mc_dropout.py` | `mc_dropout_predict` |
-| §11.2 Bootstrap | `src/merve_solar/bootstrap.py` | `resample_train_split` |
-| §11.4, §12 Metrikler | `src/merve_solar/metrics.py` | `summarize_predictive_distribution`, `compute_all_metrics` |
-| §13 Orkestrasyon | `src/merve_solar/experiment.py` | `run_experiment` |
-| §13.5 Tarama | `configs/experiment_grid.py` | `build_experiment_grid` |
-| §13.2 Şekiller | `src/merve_solar/utils.py` | `plot_forecast_with_ci`, `plot_metric_vs_horizon` |
+| Bölüm                     | Dosya                           | Ana fonksiyon/sınıf                                        |
+| ------------------------- | ------------------------------- | ---------------------------------------------------------- |
+| §3–4 Veri ve ön işleme    | `src/merve_solar/data.py`       | `load_city_sheet`, `load_all_cities`                       |
+| §5 Öznitelikler, sabitler | `src/merve_solar/config.py`     | `NUMERIC_FEATURE_COLUMNS`, `ExperimentConfig`              |
+| §6 Bölme sınırları        | `src/merve_solar/windows.py`    | `compute_split_boundaries`                                 |
+| §7 Ölçekleme              | `src/merve_solar/scaling.py`    | `fit_scaler`, `inverse_transform_target`                   |
+| §8 Pencereleme            | `src/merve_solar/windows.py`    | `build_experiment_windows`                                 |
+| §9 Model                  | `src/merve_solar/model.py`      | `SolarLSTM`                                                |
+| §10 Eğitim                | `src/merve_solar/train.py`      | `train_model`, `nonneg_penalty`                            |
+| §11.1 MC Dropout          | `src/merve_solar/mc_dropout.py` | `mc_dropout_predict`                                       |
+| §11.2 Bootstrap           | `src/merve_solar/bootstrap.py`  | `resample_train_split`                                     |
+| §11.4, §12 Metrikler      | `src/merve_solar/metrics.py`    | `summarize_predictive_distribution`, `compute_all_metrics` |
+| §13 Orkestrasyon          | `src/merve_solar/experiment.py` | `run_experiment`                                           |
+| §13.5 Tarama              | `configs/experiment_grid.py`    | `build_experiment_grid`                                    |
+| §13.2 Şekiller            | `src/merve_solar/utils.py`      | `plot_forecast_with_ci`, `plot_metric_vs_horizon`          |
 
 **Çalıştırma:**
+
 ```bash
 uv run python scripts/01_prepare_base_data.py                                    # bir kez
 uv run python scripts/run_experiment.py --config configs/config_000_smoke.json   # tek deney
