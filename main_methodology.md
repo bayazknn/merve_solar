@@ -758,9 +758,14 @@ bileşimi bakımından ayrıcalıklı değildir ve ufuk bazlı gündüz karşıl
 | İl bazında         | `metrics/results_summary.csv`    | Alt küme × (Aggregate + Aggregate_excl_Rize + iller) |
 | Ufuk adımı bazında | `metrics/results_by_horizon.csv` | Alt küme × (1 saat ileri … 24 saat ileri)       |
 
-İki sütun kaç şeyin puanlandığını ayırır: `n_samples` **pencere** sayısıdır ve alt kümeden
-bağımsızdır; `n_elements` puanlanan $(pencere, ufuk adımı)$ çifti sayısıdır ve gündüz alt
-kümesinde yaklaşık yarıya iner. Ledger, at-a-glance karşılaştırma için tüm-saat sütunlarının
+İki sütun kaç şeyin puanlandığını ayırır: `n_samples`, alt kümede **en az bir** puanlanan
+elemanı olan **pencere** sayısıdır (`metrics.py`, `element_mask.any(axis=1).sum()`);
+`n_elements` puanlanan $(pencere, ufuk adımı)$ çifti sayısıdır ve gündüz alt kümesinde
+yaklaşık yarıya iner. Bu veri kümesinde iki alt kümenin `n_samples` değeri aynı çıkar
+(ör. 44.155), ama bu tanım gereği değil bir sonuçtur: ufuk 24 saat olduğundan her pencere
+tam bir günü kapsar ve içinde mutlaka en az bir gündüz adımı bulunur. `horizon_hours` bir
+gece boyuna sığacak kadar kısaltılırsa gündüz `n_samples`'ı tüm-saat değerinin altına
+düşer. Ledger, at-a-glance karşılaştırma için tüm-saat sütunlarının
 yanına `RMSE_daylight`, `MAE_daylight`, `R2_daylight`, `CP_daylight` ve
 `n_elements_daylight` sütunlarını da taşır; tam döküm `results_summary.csv`'dedir.
 
@@ -805,28 +810,75 @@ Bu sayede makaledeki her sayı, onu üreten tam konfigürasyona geri izlenebilir
 | `seed`               | 42         | `mc_dropout_passes`      | 100        |
 |                      |            | `bootstrap_block_length` | 168        |
 
+`ExperimentConfig` bunların yanında **kol seçimi ve ölçüt eksenlerini** de taşır. Bu alanlar
+tek bir koşunun neyi öğrendiğini ve neye göre puanlandığını belirlediği için hepsi ledger
+sütunudur (§13.2) ve hepsi `__post_init__` içinde doğrulanır — yazım hatası konfigürasyon
+yüklenirken düşer, saatler sonra eğitim ortasında değil.
+
+| Parametre             | Varsayılan     | Ne seçer                                                                                                                                  |
+| --------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `training_scope`      | `"global"`     | Havuzlanmış tek model (`global`, manşet konfigürasyon) mi, il başına bağımsız model seti (`per_city`, transfer ablasyon kolu) mi           |
+| `model_family`        | `"lstm"`       | Ledger satırının model ailesi. `run_experiment` **yalnızca** `lstm` eğitir; `climatology`/`persistence`/`smart_persistence` satırları eğitimsiz olarak `scripts/03_run_naive_baselines.py` tarafından üretilir |
+| `loss_function`       | `"mse"`        | Eğitim ölçütü: `mse` / `mae` / `huber` (§10.1)                                                                                             |
+| `huber_delta`         | 1,0            | Yalnızca `loss_function="huber"` iken; geçiş noktası, **ölçeklenmiş** hedef uzayında                                                        |
+| `loss_daylight_only`  | `False`        | Kayıp yalnız gündüz adımları üzerinden hesaplansın mı (raporlama değil, modelleme değişikliği)                                              |
+| `per_city_scaler`     | `True`         | Yalnızca `training_scope="per_city"` iken; her il kendi ölçekleyicisini alır (§7'deki belgelenmiş istisna). `False` havuzlanmış ölçekleyiciyi paylaştırır |
+| `clamp_night_to_zero` | `True`         | Ters ölçeklemeden sonra $\text{CLRSKY} = 0$ elemanlarını sıfıra kırp (§11.3)                                                                |
+| `excluded_cities`     | `[]`           | Bu koşudan **tamamen** (eğitim, doğrulama ve test) çıkarılan iller; il kimlikleri yeniden numaralandırılmaz                                 |
+
 ### 13.2 Çıktılar
 
 ```
 outputs/experiments/<experiment_id>/
-├── config.json                     # koşunun tam konfigürasyonu
-├── log.txt                         # cihaz, bölme tarihleri, replika bazında val loss, süre
+├── config.json                       # koşunun tam konfigürasyonu
+├── log.txt                           # cihaz, bölme tarihleri, replika bazında val loss, süre
 ├── checkpoints/
-│   ├── bootstrap_model_<b>.pt      # her replikanın ağırlıkları
-│   └── scaler.joblib               # fit edilmiş ölçekleyici
+│   ├── bootstrap_model_<b>.pt        # küresel kol: her replikanın ağırlıkları
+│   ├── scaler.joblib                 # küresel kol (ve per_city_scaler=False) ölçekleyicisi
+│   ├── bootstrap_model_<il>_<b>.pt   # il bazlı kol: (il × replika) ağırlıkları
+│   └── scaler_<il>.joblib            # il bazlı kol: il başına ölçekleyici
 ├── metrics/
-│   ├── results_summary.csv         # Aggregate + il bazında
-│   └── results_by_horizon.csv      # 1–24 saat ufuk adımları
+│   ├── results_summary.csv           # alt küme × (Aggregate + Aggregate_excl_Rize + iller)
+│   ├── results_by_horizon.csv        # alt küme × 1–24 saat ufuk adımları
+│   └── test_predictions.npz          # öngörü dağılımının özeti: mean/lower/upper + y_true,
+│                                     #   city_id, daylight, window_start
 └── figures/
-    ├── forecast_ci_<il>.png        # temsilî 24 saatlik tahmin + %95 CI
-    ├── rmse_vs_horizon.png
-    └── cp_vs_horizon.png
+    ├── forecast_ci_<il>.png          # temsilî 24 saatlik tahmin + %95 CI
+    ├── rmse_vs_horizon.png           # sonek yok = all_hours
+    ├── rmse_vs_horizon_daylight.png  # _daylight = manşet alt küme
+    ├── cp_vs_horizon.png
+    └── cp_vs_horizon_daylight.png
 
-outputs/experiments_ledger.csv      # KOŞU BAŞINA BİR SATIR — makale tablolarının kaynağı
+outputs/experiments_ledger.csv        # KOŞU BAŞINA BİR SATIR — makale tablolarının kaynağı
 ```
 
-`experiments_ledger.csv`, her koşunun temel konfigürasyon alanlarını ve toplulaştırılmış
-metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan bu dosyadan üretilir.
+`checkpoints/` altındaki iki dosya adı deseninden yalnızca biri bulunur; hangisi olduğu
+`training_scope`'a bağlıdır. `test_predictions.npz` tam örneklemi değil dağılımın özetini
+saklar (tam doğrulukta $(S, N, 24)$ dizisi ≈3,4 GB olurdu); eşli anlamlılık testleri bunu
+okur, dolayısıyla böyle bir test deneyin koştuğu makinede koşulmalıdır. `.pt` ve `.npz`
+dosyaları sürüm kontrolüne alınmaz, tohumlanmış konfigürasyondan yeniden üretilir.
+
+`experiments_ledger.csv` satırının şeması `experiment.py::LEDGER_COLUMNS` ile sabitlenmiştir;
+`assert_ledger_schema_ok()` her koşunun **başında** diskteki başlıkla karşılaştırır, böylece
+şema uyuşmazlığı saatler süren bir eğitimin sonunda değil milisaniyeler içinde düşer. Satır
+üç bloktan oluşur:
+
+- **Kimlik ve eksenler:** `experiment_id`, `model_family`, `training_scope`,
+  `excluded_cities` (sıralı, `|` ile ayrılmış dize; hiçbiri dışlanmamışsa boş),
+  `lookback_hours`, `horizon_hours`, `window_stride`, `n_features`, `hidden_sizes`,
+  `dropout_rate`, `city_embedding_dim`, `train_ratio`, `val_ratio`, `n_bootstrap`,
+  `mc_dropout_passes`, `max_epochs`, `early_stop_patience`, `loss_function`, `huber_delta`,
+  `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`, `seed`.
+- **Metrikler:** tüm-saat toplulaştırması (`RMSE`, `MAE`, `R2`, `CP`, `PINW`, `MPIW`,
+  `Reliability`, `CWC`, `CRPS`, `n_samples`, `n_elements`) ve gündüz özeti (`RMSE_daylight`,
+  `MAE_daylight`, `R2_daylight`, `CP_daylight`, `n_elements_daylight`).
+- **Koşu bilgisi:** `hit_max_epochs`, `n_models_trained`, `training_time_sec`.
+  `hit_max_epochs` sıfırdan büyükse eğitimi erken durdurma değil epok tavanı bitirmiştir; iki
+  kol farklı miktarda eğitim almışsa karşılaştırılamazlar, dolayısıyla bu sütun her
+  kol-karşılaştırmasından önce okunmalıdır.
+
+Makaledeki karşılaştırma tabloları doğrudan bu dosyadan üretilir; kaydedilmeyen bir alan
+değiştirilmişse iki satır tabloda ayırt edilemez (§13.4).
 
 ### 13.3 Tekrarlanabilirlik
 
@@ -856,9 +908,24 @@ metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan b
 - Karşılaştırma modelleri (GRU, SVM, RF, MLP …) **aynı pencereler, aynı kronolojik bölme,
   aynı eğitim-üzerinde-fit ölçekleyici ve aynı metrik kodu** ile çalıştırılmalıdır.
 
-### 13.5 Hiperparametre taraması
+### 13.5 Deney taraması
 
-`configs/experiment_grid.py` içindeki eksenler:
+`configs/experiment_grid.py` taramayı **adlandırılmış gruplar** hâlinde tutar
+(`EXPERIMENT_GROUPS`) ve `build_experiment_grid(gruplar)` seçilenleri birleştirip yinelenen
+`experiment_id` varsa hata verir. Gruplandırmanın nedeni maliyettir: bütün grupları birden
+koşmak günler sürer, dolayısıyla koşumlar `run_all_experiments.py --group ...` ile tek tek
+seçilir (grup verilmezse **hepsi** seçilir).
+
+| Grup               | Kol | Doğruluk (fidelity)                  | Ne için                                                                     |
+| ------------------ | --- | ------------------------------------ | --------------------------------------------------------------------------- |
+| `smoke`            | 2   | $B=1$, $T=10$, 5 epok                | Pahalı hiçbir şeyden önce her iki `training_scope` kolunu uçtan uca koşmak   |
+| `main`             | 10  | Varsayılan ($B=8$, $T=100$)          | Hiperparametre taraması (aşağıdaki eksen tablosu)                            |
+| `ablation`         | 8   | $B=8$, $T=100$, 200 epok             | `global` ↔ `per_city`: kaynak makalenin iller-arası transfer iddiasının sınanması |
+| `rize_curve`       | 12  | $B=8$, $T=100$, 200 epok             | Kayıp seçimi (3 kol) + Rize transfer eğrisi (9 kol)                          |
+| `rize_curve_b1`    | 12  | $B=1$, $T=100$, 100 epok (`ABLATION_B1`) | Aynı çalışmanın eldeki hesap kaynağına sığan indirgenmiş kopyası         |
+| `rize_curve_smoke` | 2   | $B=1$, $T=10$, 5 epok                | Yalnızca dışlama kod yollarının sınanması                                    |
+
+**`main` grubunun eksenleri (hiperparametre taraması):**
 
 | Eksen                   | Değerler                          | Kaynak                                    |
 | ----------------------- | --------------------------------- | ----------------------------------------- |
@@ -866,6 +933,22 @@ metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan b
 | Dropout oranı           | 0,1 / 0,2 / 0,3                   | Kaynak makale Tablo 6                     |
 | Geçmiş pencere uzunluğu | 12 / 24 / 48 saat                 | Bu çalışmaya özgü (PCNN'de karşılığı yok) |
 | Bölme oranı             | 0,74/0,11/0,15 vs. 0,64/0,16/0,20 | Bizim tasarımımız vs. kaynak makale       |
+
+**Ablasyon gruplarının eksenleri (`smoke`, `ablation`, `rize_curve*`):**
+
+| Eksen             | Değerler                                                                     | Neyi ayırır                                                                                                   |
+| ----------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `training_scope`  | `global` / `per_city`                                                        | Havuzlamanın kendisi. Her çift tek bir sözlükten kurulur, böylece kollar kanıtlanabilir biçimde yalnız bu alanda ayrılır |
+| `excluded_cities` | Rize tek başına → Rize+Ankara / Rize+Antalya → 4 il → 5 il                    | Transferin **yönü**: her kol Rize'nin kendi test pencerelerinde puanlanır. İkili kollar aynı sayıda pencereyle eğitilir, yalnız hangi ilin eklendiği değişir — "daha çok veri" ile "daha çeşitli veri"yi ayıran kontrol budur |
+| `loss_function`   | `mse` / `mae` / `huber`                                                      | Eğitim ölçütü, beş ilde sabit havuzlamayla. Hedefin artık dağılımı sağa çarpık olduğundan L1'in MAE'yi iyileştirip RMSE'yi kötüleştirmesi beklenir; bulgu bu ödünleşimdir |
+| `seed`            | 42 / 43 / 44 (`ABLATION_SEEDS`)                                              | Değişkenlik. Tohum hem ağırlık ilklendirmesini hem bootstrap çekilişini değiştirdiği için doğru değişkenlik birimidir; kollar arası fark tohumlar arası yayılımdan küçükse dürüst sonuç "fark saptanamadı"dır |
+
+> **Uyarı (tasarım sınırı, kodda da not düşülmüştür).** `rize_curve` iki aşamalıdır: 1. aşama
+> kaybı seçer, 2. aşama havuzlamayı değiştirir. Ancak 2. aşama kaybı `ExperimentConfig`
+> varsayılanından (`"mse"`) alır, 1. aşamanın kazananından değil. 1. aşama `mae` ya da `huber`
+> seçerse eğri bunu kullanmaz; o hâlde 2. aşama `loss_function` açıkça verilerek yeniden
+> tanımlanmalıdır. Aksi hâlde iki aşama, yalnızca aynı doğruluğu paylaşan iki bağımsız
+> tek-eksenli karşılaştırmadır.
 
 ---
 
@@ -927,8 +1010,14 @@ metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan b
    `daylight`; gündüz göstergesi $\text{CLRSKY} > 0$, §4.2) ve **makalenin manşet sayıları
    gündüz alt kümesinden alınmalıdır**. Tüm-saat R²'si üç metrik içinde en yanıltıcı olanıdır.
 2. **Negatiflik cezası ölçeklenmiş uzayda uygulanmaktadır** (§10.1 uyarısı).
-3. **Tek bir tohum (seed).** Sonuçlar tek bir tohumla üretilmiştir; çoklu tohumla ortalama ±
-   standart sapma raporlanması istatistiksel olarak daha güçlü olur.
+3. **Tohum çeşitliliği tasarımda vardır, tam doğrulukta henüz yoktur.** Çoklu tohum
+   planlanmıştır: `configs/experiment_grid.py::ABLATION_SEEDS = (42, 43, 44)` ve kol-kol
+   karşılaştırma taşıyan kollar (ablasyon çifti, eğrinin iki uç noktası) üç tohumla
+   tanımlanmıştır. Ancak **tam doğrulukta ($B=8$, $T=100$) hiçbir çoklu-tohum sonucu
+   üretilmemiştir**; eldeki çoklu-tohum kolları indirgenmiş doğruluktadır (`ABLATION_B1`,
+   $B=1$) ve §13.4 gereği bunların aralık metrikleri $B=8$ satırlarıyla karşılaştırılamaz.
+   Makaleye ortalama ± standart sapma yazılabilmesi için manşet konfigürasyonun üç tohumda
+   tam doğrulukta koşulması gerekir.
 4. **Dış (exogenous) girdiler gerçek gözlemdir.** Model, tahmin ufkunda değil yalnızca geçmiş
    pencerede meteorolojik değişken kullanmaktadır; operasyonel bir sistemde bu değişkenlerin
    sayısal hava tahmini (NWP) çıktısı olarak gelmesi gerekir.
@@ -950,9 +1039,12 @@ metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan b
   üçünde de MAE/RMSE ile birlikte, her iki alt küme için raporlanır.
 - Karşılaştırma modelleri (SVM, Prophet, GRU; Prophet uygulanabilir değilse Random Forest veya
   MLP) — §13.4 kurallarına uygun biçimde eklenmelidir.
-- Makale için betimleyici şekiller: beş ili gösteren harita, değişken–ışınım saçılım grafikleri,
-  korelasyon matrisi, il bazında aylık kutu grafikleri, ay × yıl × ışınım 3B yüzeyi, mevsimsel
-  grafikler.
+- Makale için betimleyici şekiller **harita dışında tamamlanmıştır**
+  (`scripts/02_descriptive_analysis.py` → `outputs/eda/figures/`, her biri PNG + vektör PDF):
+  değişken–ışınım saçılım grafikleri, korelasyon matrisleri, il bazında aylık kutu grafikleri,
+  ay × yıl × ışınım 3B yüzeyi (ve 2B anomali eşlikçisi) ve iki mevsimsel görünüm. **Açık
+  kalan:** beş ili gösteren harita ve illerin iklim/coğrafya farklarını anlatan paragraf;
+  ikisi de dış geoveri gerektirdiği için bu depodan üretilememektedir.
 
 ---
 
@@ -969,15 +1061,58 @@ metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan b
 | §10 Eğitim                | `src/merve_solar/train.py`      | `train_model`, `nonneg_penalty`                            |
 | §11.1 MC Dropout          | `src/merve_solar/mc_dropout.py` | `mc_dropout_predict`                                       |
 | §11.2 Bootstrap           | `src/merve_solar/bootstrap.py`  | `resample_train_split`                                     |
-| §11.4, §12 Metrikler      | `src/merve_solar/metrics.py`    | `summarize_predictive_distribution`, `compute_all_metrics` |
-| §13 Orkestrasyon          | `src/merve_solar/experiment.py` | `run_experiment`                                           |
-| §13.5 Tarama              | `configs/experiment_grid.py`    | `build_experiment_grid`                                    |
+| §8 Torch veri yükleyici   | `src/merve_solar/datasets.py`   | `WindowDataset`, `make_dataloader`                         |
+| §11.4, §12 Metrikler      | `src/merve_solar/metrics.py`    | `summarize_predictive_distribution`, `compute_metric_subsets` |
+| §12 Naif referans zemini  | `src/merve_solar/baselines.py`  | `add_baseline_columns`, `build_baseline_predictions`       |
+| §13 Orkestrasyon          | `src/merve_solar/experiment.py` | `run_experiment`, `LEDGER_COLUMNS`, `SCOPE_RUNNERS`        |
+| §13.5 Tarama              | `configs/experiment_grid.py`    | `build_experiment_grid`, `EXPERIMENT_GROUPS`               |
 | §13.2 Şekiller            | `src/merve_solar/utils.py`      | `plot_forecast_with_ci`, `plot_metric_vs_horizon`          |
+| §3 Betimleyici analiz     | `src/merve_solar/eda.py`        | `descriptive_table`, `correlation_tables`, `persistence_baseline_table` |
+| Makale şekil stili        | `src/merve_solar/paper_style.py`| `PAPER_RC`, `save_figure`                                  |
+
+Betikler (hepsi `src/`'ı `sys.path`'e ekler; `PROJECT_ROOT` dışında yol argümanı almazlar):
+
+| Betik                              | Ne yapar                                                              |
+| ---------------------------------- | --------------------------------------------------------------------- |
+| `scripts/01_prepare_base_data.py`  | §3–5 taban öznitelik parquet'ini bir kez üretir                        |
+| `scripts/02_descriptive_analysis.py` | `outputs/eda/{tables,figures}` — betimleyici tablolar ve makale şekilleri |
+| `scripts/03_run_naive_baselines.py`| Naif referansları aynı pencere/bölme/metrik yolundan ledger'a yazar    |
+| `scripts/run_experiment.py`        | Tek `ExperimentConfig` koşusu (§13.1)                                  |
+| `scripts/run_all_experiments.py`   | Seçilen tarama grupları (§13.5)                                        |
+
+Sınama (`uv run python -m pytest tests/ -q`) — her dosyanın koruduğu değişmez:
+
+| Dosya                        | Neyi korur                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------ |
+| `tests/test_data.py`         | §4 veri bütünlüğü: kuyruk kesme satır sayısı, kalan −999 yok, NaN yok           |
+| `tests/test_windows.py`      | §8 pencereler il ve bölme sınırını aşmaz; gündüz dizisi ufka doğru hizalanır    |
+| `tests/test_metrics.py`      | §12 metrik tanımları; CRPS'in parça boyutundan bağımsızlığı ve nokta tahminde MAE'ye indirgenmesi |
+| `tests/test_ledger.py`       | §13.2 ledger şeması; uyuşmazlıkta dosyanın bayt-bayt korunması                  |
+| `tests/test_scope.py`        | §13.5 iki `training_scope` kolunun aynı gerçek değerle puanlanması, il-blok hizası |
+| `tests/test_excluded_cities.py` | Dışlamanın il kimliklerini yeniden numaralandırmaması ve bölme tarihlerini kaydırmaması |
+| `tests/test_loss_function.py`| §10.1 kayıp seçiminin gerçekten ölçütü değiştirmesi, `huber_delta`'nın geçmesi   |
+| `tests/test_loss_masking.py` | `loss_daylight_only` maskesi ve gündüzsüz yığının atlanması                      |
+| `tests/test_baselines.py`    | Naif referansların model hedefleriyle aynı pencerelerde ve aynı gece kırpmasıyla puanlanması |
+| `tests/test_cli_overrides.py`| Eksen geçersiz kılmalarının `--experiment-id` olmadan reddi                     |
+| `tests/test_grid.py`         | §13.5 gruplarında yinelenen `experiment_id` olmaması; ablasyon çiftlerinin tek eksende ayrılması |
+| `tests/test_eda.py`          | §3 betimleyici katman: gündüz maskesinin geometrik olması, ACF/PACF doğruluğu    |
 
 **Çalıştırma:**
 
 ```bash
 uv run python scripts/01_prepare_base_data.py                                    # bir kez
+uv run python scripts/02_descriptive_analysis.py                                 # EDA tablo + şekilleri
+uv run python scripts/03_run_naive_baselines.py                                  # naif referans zemini
 uv run python scripts/run_experiment.py --config configs/config_000_smoke.json   # tek deney
-uv run python scripts/run_all_experiments.py                                     # tüm tarama
+
+# Kayıtlı bir konfigürasyonu tek bir kol için yeniden kullanma. Herhangi bir geçersiz kılma
+# --experiment-id ister: aksi hâlde koşu o kimliğin çıktı klasörünü ezer ve ledger'da artık
+# yanlış tarif eden bir satır bırakır (§13.4).
+uv run python scripts/run_experiment.py --config configs/config_000_smoke.json \
+    --exclude-city Rize --loss mae --experiment-id smoke_excl_rize_mae
+
+uv run python scripts/run_all_experiments.py --list                              # ne koşulacak
+uv run python scripts/run_all_experiments.py --group ablation --skip-existing --continue-on-error
 ```
+
+`run_all_experiments.py` grup verilmediğinde **bütün** grupları seçer (günler); önce `--list`.
