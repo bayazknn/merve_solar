@@ -75,8 +75,10 @@ def main() -> None:
     failures = []
 
     for i, config in enumerate(configs, start=1):
+        excluded = config.excluded_cities_key or "none"
         print(f"\n[{i}/{len(configs)}] {config.experiment_id} "
-              f"(scope={config.training_scope}, seed={config.seed})")
+              f"(scope={config.training_scope}, loss={config.loss_function}, "
+              f"excluded={excluded}, seed={config.seed})")
         try:
             subsets = run_experiment(config, base_df=base_df)
         except Exception:
