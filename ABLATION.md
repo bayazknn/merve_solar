@@ -266,7 +266,7 @@ Aynı kollar, **Rize** satırı (109 043 gündüz elemanı):
 | *Taban: kalıcılık* | *141.89* | *90.89* | *0.6679* | — | — |
 
 24 saatlik (ikincil) değerler, `Aggregate`: MSE 69.63 / 38.05 / 0.9366, MAE 67.43 / 34.45 /
-0.9406, Huber 67.84 / 37.55 / 0.9398; klimatoloji tabanı 76.71 / 37.86 / 0.9231.
+0.9406, Huber 67.84 / 37.55 / 0.9398; klimatoloji tabanı 76.71 / 37.82 / 0.9231.
 
 **Seçim: MAE (L1).** Ve bu, `config.py::LOSS_FUNCTIONS` altında yazılı beklentiyi **çürütür**.
 Orada şöyle deniyordu: "L1 ile eğitmenin MAE'yi iyileştirmesi, RMSE'yi kötüleştirmesi beklenir;
