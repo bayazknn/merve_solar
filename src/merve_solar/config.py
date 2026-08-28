@@ -163,6 +163,13 @@ class ExperimentConfig:
     # layer unconstrained at night so CP and PINW become partly meaningless there. Evaluate it
     # as its own experiment rather than folding it into another comparison.
     loss_daylight_only: bool = False
+    # Only meaningful when training_scope="per_city". True (default) gives each province its own
+    # scaler, so the isolated arm contains no cross-province information at all. False reuses the
+    # pooled scaler, which disentangles a confound: a per-province target scaler also renormalises
+    # the loss and the early-stopping signal per province, an effect that favours the per_city arm
+    # independently of anything the model learned. Running one seed both ways turns that from an
+    # admitted assumption into a measured number.
+    per_city_scaler: bool = True
 
     def __post_init__(self) -> None:
         # Validate here rather than at use: from_json() runs this too, so a typo'd

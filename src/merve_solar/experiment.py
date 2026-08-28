@@ -36,7 +36,7 @@ LEDGER_COLUMNS: tuple[str, ...] = (
     "hidden_sizes", "dropout_rate", "city_embedding_dim",
     "train_ratio", "val_ratio",
     "n_bootstrap", "mc_dropout_passes", "max_epochs", "early_stop_patience",
-    "loss_daylight_only", "seed",
+    "loss_daylight_only", "per_city_scaler", "seed",
     "RMSE", "MAE", "R2", "CP", "PINW", "MPIW", "Reliability", "CWC", "CRPS",
     "n_samples", "n_elements",
     "RMSE_daylight", "MAE_daylight", "R2_daylight", "CP_daylight", "n_elements_daylight",
@@ -93,6 +93,7 @@ def _ledger_row(config, subsets: dict, run_stats: dict, training_time_sec: float
         "max_epochs": config.max_epochs,
         "early_stop_patience": config.early_stop_patience,
         "loss_daylight_only": config.loss_daylight_only,
+        "per_city_scaler": config.per_city_scaler,
         "seed": config.seed,
         **{k: agg.get(k) for k in
            ("RMSE", "MAE", "R2", "CP", "PINW", "MPIW", "Reliability", "CWC", "CRPS",
@@ -253,11 +254,26 @@ def _run_per_city_scope(base_df, config, train_end, val_end, layout, device, exp
     filled = np.zeros(layout_test["y"].shape[0], dtype=bool)
     hit_cap = 0
 
+    # With per_city_scaler=False the pooled scaler is fitted once and shared, so the arms differ
+    # only in what each model was trained on, not in how the target was normalised.
+    shared_scaler = None
+    if not config.per_city_scaler:
+        shared_scaler = fit_scaler(base_df, train_end)
+        save_scaler(shared_scaler, exp_dir / "checkpoints" / "scaler.joblib")
+        log_lines.append("per_city_scaler=False: all provinces share the pooled scaler")
+
     for city_idx, city in enumerate(CITIES):
-        splits, city_scaler = _fit_scale_window(
-            base_df[base_df["city"] == city], config, train_end, val_end, [city],
-            exp_dir / "checkpoints" / f"scaler_{city}.joblib",
-        )
+        city_rows = base_df[base_df["city"] == city]
+        if shared_scaler is None:
+            splits, city_scaler = _fit_scale_window(
+                city_rows, config, train_end, val_end, [city],
+                exp_dir / "checkpoints" / f"scaler_{city}.joblib",
+            )
+        else:
+            city_scaler = shared_scaler
+            splits = build_experiment_windows(
+                apply_scaler(city_rows, shared_scaler), config, train_end, val_end, cities=[city]
+            )
         slot = np.flatnonzero(layout_test["city_id"] == city_idx)
         _assert_city_block_aligned(city, splits["test"], layout_test, slot)
         for name, d in splits.items():

@@ -121,3 +121,18 @@ def test_alignment_guard_rejects_shuffled_windows():
 
     with pytest.raises(RuntimeError, match="layout slots"):
         _assert_city_block_aligned(city, alone["test"], layout["test"], slot[:-1])
+
+
+def test_per_city_scaler_flag_switches_to_the_pooled_scaler(isolated_outputs):
+    """The sensitivity arm that separates the normalisation effect from the training effect."""
+    df = make_synthetic_base_df(SCOPE_HOURS)
+    config = _tiny_config("per_city")
+    config = ExperimentConfig(**{**config.__dict__, "experiment_id": "test_shared_scaler",
+                                "per_city_scaler": False})
+    run_experiment(config, base_df=df)
+
+    checkpoints = isolated_outputs / "experiments" / config.experiment_id / "checkpoints"
+    assert (checkpoints / "scaler.joblib").exists(), "expected one pooled scaler"
+    for city in CITIES:
+        assert not (checkpoints / f"scaler_{city}.joblib").exists()
+        assert (checkpoints / f"bootstrap_model_{city}_0.pt").exists(), "still one model per city"
