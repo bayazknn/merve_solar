@@ -395,9 +395,13 @@ standart hata 0.91 (≈1.5 SH); her ikisinde de `solo` ve `all5` tohum aralıkla
 (`solo` [110.93, 115.21], `all5` [110.86, 112.88]).
 
 Üçüncü `all5` tohumu eklendiğinde fark −1.12'den −1.53'e büyüdü ve `all5`'in sapması yarıya
-indi; üç `all5` tohumu da `solo` ortalamasının altındadır, yani **yön tutarlıdır**. Ama üçü de
-`solo` aralığının içinde kalır ve $n=3$ ile standart hata kestirimi zaten çok zayıftır. İşaret
-testi bile ($3/3$) $p = 0.125$'ten iyi olamaz. Yön lehte, büyüklük ölçülemiyor.
+indi. Üç `all5` tohumu da `solo` **ortalamasının** altındadır — ama bu bir işaret testi değildir
+ve tutarlılığı olduğundan güçlü gösterir. Tohumlar eşleştirilerek bakıldığında (aynı tohum,
+iki kol) fark $[-2.33,\; +0.37,\; -2.64]$'tür: **`all5` üç tohumun ikisinde kazanıyor**, s43'te
+kaybediyor. Eşleştirilmiş işaret testi $2/3$, yani $p = 0.5$; eşleştirilmiş $t$ testi
+$t = -1.60$, $p = 0.250$; eşleştirmesiz Welch $t = -1.11$, $p = 0.352$. Üçü de aynı şeyi
+söylüyor. Ayrıca üç `all5` değeri de `solo` aralığının içinde kalır ve $n=3$ ile standart hata
+kestirimi zaten çok zayıftır.
 
 Dürüst ifade: **bu doğrulukta, Rize için beş ili havuzlamanın tek-il modeline üstünlüğü tespit
 edilememiştir.** Yön (küçük bir iyileşme) doğrudur ama büyüklüğü tohum gürültüsünün altındadır.
