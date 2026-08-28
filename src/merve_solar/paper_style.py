@@ -177,11 +177,17 @@ def white_3d_panes(ax):
 
 
 def save_figure(fig, save_path: Path) -> None:
-    """Write PNG (raster, 300 dpi) and PDF (vector) of the same figure, then close it."""
+    """Write PNG (raster, 300 dpi) and PDF (vector) of the same figure, then close it.
+
+    `CreationDate` is suppressed in the PDF. Without it matplotlib stamps the wall clock into
+    every file, so re-running the analysis marks all 30-odd PDFs as modified even when the
+    figures are byte-identical -- noise in a repo whose outputs are tracked in git, and the
+    kind of spurious diff that invites a careless `git add -A`.
+    """
     import matplotlib.pyplot as plt
 
     save_path = Path(save_path)
     save_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(save_path.with_suffix(".png"), dpi=DPI)
-    fig.savefig(save_path.with_suffix(".pdf"))
+    fig.savefig(save_path.with_suffix(".pdf"), metadata={"CreationDate": None})
     plt.close(fig)
