@@ -101,4 +101,16 @@ def build_baseline_predictions(base_df: pd.DataFrame, config, train_end, val_end
         name: test["extras"][column][usable][None, :, :].astype(np.float32)
         for name, column in BASELINE_COLUMNS.items()
     }
+
+    # Same clamp experiment.py applies to the LSTM arms, for the same reason: below the horizon
+    # the target is exactly zero by geometry. Applying it here is what makes these rows honest
+    # reference floors -- the ledger records clamp_night_to_zero for them either way, so leaving
+    # it out would make the column describe something the run did not do. The effect is small
+    # (climatology's all-hours MAE moves 37.86 -> 37.82; only the (city, month, hour) mean is
+    # nonzero at night at all, at edge hours of a monthly cell) but "small" is not "absent".
+    if config.clamp_night_to_zero:
+        night = ~layout["daylight"]
+        for preds in predictions.values():
+            preds[:, night] = 0.0
+
     return {"predictions": predictions, "layout": layout}
