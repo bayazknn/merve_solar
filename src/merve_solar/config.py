@@ -22,11 +22,21 @@ MISSING_SENTINEL = -999
 LAST_VALID_TIMESTAMP = "2026-03-30 23:00:00"
 EXPECTED_TRIMMED_ROWS_PER_SHEET = 2208
 
+# Target: global horizontal irradiance under all-sky conditions, in W/m^2.
 TARGET_COLUMN = "ALLSKY_SFC_SW_DWN"
+
+# Columns dropped while reading the xlsx (see data.py). The source file is left
+# physically untouched so it stays the raw NASA POWER export; the drop list lives here.
+#   ALLSKY_KT         - clearness index, undefined at night (~50% -999); dropping it is
+#                       what makes the "no -999 remains" integrity check pass.
+#   CLRSKY_SFC_SW_DWN - clear-sky reference irradiance. It is a near-deterministic
+#                       geometric upper envelope of the target, so keeping it turns part
+#                       of the task into a clear-sky-index fit and inflates skill relative
+#                       to what is available operationally. Dropped per TODOs.md.
+DROPPED_COLUMNS = ["ALLSKY_KT", "CLRSKY_SFC_SW_DWN"]
 
 NUMERIC_FEATURE_COLUMNS = [
     "ALLSKY_SFC_SW_DWN",  # own-lag, autoregressive
-    "CLRSKY_SFC_SW_DWN",
     "T2M",
     "RH2M",
     "QV2M",
@@ -44,6 +54,12 @@ NUMERIC_FEATURE_COLUMNS = [
     "doy_sin",
     "doy_cos",
 ]
+
+_dropped_but_used = set(DROPPED_COLUMNS) & (set(NUMERIC_FEATURE_COLUMNS) | {TARGET_COLUMN})
+if _dropped_but_used:
+    raise ValueError(
+        f"Columns are both dropped at load time and used as features/target: {sorted(_dropped_but_used)}"
+    )
 
 
 @dataclass

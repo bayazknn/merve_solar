@@ -67,7 +67,8 @@ Two-stage design, and the split matters: **`data.py` is config-independent, ever
 is per-config.**
 
 1. **Base data (once)** — `data.py` reads the 5 sheets, trims NASA POWER's trailing `-999` latency
-   gap at `LAST_VALID_TIMESTAMP`, drops `ALLSKY_KT` (~50% `-999` at night), adds cyclical
+   gap at `LAST_VALID_TIMESTAMP`, drops the `DROPPED_COLUMNS` (`ALLSKY_KT`, ~50% `-999` at
+   night, and `CLRSKY_SFC_SW_DWN`) at read time so the xlsx stays untouched, adds cyclical
    hour/day-of-year/wind-direction sin-cos features, and caches all cities concatenated to a
    parquet. Every experiment reuses this cache.
 2. **One experiment (per config)** — `experiment.py::run_experiment(config)` is the single
@@ -161,10 +162,10 @@ dataset rather than a single run belong in a dedicated `scripts/` entry point wr
 
 Roughly translated, still outstanding:
 
-- **Dataset decisions:** drop `CLRSKY_SFC_SW_DWN`; confirm `ALLSKY_SFC_SW_DWN` as target. Note the
-  discrepancy — `CLRSKY_SFC_SW_DWN` is *still* an active feature in `NUMERIC_FEATURE_COLUMNS`
-  (`config.py`) despite the TODO. It is a strong physical predictor, so removing it will move the
-  numbers; confirm intent before acting, and rerun the sweep if it is removed.
+- **Dataset decisions: DONE (2026-08-28).** `CLRSKY_SFC_SW_DWN` and `ALLSKY_KT` are now dropped
+  at read time via `DROPPED_COLUMNS` (`config.py`), the feature set is 17 columns, and
+  `ALLSKY_SFC_SW_DWN` is confirmed as `TARGET_COLUMN`. Ledger rows written before this change ran
+  with 18 features and are **not comparable** — the sweep needs rerunning under new ids.
 - **Model configuration:** settle layer count / neuron sizes and the lookback lag; build an
   "optimal LSTM config" from the reference papers.
 - **Baselines for comparison:** SVM, Prophet, GRU (Random Forest or MLP if Prophet is unworkable

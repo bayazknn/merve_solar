@@ -68,9 +68,10 @@ windowing logic — no network or GPU required).
 
 Before any experiment, build the cleaned/feature-engineered cache (loads all
 5 city sheets from `SolarData_Merve_All(16July).xlsx`, trims the trailing
-NASA POWER data-latency gap, drops the unusable `ALLSKY_KT` column, adds
-cyclical time/wind-direction features). Only needs to be run once — every
-experiment reuses the cached file:
+NASA POWER data-latency gap, drops the columns listed in `DROPPED_COLUMNS`
+(`ALLSKY_KT`, `CLRSKY_SFC_SW_DWN` — dropped at read time, the xlsx itself is
+never modified), adds cyclical time/wind-direction features). Only needs to be
+run once — every experiment reuses the cached file:
 
 ```bash
 uv run python scripts/01_prepare_base_data.py

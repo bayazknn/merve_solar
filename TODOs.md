@@ -2,10 +2,13 @@
 - Layer count and neuron sizes?
 - time window lag (24h)?
 
-## Dataset Yapılacaklar:
-- "CLRSKY_SFC_SW_DWN" sütunu silecek
-- "ALLSKY_KT" sütunu silecek
-- "ALLSKY_SFC_SW_DWN" sütunu tahmin edilecek sütun teyit et
+## Dataset Yapılacaklar: (TAMAMLANDI - 2026-08-28)
+- [x] "CLRSKY_SFC_SW_DWN" sütunu silinecek -> `DROPPED_COLUMNS` (src/merve_solar/config.py)
+- [x] "ALLSKY_KT" sütunu silinecek -> `DROPPED_COLUMNS` (src/merve_solar/config.py)
+- [x] "ALLSKY_SFC_SW_DWN" tahmin edilecek sütun -> `TARGET_COLUMN` olarak teyit edildi
+- Not: Sütunlar xlsx dosyasindan fiziksel olarak silinmedi; okuma aninda data.py düşürüyor.
+- Not: Öznitelik sayisi 18 -> 17 düştü. Bu degisiklikten önceki ledger satirlari
+  karsilastirilabilir degil; tarama yeni experiment_id'lerle yeniden kosulmali.
 
 
 ## Makale Eklenecekler

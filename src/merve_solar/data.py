@@ -10,6 +10,7 @@ import pandas as pd
 from merve_solar.config import (
     CITIES,
     CITY_TO_ID,
+    DROPPED_COLUMNS,
     EXPECTED_TRIMMED_ROWS_PER_SHEET,
     LAST_VALID_TIMESTAMP,
     MISSING_SENTINEL,
@@ -60,7 +61,13 @@ def load_city_sheet(city: str) -> pd.DataFrame:
             "The source file's missing-data gap may have changed."
         )
 
-    df = df.drop(columns=["ALLSKY_KT"])  # ~50% -999 at night (undefined), drop before the sentinel check below
+    # Columns are dropped here rather than deleted from the xlsx, so the source file
+    # stays the untouched NASA POWER export. ALLSKY_KT must go before the sentinel
+    # check below (it is -999 for every night hour by definition).
+    missing = [col for col in DROPPED_COLUMNS if col not in df.columns]
+    if missing:
+        raise ValueError(f"{city}: columns marked for dropping are not in the sheet: {missing}")
+    df = df.drop(columns=list(DROPPED_COLUMNS))
 
     if (df.drop(columns=["datetime"]) == MISSING_SENTINEL).any().any():
         raise ValueError(f"{city}: -999 sentinel remains after trimming.")

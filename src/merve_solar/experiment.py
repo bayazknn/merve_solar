@@ -126,6 +126,7 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
             "lookback_hours": config.lookback_hours,
             "horizon_hours": config.horizon_hours,
             "window_stride": config.window_stride,
+            "n_features": len(NUMERIC_FEATURE_COLUMNS),
             "hidden_sizes": str(config.hidden_sizes),
             "dropout_rate": config.dropout_rate,
             "train_ratio": config.train_ratio,

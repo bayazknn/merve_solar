@@ -42,7 +42,7 @@ $$
 $$
 
 Varsayılan olarak $L = 24$ saat (`lookback_hours`), $H = 24$ saat (`horizon_hours`),
-$F = 18$ sayısal öznitelik.
+$F = 17$ sayısal öznitelik.
 
 **Doğrudan çok-çıkışlı (direct multi-output) tahmin:** 24 saatin tamamı tek bir ileri geçişte
 üretilir; özyinelemeli (recursive/iterated) tahmin kullanılmaz. Gerekçe: özyinelemeli yaklaşımda
@@ -118,7 +118,7 @@ modelin il gömme vektöründen ne öğrenmesi gerektiğine dair doğrudan kanı
 | ------------------------ | ------------------------------------------------------------------ | ------- |
 | `YEAR`, `MO`, `DY`, `HR` | Zaman damgası bileşenleri                                          | —       |
 | `ALLSKY_SFC_SW_DWN`      | **Hedef.** Tüm gökyüzü koşullarında yüzeye gelen kısa dalga ışınım | W/m²    |
-| `CLRSKY_SFC_SW_DWN`      | Açık gökyüzü (bulutsuz) referans ışınımı                           | W/m²    |
+| `CLRSKY_SFC_SW_DWN`      | Açık gökyüzü referans ışınımı — **kullanılmadı, silindi**          | W/m²    |
 | `T2M`                    | 2 m sıcaklık                                                       | °C      |
 | `RH2M`                   | 2 m bağıl nem                                                      | %       |
 | `QV2M`                   | 2 m özgül nem                                                      | g/kg    |
@@ -128,6 +128,10 @@ modelin il gömme vektöründen ne öğrenmesi gerektiğine dair doğrudan kanı
 | `WD10M`, `WD50M`         | 10 m / 50 m rüzgâr yönü                                            | derece  |
 | `PRECTOTCORR`            | Düzeltilmiş toplam yağış                                           | mm/saat |
 | `ALLSKY_KT`              | Açıklık indeksi — **kullanılmadı, silindi**                        | —       |
+
+Silinen sütunlar kaynak `.xlsx` dosyasından fiziksel olarak çıkarılmamıştır; dosya ham NASA
+POWER çıktısı olarak korunur ve sütunlar okuma sırasında `DROPPED_COLUMNS`
+(`src/merve_solar/config.py`) listesine göre düşürülür.
 
 ---
 
@@ -153,6 +157,12 @@ NASA POWER, eksik değerleri `-999` ile kodlar. Veri setinde iki tür `-999` bul
    2.208 satır).
 2. **`ALLSKY_KT` sütunu:** Açıklık indeksi gece saatlerinde tanımsızdır; sütunun yaklaşık
    %50'si `-999`'dur. → Sütun **tümüyle düşürülmüştür**.
+
+Bunlara ek olarak `CLRSKY_SFC_SW_DWN` sütunu da (eksik veri nedeniyle değil, modelleme kararı
+gereği) düşürülmüştür: açık gökyüzü ışınımı, hedefin neredeyse tümüyle geometrik olarak
+belirlenen üst zarfıdır; girdi olarak tutulması problemi kısmen bir "açıklık indeksi
+regresyonuna" indirger ve operasyonel olarak elde edilebilir bilgiden daha iyimser bir başarı
+tablosu üretir. Her iki sütun da `DROPPED_COLUMNS` sabiti üzerinden okuma anında düşürülür.
 
 ### 4.3 Doğrulama (fail-fast)
 
@@ -200,19 +210,18 @@ $$
 döngüyü, gün-of-year kodlaması ise mevsimsel döngüyü modele açıkça sunar — güneş ışınımı için
 bu iki döngü sinyalin baskın bileşenleridir.
 
-### 5.2 Nihai öznitelik kümesi ($F = 18$)
+### 5.2 Nihai öznitelik kümesi ($F = 17$)
 
 `NUMERIC_FEATURE_COLUMNS` (`src/merve_solar/config.py`) — sıra kodda tanımlı sıradır:
 
 | #     | Öznitelik                                          | Tür                                                        |
 | ----- | -------------------------------------------------- | ---------------------------------------------------------- |
 | 1     | `ALLSKY_SFC_SW_DWN`                                | **Hedefin kendi gecikmeli değerleri (özbağlanımlı girdi)** |
-| 2     | `CLRSKY_SFC_SW_DWN`                                | Açık gökyüzü referans ışınımı                              |
-| 3–7   | `T2M`, `RH2M`, `QV2M`, `T2MDEW`, `PS`              | Sıcaklık, nem, basınç                                      |
-| 8–10  | `WS10M`, `WS50M`, `PRECTOTCORR`                    | Rüzgâr hızı, yağış                                         |
-| 11–14 | `WD10M_sin`, `WD10M_cos`, `WD50M_sin`, `WD50M_cos` | Rüzgâr yönü (döngüsel)                                     |
-| 15–16 | `hour_sin`, `hour_cos`                             | Günlük (diurnal) döngü                                     |
-| 17–18 | `doy_sin`, `doy_cos`                               | Mevsimsel döngü                                            |
+| 2–6   | `T2M`, `RH2M`, `QV2M`, `T2MDEW`, `PS`              | Sıcaklık, nem, basınç                                      |
+| 7–9   | `WS10M`, `WS50M`, `PRECTOTCORR`                    | Rüzgâr hızı, yağış                                         |
+| 10–13 | `WD10M_sin`, `WD10M_cos`, `WD50M_sin`, `WD50M_cos` | Rüzgâr yönü (döngüsel)                                     |
+| 14–15 | `hour_sin`, `hour_cos`                             | Günlük (diurnal) döngü                                     |
+| 16–17 | `doy_sin`, `doy_cos`                               | Mevsimsel döngü                                            |
 
 Hedef değişkenin kendisi girdi penceresinde yer alır (özbağlanımlı yapı); bu **veri sızıntısı
 değildir**, çünkü pencere yalnızca geçmiş $L$ saati içerir, tahmin edilen $H$ saat penceredeki
@@ -258,7 +267,7 @@ Sınırlar ilk ilin saat sayısı üzerinden hesaplanır ve tüm illere aynı ta
 
 **Uygulama:** `src/merve_solar/scaling.py`.
 
-18 sayısal öznitelik `StandardScaler` ile standartlaştırılır:
+17 sayısal öznitelik `StandardScaler` ile standartlaştırılır:
 
 $$
 z = \frac{x - \mu_{\text{train}}}{\sigma_{\text{train}}}
@@ -319,9 +328,9 @@ $$
 
 | Küme      | Pencere sayısı | Tensör boyutu          |
 | --------- | -------------- | ---------------------- |
-| Eğitim    | 218.745        | $(218745,\, 24,\, 18)$ |
-| Doğrulama | 32.315         | $(32315,\, 24,\, 18)$  |
-| Test      | 44.155         | $(44155,\, 24,\, 18)$  |
+| Eğitim    | 218.745        | $(218745,\, 24,\, 17)$ |
+| Doğrulama | 32.315         | $(32315,\, 24,\, 17)$  |
+| Test      | 44.155         | $(44155,\, 24,\, 17)$  |
 
 Test kümesindeki toplam skaler tahmin sayısı: $44.155 \times 24 = 1.059.720$.
 
@@ -332,7 +341,7 @@ Test kümesindeki toplam skaler tahmin sayısı: $44.155 \times 24 = 1.059.720$.
 **Uygulama:** `SolarLSTM`, `src/merve_solar/model.py`.
 
 ```
-Girdi: X (batch, L=24, F=18)   ve   city_id (batch,)
+Girdi: X (batch, L=24, F=17)   ve   city_id (batch,)
    │
    ├─ Embedding(5 → 4) ──► e_c, her zaman adımına kopyalanır: (batch, 24, 4)
    │
@@ -741,7 +750,7 @@ metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan b
 > sahip bir derin öğrenme çerçevesi önerilmiştir. NASA POWER veri servisinden elde edilen
 > 2019–2026 dönemine ait saatlik meteorolojik veriler (il başına 59.184 saat) kullanılmıştır.
 > Saat, yılın günü ve rüzgâr yönü değişkenleri, döngüsel yapılarının korunması amacıyla
-> sinüs–kosinüs çiftlerine dönüştürülmüş; toplam 18 sayısal öznitelik elde edilmiştir. Veri,
+> sinüs–kosinüs çiftlerine dönüştürülmüş; toplam 17 sayısal öznitelik elde edilmiştir. Veri,
 > zamansal sızıntıyı önlemek amacıyla kronolojik olarak %74 eğitim, %11 doğrulama ve %15 test
 > olarak bölünmüş; bu oranlar test kümesinin tam bir mevsimsel yılı kapsayacak biçimde
 > seçilmiştir. Standartlaştırma parametreleri yalnızca eğitim dönemi üzerinden hesaplanmıştır.
@@ -783,9 +792,9 @@ metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan b
 
 **Açık işler (bkz. `TODOs.md`):**
 
-- `CLRSKY_SFC_SW_DWN` sütununun çıkarılması kararı — hâlen aktif bir özniteliktir; güçlü fiziksel
-  bir yordayıcı olduğundan çıkarılması sonuçları belirgin şekilde değiştirecektir, karar
-  verildikten sonra tüm tarama yeniden koşulmalıdır.
+- `CLRSKY_SFC_SW_DWN` sütunu **çıkarılmıştır** (bkz. §4.2, §5.2). Güçlü bir fiziksel yordayıcı
+  olduğundan sonuçları belirgin biçimde değiştirir; bu karardan önce üretilmiş ledger satırları
+  ($F = 18$) yeni satırlarla karşılaştırılamaz, tüm tarama yeniden koşulmalıdır.
 - **R² metriği henüz uygulanmamıştır**; MAE/RMSE/R² tablosu için `metrics.py`'ye eklenmelidir.
 - Karşılaştırma modelleri (SVM, Prophet, GRU; Prophet uygulanabilir değilse Random Forest veya
   MLP) — §13.4 kurallarına uygun biçimde eklenmelidir.

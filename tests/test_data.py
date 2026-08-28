@@ -5,7 +5,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pytest
 
-from merve_solar.config import CITIES, EXPECTED_TRIMMED_ROWS_PER_SHEET
+from merve_solar.config import (
+    CITIES,
+    DROPPED_COLUMNS,
+    EXPECTED_TRIMMED_ROWS_PER_SHEET,
+    TARGET_COLUMN,
+)
 from merve_solar.data import load_city_sheet
 
 FULL_ROWS_PER_SHEET = 61392
@@ -28,6 +33,13 @@ def test_no_sentinel_or_nan_remains(city_df):
     assert not df.isnull().any().any()
 
 
-def test_allsky_kt_dropped(city_df):
+def test_dropped_columns_removed(city_df):
     _, df = city_df
-    assert "ALLSKY_KT" not in df.columns
+    assert not set(DROPPED_COLUMNS) & set(df.columns)
+
+
+def test_target_column_present(city_df):
+    _, df = city_df
+    assert TARGET_COLUMN in df.columns
+    assert TARGET_COLUMN not in DROPPED_COLUMNS
+    assert (df[TARGET_COLUMN] >= 0).all()
