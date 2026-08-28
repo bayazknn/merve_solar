@@ -109,7 +109,14 @@ betimleyici istatistikleri bu farkı doğrular:
 | Antalya | 206,03          | 287,01     | 0,00 | 1043,07 |
 | Konya   | 203,01          | 284,44     | 0,00 | 1054,35 |
 | Rize    | **153,57**      | 231,54     | 0,00 | 988,15  |
-| Van     | 207,57          | 287,75     | 0,00 | 1215,88 |
+| Van     | 207,57          | 287,75     | 0,00 | 1215,88* |
+
+> \* **Van'ın 1215,88 W/m² maksimumu makalede alıntılanmamalıdır.** Bu saatte açıklık
+> indeksi $k_t = 3{,}28$'dir, yani ölçüm açık gökyüzü referansının üç katıdır — fiziksel
+> olarak imkânsız, bir NASA POWER geri-çatım (retrieval) artefaktı. Savunulabilir en yüksek
+> değer 1068,7 W/m²'dir. Artefakt, hedefin kendi gecikmesi bir öznitelik olduğu için veri
+> kümesinde bırakılmıştır (tek bir saatin silinmesi saatlik seriyi delerdi), ama betimleyici
+> bir istatistik olarak raporlanamaz.
 
 Rize'nin belirgin şekilde düşük ortalaması, bulutluluğun ışınım üzerindeki etkisini gösterir ve
 modelin il gömme vektöründen ne öğrenmesi gerektiğine dair doğrudan kanıttır.
@@ -299,8 +306,21 @@ $$
 uygulanır. Ölçekleyicinin tüm veri üzerinde fit edilmesi, test kümesinin istatistiklerinin
 eğitime sızması demektir ve yayımlanacak sonuçları geçersiz kılar.
 
-Ölçekleyici tek ve **küreseldir** (iller havuzlanarak fit edilir), il başına ayrı ölçekleyici
-kullanılmaz — bu, tek küresel model tasarımıyla tutarlıdır.
+Varsayılan (küresel) kolda ölçekleyici tek ve **küreseldir**: iller havuzlanarak fit edilir,
+bu da tek küresel model tasarımıyla tutarlıdır.
+
+> **Belgelenmiş iki istisna.** (i) `training_scope="per_city"` ablasyon kolunda
+> `per_city_scaler` varsayılan olarak açıktır ve **her il kendi ölçekleyicisini** alır
+> (`checkpoints/scaler_<il>.joblib`). Bu bilinçli bir tercihtir — o kolda il başına ayrı bir
+> model eğitilir, dolayısıyla paylaşılan bir hedef ölçeği yapay bir bağ kurardı — ama
+> **`training_scope` eksenine ikinci bir etki bindirir**: küresel ölçekte yüksek varyanslı
+> iller kayba baskın gelirken, il bazında her ilin kaybı kendi varyansına normalize olur ve
+> erken durdurma ile `ReduceLROnPlateau` farklı ölçekli doğrulama kayıplarına bakar. Etki
+> il bazlı kolun **lehinedir**; `per_city_scaler=False` ile ayrı bir duyarlılık koşusu
+> çalıştırılarak ölçülmesi gerekir. (ii) §12'deki naif referanslar (iklimsel ortalama,
+> kalıcılık, akıllı kalıcılık) ham W/m² üzerinde çalışır ve **hiç ölçekleyici kullanmaz**.
+> Her iki istisnada da sızıntı değişmezi korunur: ne fit edilirse yalnızca
+> $\text{datetime} \le \text{train\_end}$ satırları üzerinde fit edilir.
 
 Ölçekleyici her deneyde `checkpoints/scaler.joblib` olarak kaydedilir. Model çıktıları
 ölçeklenmiş uzayda üretildiği için, tüm metrikler hesaplanmadan önce hedef değişkenin ölçeği
@@ -811,9 +831,18 @@ metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan b
 ### 13.3 Tekrarlanabilirlik
 
 - Tüm rastgelelik kaynakları tohumlanır: `random`, `numpy`, `torch` (`set_seed`).
-- Her bootstrap replikası için tohum kaydırılır ($\text{seed} + b + 1$); böylece replikalar
-  birbirinden farklı ama koşudan koşuya aynıdır.
-- MBB yeniden örneklemesi tek bir `numpy.random.default_rng(seed)` üreticisiyle yapılır.
+- **Küresel kolda** her bootstrap replikası için tohum kaydırılır ($\text{seed} + b + 1$);
+  böylece replikalar birbirinden farklı ama koşudan koşuya aynıdır. MBB yeniden örneklemesi
+  tek bir `numpy.random.default_rng(\text{seed})` üreticisiyle yapılır.
+- **İl bazlı kolda** $5B$ model eğitildiği için şema genişletilir: $c$ ilinin $b$ replikası
+  $\text{seed} + 1 + c \cdot B + b$ tohumunu alır. Bu eşleme çakışmasızdır ($b < B$
+  olduğundan iki (il, replika) çifti aynı tohuma düşemez); çakışma olsaydı iki ilin ağırlık
+  ilklendirmesi ve blok çekilişleri birbiriyle ilintili hâle gelirdi. MBB üreticisi ise il
+  başına `numpy.random.default_rng([\text{seed}, c])` ile ayrılır.
+- **Tekrarlanabilirlik cihaz başınadır.** `set_seed` CPU, CUDA ve MPS üreticilerinin üçünü
+  de tohumlar, ama farklı arka uçlar (MPS / CUDA / CPU) bit düzeyinde aynı sonucu vermez;
+  bir sonucun yeniden üretilmesi aynı cihaz sınıfını gerektirir ve kullanılan cihaz her
+  koşunun `log.txt` dosyasına yazılır.
 - Konfigürasyon, ölçekleyici ve tüm model ağırlıkları diske yazılır; sonuçlar yeniden
   üretilebilir.
 
