@@ -402,6 +402,42 @@ def seasonal_target_stats(df: pd.DataFrame, daily: pd.DataFrame) -> pd.DataFrame
     return pd.DataFrame(rows)
 
 
+def clearness_table(daily: pd.DataFrame) -> pd.DataFrame:
+    """Empirical clearness ratio: a day's total over the 95th percentile for that day-of-year.
+
+    Not a clear-sky model -- the envelope is the observed 95th percentile of the same
+    day-of-year across all years, which removes the seasonal geometry and leaves a
+    dimensionless "how much of an achievable day did this day deliver" ratio. It is what
+    makes the cities comparable on cloudiness rather than on latitude.
+    """
+    work = daily.copy()
+    work["doy"] = align_day_of_year(work["date"])
+    work = work.dropna(subset=["doy"])
+    envelope = work.groupby(["city", "doy"], observed=True)["daily_kwh"].transform(
+        lambda s: s.quantile(0.95)
+    )
+    work["clearness"] = work["daily_kwh"] / envelope
+    work = add_season(work.assign(MO=work["date"].dt.month))
+    rows = []
+    for city, g in work.groupby("city", observed=True):
+        for season in [POOLED_LABEL] + SEASONS_TR:
+            sub = g if season == POOLED_LABEL else g[g["season"] == season]
+            rows.append(
+                {
+                    "city": city,
+                    "season": season,
+                    "n_days": int(len(sub)),
+                    "clearness_mean": sub["clearness"].mean(),
+                    "clearness_median": sub["clearness"].median(),
+                    "clear_day_share": (sub["clearness"] > 0.9).mean(),
+                    "overcast_day_share": (sub["clearness"] < 0.5).mean(),
+                    "daily_kwh_mean": sub["daily_kwh"].mean(),
+                    "daily_kwh_cv": sub["daily_kwh"].std() / sub["daily_kwh"].mean(),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def month_year_grid(daily: pd.DataFrame, city: str) -> pd.DataFrame:
     """Monthly mean daily total (kWh/m^2/day) on a complete year x month grid.
 

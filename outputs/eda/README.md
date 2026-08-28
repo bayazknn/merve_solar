@@ -48,6 +48,216 @@ altındadır. Anlamlılık yerine etki büyüklüğü ve `partial_r_within_hour`
 yüzey yalnız tam takvim yıllarını (2020–2025) kullanır; 2019 (30 Haziran'da başlıyor) ve
 2026 kısmi olduğu için dışarıdadır.
 
+## Bulguların yorumu
+
+Aşağıdaki her sayı `tables/` altındaki bir dosyaya dayanır; parantez içinde kaynağı yazılıdır.
+Modelleme önerileri **Öneri** olarak işaretlenmiştir — bunlar veriden çıkan yorumlardır,
+henüz denenmiş sonuçlar değil.
+
+### 1. Beş il aslında iki rejim: Rize ve diğer dördü
+
+Günlük toplam ışınım ortalaması (`daily_clearness_by_city.csv`): Van 4.98, Antalya 4.94,
+Konya 4.87, Ankara 4.66, **Rize 3.69 kWh/m²/gün**. Yani dört il %6'lık bir bant içinde,
+Rize ise onlardan %21–26 aşağıda.
+
+Ama asıl fark seviyede değil, **öngörülebilirlikte**:
+
+| | Ankara | Antalya | Konya | Rize | Van |
+|---|---|---|---|---|---|
+| Berraklık oranı (ort.) | 0.81 | 0.85 | 0.82 | **0.73** | 0.85 |
+| Açık gün payı (>0.9) | %45 | %56 | %48 | **%37** | %52 |
+| Kapalı gün payı (<0.5) | %11 | %8 | %10 | **%24** | %6 |
+| Günlük toplamın CV'si | 0.49 | 0.44 | 0.46 | **0.57** | 0.45 |
+
+("Berraklık oranı" = günlük toplam ÷ aynı yılın-günü için gözlenen 95. persentil; mevsimsel
+geometriyi böler, geriye bulutluluk kalır — `daily_clearness_by_city.csv`.)
+
+Meteorolojik profil bunu doğruluyor (`descriptive_stats_by_city_daylight.csv`): Rize'nin
+gündüz bağıl nemi %73.7, diğer dört ilde %46–53; yağışı 3.74 mm/saat, diğerlerinde 0.9–1.8.
+Van ise diğer uçta: en yüksek berraklık, en düşük kapalı gün payı (%6), en düşük bağıl nem
+(%46.2) ve en düşük basınç (77.7 kPa — yükseklik göstergesi). Van'ın 1215.9 W/m² olan
+maksimumu da beş ilin en yükseği; yükseklik + kuru hava kombinasyonunun beklenen sonucu.
+
+**Bu, makalenin "5 farklı iklim bölgesi" iddiası için hem iyi hem kötü haber.** Kötü tarafı:
+gerçek çeşitlilik esasen tek ilde. Ankara/Konya/Van/Antalya birbirine çok yakın rejimler;
+şehir gömülemesinin (`SolarLSTM.city_embedding`) öğrenmesi gereken asıl ayrım Rize'dir. İyi
+tarafı: tek bir global modelin dört ili birden öğrenmesi kolay olacak, yani cross-city
+transfer iddiası muhtemelen tutacak — ama iddianın gücü Rize'deki performansa bağlı.
+
+**Öneri:** agregat skor Rize'yi gizler (dört il onu 4'e 1 bastırır). Sonuç tablolarında
+Rize'nin ayrı satırı zaten var (`results_summary.csv`), ama makale metninde "en zor il" olarak
+açıkça tartışılmalı; ayrıca "Rize hariç agregat" bir satır olarak eklenirse şehir gömülemesinin
+katkısı görünür hale gelir.
+
+### 2. Mevsimsellik: ışınım ile öngörülebilirlik ters yönde hareket ediyor
+
+`seasonal_target_stats.csv`, günlük toplam (kWh/m²/gün) ve günler-arası CV:
+
+| | Kış | İlkbahar | Yaz | Sonbahar | Yaz/Kış |
+|---|---|---|---|---|---|
+| Ankara | 2.22 (CV 0.43) | 5.26 (0.34) | 7.29 (**0.14**) | 3.98 (0.37) | 3.3× |
+| Antalya | 2.58 (0.38) | 5.66 (0.28) | 7.45 (**0.10**) | 4.21 (0.32) | 2.9× |
+| Konya | 2.51 (0.40) | 5.39 (0.33) | 7.44 (**0.13**) | 4.26 (0.35) | 3.0× |
+| Rize | 1.78 (**0.50**) | 4.35 (0.45) | 5.71 (0.28) | 3.01 (0.46) | 3.2× |
+| Van | 2.71 (0.33) | 5.41 (0.32) | 7.64 (**0.12**) | 4.27 (0.37) | 2.8× |
+
+Yaz günleri kıştan 2.8–3.3 kat fazla enerji taşıyor **ve** 3–4 kat daha az değişken.
+Kışın günler hem kısa hem de bulut rejimi kararsız; yazın Anadolu'da neredeyse deterministik
+bir açık-hava rejimi var (Antalya'da CV 0.10).
+
+Mevsimsel farkın kaynağını ayırmak makalede güzel bir cümle: Ankara'da gündüz **süresi**
+kıştan yaza 10.63 → 14.65 saat (1.38×, `temporal_coverage_by_city.csv`), gündüz saatlerinin
+ortalama **yoğunluğu** ise 208.9 → 497.4 W/m² (2.38×). Çarpımları 3.28× — tam olarak
+gözlenen günlük toplam oranı. Yani mevsimselliğin yaklaşık üçte biri gün uzunluğundan,
+üçte ikisi güneş yüksekliği ve atmosferik geçirgenlikten geliyor.
+
+**Öneri (metrik):** düz RMSE bu tabloyla birlikte yanıltıcıdır. Yaz hatası mutlak olarak
+büyük olacak (sinyal büyük) ama görece kolay; kış hatası küçük olacak ama görece zor.
+`metrics.py`'ye mevsim kırılımı veya normalize hata (nRMSE = RMSE / o dilimin ortalaması)
+eklenmeli — aksi halde model "yazı iyi öğrendi" gibi görünürken asıl zorluğu kaçırıyor olur.
+
+### 3. Zaman değişkenleri: saat baskın, yılın günü ikincil, ikisi de harmoniklerle biter
+
+`time_feature_explained_variance.csv`, η² (açıklanan varyans oranı):
+
+| | saat (24 saat) | yılın günü (24 saat) | saat (gündüz) | yılın günü (gündüz) |
+|---|---|---|---|---|
+| Havuzlanmış | **0.729** | 0.088 | 0.524 | 0.148 |
+| Antalya | 0.778 | 0.087 | 0.584 | 0.171 |
+| **Rize** | **0.664** | 0.094 | 0.458 | 0.146 |
+
+Üç sonuç:
+
+- **Günün saati tek başına varyansın %73'ünü açıklıyor**, yılın günü ise %9'unu. Yani modelin
+  öğrendiği şeyin büyük kısmı günlük döngü. Bu, 24 saatlik lookback'in neden yeterli
+  göründüğünü açıklıyor.
+- **Harmonik R² ≈ η²** (0.726 vs 0.729): ilişki neredeyse tamamen ilk iki harmonikle
+  yakalanıyor. `hour_sin`/`hour_cos` kodlaması bilgi kaybetmiyor; saat için one-hot veya
+  gömüleme aramaya gerek yok.
+- **Rize'de saatin açıklayıcılığı en düşük** (0.66 vs Antalya 0.78). Aynı bulgu üçüncü kez
+  farklı bir ölçüden geliyor: Rize'de deterministik geometri daha az, bulut gürültüsü daha
+  çok baskın.
+
+**Öneri:** deterministik günlük döngü zaten 24 saatlik pencerede mevcut olduğuna göre,
+lookback'i 48 saate çıkarmanın kazancı muhtemelen sınırlı olacaktır; asıl kazanç bulut
+durumunu taşıyan değişkenlerde. `config_fast_lookback_48h` bu hipotezi test etmek için doğru
+deney — ama yeni öznitelik setiyle (17 sütun) yeniden koşulması gerekiyor.
+
+### 4. Ham korelasyonların önemli kısmı güneş geometrisi, gerçek sinyal bulutlulukta
+
+`target_correlation_by_city.csv`. Solda ham Pearson, sağda aynı (il, ay, saat) hücresi
+içindeki kısmi korelasyon — yani güneş geometrisi sabitlendikten sonra kalan:
+
+| Değişken | Ham *r* (aralık) | Kısmi *r* (aralık) | Ne oluyor |
+|---|---|---|---|
+| Bağıl nem | −0.63 … −0.67 | −0.47 … −0.56 | **Ayakta kalıyor** — en güçlü gerçek yordayıcı |
+| Sıcaklık | +0.47 … +0.57 | +0.24 … +0.35 | Gücü yarıya iniyor |
+| Yağış | −0.09 … −0.21 | −0.27 … −0.37 | **Güçleniyor** |
+| Yüzey basıncı | −0.16 … +0.10 | +0.18 … +0.33 | **İşaret değiştiriyor** |
+| Özgül nem / çiy nokt. | −0.00 … +0.24 | −0.15 … −0.38 | **İşaret değiştiriyor** |
+| Rüzgâr hızı (10/50 m) | −0.24 … +0.21 (tutarsız) | −0.11 … −0.21 (tutarlı) | Zayıf ama istikrarlı hale geliyor |
+
+Bu tablo makaleye girmeli, çünkü ham korelasyona bakarak varılacak sonuç yanlış olur:
+
+- **"Sıcaklık en önemli öznitelik" demek hatalı olurdu.** Sıcaklığın ham +0.55'inin yarısı,
+  sıcaklığın da güneş yüksekliğini takip etmesinden kaynaklanıyor — büyük ölçüde ışınımın
+  *sonucu*, nedeni değil. Geometri sabitlenince +0.30'a düşüyor.
+- **Basınç ve özgül nem ham korelasyonda görünmez ama gerçekte bilgi taşıyor.** Yüksek basınç
+  = açık hava, yüksek nem = bulut: ikisi de klasik sinoptik göstergeler ve ancak kısmi
+  korelasyonda ortaya çıkıyorlar. Bu, "korelasyonu düşük diye özniteliği atma" refleksine
+  karşı somut bir gerekçe.
+- **Geometri sabitlendikten sonra hiçbir tek değişkenin |r|'si 0.56'yı geçmiyor** (en
+  güçlüsü bağıl nem, Antalya −0.56). Yani tek değişkenli veya doğrusal bir baseline zayıf
+  kalacak; çok değişkenli + otoregresif yapı gerekiyor. Bu, LSTM tercihini destekleyen bir
+  argüman.
+
+**Doğrusallık:** Spearman ile Pearson farkı hiçbir değişkende 0.06'yı geçmiyor
+(`correlation_spearman_pooled.csv`; en büyük fark yağışta −0.06). Yani gizli, monotonik
+olmayan bir ilişki yok. Ama `scatter_vs_target_<il>` figürleri açık bir **doygunluk +
+çöküş** davranışı gösteriyor. Ankara'da bağıl nemin binlenmiş medyan ışınımı: %18'in altında
+doyuyor (667 → 681 W/m², artık fark yok), %20–90 arasında neredeyse doğrusal iniyor
+(667 → 73 W/m²), %94'ün üstünde ise çöküyor (14 W/m²). İlişki monotonik ama doğrusal değil —
+LSTM için sorun değil, **doğrusal baseline için sorun**; planlanan SVM/RF/MLP
+karşılaştırmasında çekirdek/derinlik seçimi bunu karşılayabilmeli, yoksa baseline haksız
+biçimde zayıf çıkar ve karşılaştırma yayınlanabilir olmaz.
+
+### 5. Öznitelik setinde iki gereksiz sütun var
+
+`collinear_pairs.csv`: **QV2M–T2MDEW r = 0.96** ve **WS10M–WS50M r = 0.96**. Fiziksel
+olarak beklenen (özgül nem ve çiy noktası aynı büyüklüğün iki ifadesi; 10 m ve 50 m rüzgârı
+aynı sınır tabakası). Yani 17 öznitelikten fiilen ikisi bilgi katmıyor.
+
+**Öneri:** `T2MDEW` ve `WS50M` çıkarılmış 15 öznitelikli bir ablasyon konfigürasyonu, yeni
+bir `experiment_id` ile koşulmalı. LSTM için eşdoğrusallık zararsızdır, ama (a) parametre ve
+gürültü azalır, (b) planlanan SVM/RF/MLP baseline'ları için önemlidir, (c) "öznitelik seçimi
+yapıldı" cümlesi makalede gerekçelendirilmiş olur. Not: `n_features` ledger'da zaten bir
+sütun, dolayısıyla karşılaştırma izlenebilir olur.
+
+### 6. Yıllar arası değişkenlik neredeyse yok — bölme stratejisi için iyi haber
+
+Yıllık ortalama günlük toplam, 2020–2025 (`month_year_anomaly_panel` figürünün verisi):
+altı yıl boyunca il başına toplam oynama aralığı sadece **0.25–0.39 kWh/m²/gün**, yani
+ortalamanın %5–8'i. Aylık anomalilerin mutlak ortalaması 0.19–0.27 kWh, en büyük tekil
+anomali ~1.0 kWh. Buna karşılık mevsimsel aralık 4.6–5.9 kWh.
+
+İlginç bir bölgesel ortaklık var: **2023 beş ilin dördünde en düşük yıl** (Ankara 4.56,
+Antalya 4.85, Konya 4.84, Van 4.87); Rize'de en düşük yıl 2022. Yani anomaliler gürültü
+değil, bölgesel olarak eşlenik — ama genliği küçük.
+
+İki sonuç:
+
+- **Kronolojik bölme güvenli.** Test kümesi son bir tam mevsimsel yıla denk geliyor
+  (`train_ratio=0.74 / val_ratio=0.11`) ve o yılın anormal olmadığını bu tablo gösteriyor.
+  Test skoru bir "kötü yıl" kazasından etkilenmiyor.
+- **Ama tek yıllık test setinin içsel bir belirsizlik tabanı var:** yıllar arası %5–8'lik
+  oynama, tek bir test yılıyla temsil ediliyor. Raporlanan RMSE'nin bu mertebede bir yıl
+  seçimi belirsizliği taşıdığı makalede bir cümleyle belirtilmeli.
+- **3B yüzeyden trend iddiası çıkarılmamalı.** 6 yıl trend için zaten kısa, üstelik sinyal
+  mevsimsel genliğin ~%5'i. Figürün doğru mesajı "iklimsel rejim istikrarlı, mevsimsel yapı
+  yıldan yıla tekrar ediyor" — bu da bir model için iyi haber, çünkü öğrenilen mevsimsel
+  yapının test yılına genellenmesi bekleniyor.
+
+### 7. Dağılım şekilleri: bir ölçekleme sorunu var
+
+`descriptive_stats_by_city_daylight.csv`, havuzlanmış çarpıklık / fazlalık basıklık:
+
+- **Hedef: 0.47 / −0.92.** Ağır kuyruklu değil, *basık ve iki tepeli* — açık gün modu ile
+  bulutlu gün modunun karışımı. Normal dağılım varsayan hiçbir şey (ör. hata dağılımının
+  Gaussyen olduğu varsayımı) doğrudan geçerli değil; bu, ampirik persentil tabanlı CI
+  tercihini (`main_methodology.md`'nin 2.5/97.5 yaklaşımı) destekliyor.
+- **Yağış: 8.24 / 101.97.** Aşırı çarpık, gündüz satırlarının çoğunda tam sıfır.
+  `StandardScaler` bu sütunda fiilen iş görmüyor: ortalama ve standart sapma birkaç uç
+  değer tarafından belirleniyor, sonuçta ölçeklenmiş sütunun neredeyse tamamı dar bir
+  aralıkta sıkışıp nadir uçlar ±50'ye gidiyor. **Öneri:** `scaling.py`'de `PRECTOTCORR`
+  için `log1p` dönüşümü (train sınırı içinde kalarak). Kısmi korelasyonu −0.27…−0.37 olan,
+  yani gerçekten bilgi taşıyan bir değişken; ölçekleme yüzünden kaybedilmesi ziyan olur.
+- Rüzgâr hızları (çarpıklık ~1.1) ve diğerleri sorun çıkarmıyor.
+
+### 8. Gece saatleri metriklerin yarısını bedavaya veriyor
+
+24 saatlik ortalama 192.8 W/m², gündüz ortalaması 363.7 W/m²
+(`descriptive_stats_by_city_24h.csv` vs `..._daylight.csv`); satırların **%47'si gece** ve
+neredeyse tamamı tam sıfır. Bir modelin gece 0 tahmin etmesi bedavadır — MAE/RMSE'nin kabaca
+yarısı hiçbir öğrenme gerektirmeden kazanılıyor, CP ise şişiyor (sıfır etrafında dar bir
+aralık %100 kapsıyor).
+
+CLAUDE.md bu uyarıyı zaten taşıyor; bu tablolar onu sayısallaştırıyor. **Öneri:**
+`metrics.py`'ye gündüz-only kırılım eklenmeli ve literatürle karşılaştırma o rakam üzerinden
+yapılmalı. Aksi halde raporlanan RMSE, literatürdeki gündüz-only rakamlarla kıyaslandığında
+haksız biçimde iyi görünür.
+
+### Modelleme için çıkan iş listesi
+
+Öncelik sırasıyla, hepsi bu tablolardan doğrudan çıkıyor:
+
+1. `metrics.py`: gündüz-only kırılım + mevsim kırılımı (madde 8 ve 2). Halen raporlanan
+   rakamlar literatürle kıyaslanabilir değil.
+2. `scaling.py`: `PRECTOTCORR` için `log1p` (madde 7).
+3. 15 öznitelikli ablasyon konfigürasyonu — `T2MDEW` ve `WS50M` çıkarılmış (madde 5).
+4. Sonuçlarda Rize'nin ayrı tartışılması ve "Rize hariç" agregat satırı (madde 1).
+5. Makale metninde: sıcaklığın ham korelasyonunun neden şişkin olduğu ve kısmi korelasyon
+   tablosu (madde 4) — bu, öznitelik seçimini gerekçelendiren asıl argüman.
+
 ## Tablolar (`tables/`)
 
 | Dosya | İçerik |
@@ -63,6 +273,7 @@ yüzey yalnız tam takvim yıllarını (2020–2025) kullanır; 2019 (30 Haziran
 | `collinear_pairs.csv` | \|r\| > 0.9 çiftler. |
 | `monthly_target_stats.csv` | Son 12 ay, günlük toplam özetleri. |
 | `seasonal_target_stats.csv` | Mevsim bazında saatlik ve günlük toplam özetleri. |
+| `daily_clearness_by_city.csv` | Ampirik berraklık oranı (günlük toplam ÷ aynı yılın-günü için gözlenen 95. persentil), açık/kapalı gün payları — illeri enlemden bağımsız olarak bulutluluk üzerinden kıyaslar. |
 
 **Basıklık Fisher (fazlalık) tanımıdır:** normal dağılım için 0, 3 değil. Gündüz verisinde
 hedefin çarpıklığı 0.47, fazlalık basıklığı −0.92 — yani ağır kuyruklu değil, basık/iki

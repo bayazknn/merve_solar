@@ -114,6 +114,7 @@ def main() -> None:
     _write_csv(eda.circular_wind_table(df), "wind_direction_circular_stats.csv")
     _write_csv(eda.monthly_target_stats(daily_12m), "monthly_target_stats.csv")
     _write_csv(eda.seasonal_target_stats(df, daily), "seasonal_target_stats.csv")
+    _write_csv(eda.clearness_table(daily), "daily_clearness_by_city.csv")
 
     corr = eda.correlation_tables(df_daylight)
     for method in ("pearson", "spearman"):
