@@ -92,8 +92,17 @@ geometriyi böler, geriye bulutluluk kalır — `daily_clearness_by_city.csv`.)
 Meteorolojik profil bunu doğruluyor (`descriptive_stats_by_city_daylight.csv`): Rize'nin
 gündüz bağıl nemi %73.3, diğer dört ilde %45–52; yağışı 3.72 mm/saat, diğerlerinde 0.9–1.8.
 Van ise diğer uçta: en yüksek berraklık, en düşük kapalı gün payı (%6), en düşük bağıl nem
-(%45.5) ve en düşük basınç (77.7 kPa — yükseklik göstergesi). Van'ın 1215.9 W/m² olan
-maksimumu da beş ilin en yükseği; yükseklik + kuru hava kombinasyonunun beklenen sonucu.
+(%45.5) ve en düşük basınç (77.7 kPa — yükseklik göstergesi).
+
+> **Alıntılamayın: Van'ın 1215.9 W/m² maksimumu bir ölçüm artefaktıdır.** O satırda
+> (2020-02-17 15:00) açık-hava referansı 370.2 W/m², yani **kt = 3.28** — açık-hava
+> sınırının 3.3 katı, şubat ayında, −3.4 °C'de. Fiziksel olarak mümkün değil (bulut
+> kaynaklı güçlenme saatlik ortalamada en fazla ~1.4 katına çıkar). Tüm veri setinde
+> kt > 1.2 olan yalnız **4 satır** var, hepsi Van, hepsi Ocak/Şubat. kt ≤ 1.2 kısıtıyla
+> il maksimumları: Van 1068.7, Konya 1054.4, Antalya 1043.1, Ankara 1029.1, Rize 988.2 —
+> Van hâlâ birinci ama %15 değil **%1.4** farkla. Aynı satır Van'ın 1113.8 W/m²/saat olan
+> rampa maksimumunu da üretiyor. Betimsel tablolardaki `max` sütunu ham veriyi
+> raporladığı için bu değeri taşımaya devam eder; makalede kullanılmamalıdır.
 
 **Bu, makalenin "5 farklı iklim bölgesi" iddiası için hem iyi hem kötü haber.** Kötü tarafı:
 gerçek çeşitlilik esasen tek ilde. Ankara/Konya/Van/Antalya birbirine çok yakın rejimler;
@@ -118,7 +127,8 @@ katkısı görünür hale gelir.
 | Rize | 1.78 (**0.50**) | 4.35 (0.45) | 5.71 (0.28) | 3.01 (0.46) | 3.2× |
 | Van | 2.71 (0.33) | 5.41 (0.32) | 7.64 (**0.12**) | 4.27 (0.37) | 2.8× |
 
-Yaz günleri kıştan 2.8–3.3 kat fazla enerji taşıyor **ve** 3–4 kat daha az değişken.
+Yaz günleri kıştan 2.8–3.3 kat fazla enerji taşıyor **ve** 1.8–3.8 kat daha az değişken
+(Antalya 3.82, Konya 3.05, Ankara 3.04, Van 2.72, Rize 1.81 — Rize'de fark en küçük).
 Kışın günler hem kısa hem de bulut rejimi kararsız; yazın Anadolu'da neredeyse deterministik
 bir açık-hava rejimi var (Antalya'da CV 0.10).
 
@@ -188,8 +198,12 @@ Bu tablo makaleye girmeli, çünkü ham korelasyona bakarak varılacak sonuç ya
   kalacak; çok değişkenli + otoregresif yapı gerekiyor. Bu, LSTM tercihini destekleyen bir
   argüman.
 
-**Doğrusallık:** Spearman ile Pearson farkı hiçbir değişkende 0.06'yı geçmiyor
-(`correlation_spearman_pooled.csv`; en büyük fark yağışta −0.06). Yani gizli, monotonik
+**Doğrusallık:** Spearman ile Pearson farkı hedefin satırında yalnız yağışta kayda değer
+(`correlation_spearman_pooled.csv`): −0.163 → **−0.235**, yani |r| %44 artıyor; diğer yedi
+değişkende fark ≤ 0.03. Matrisin tamamında en büyük fark bağıl nem–yağış çiftinde (+0.206).
+Yağıştaki bu sıçrama beklenen yönde: değişken aşırı çarpık ve sıfır-şişkin, dolayısıyla
+Pearson onu sistematik olarak küçümsüyor — sıralama tabanlı ölçüt gerçek ilişkiyi daha iyi
+yakalıyor. Yani yağış, ham Pearson tablosunun gösterdiğinden daha güçlü bir yordayıcı. Yani gizli, monotonik
 olmayan bir ilişki yok. Ama `scatter_vs_target_<il>` figürleri açık bir **doygunluk +
 çöküş** davranışı gösteriyor. Ankara'da bağıl nemin binlenmiş medyan ışınımı: %18'in altında
 doyuyor (667 → 681 W/m², artık fark yok), %20–90 arasında neredeyse doğrusal iniyor
@@ -297,7 +311,7 @@ Rize burada da ayrışıyor: en iyi referansı R² 0.718, diğer dört ilde 0.86
 
 **Bu tablo tanımlayıcıdır, makalenin sonuç tablosu değildir.** Burada değerlendirme **saat
 başına** yapılıyor: test = `datetime > val_end` (varsayılan 0.74/0.11 ile val_end
-2025-03-26 01:00), il başına 8 878 test saati, bunun 4 543–4 574'ü geometrik gündüz. Aynı
+2025-03-26 01:00), il başına 8 878 test saati, bunun 4 544–4 593'ü geometrik gündüz. Aynı
 referanslar `run_experiment` boru hattından koşulduğunda değerlendirme **pencere başına**
 olacak: `window_stride=1` ve `horizon_hours=24` ile her test saati 24'e kadar örtüşen
 pencerede tekrar sayılır, dolayısıyla bölme sınırındaki saatler farklı ağırlık alır ve
@@ -312,7 +326,7 @@ rakamlar çapraz kontrol içindir. Sıralamanın (RMSE'de klimatoloji, MAE'de ak
 almak anlamsız olurdu — sadece 24 saatlik güneş döngüsünü yeniden türetir).
 
 **Saatlik ölçekte kt neredeyse bir AR(1):** PACF gecikme 1'de 0.93–0.97, gecikme 2'de
-−0.15…+0.13, gecikme 3'te ≈ −0.09. Yani bir saat öncesi neredeyse her şeyi taşıyor,
+−0.15…+0.13, gecikme 3'te −0.03…−0.10. Yani bir saat öncesi neredeyse her şeyi taşıyor,
 2. ve sonraki gecikmeler bağımsız bilgi katmıyor.
 
 **Günlük ölçekte:**
@@ -334,8 +348,8 @@ korelasyonu ~0.1 olan ikinci günü ekliyor. Sıfır değil ama küçük. Ucuz t
 `lookback_hours=48` konfigürasyonu, yeni `experiment_id` ile. Bu, `TODOs.md`'deki
 "time window lag (24h)?" sorusunun veriye dayalı cevabıdır.
 
-**Uyarı — ACF'nin kuyruğuna aldanmayın.** Günlük ACF 30. gecikmede hâlâ 0.18–0.25
-görünüyor; bu gerçek bir hafıza değil, kt'nin kendi mevsimsel döngüsünün artığı (kış kt'si
+**Uyarı — ACF'nin kuyruğuna aldanmayın.** Günlük ACF 30. gecikmede dört ilde hâlâ
+0.18–0.25 görünüyor (Rize istisna: 0.07); bu gerçek bir hafıza değil, kt'nin kendi mevsimsel döngüsünün artığı (kış kt'si
 düşük, yaz kt'si yüksek — bkz. mevsimsel kt tablosu aşağıda). Kısa gecikmeleri temizleyen
 PACF çöktüğü için doğru okuma PACF'tir. Aynı nedenle saatlik PACF yalnız 12. gecikmeye
 kadar raporlanır: gece maskesi ACF'yi çift-yönlü eksik gözlemle tahmin ettiriyor, sonuçta
@@ -357,9 +371,13 @@ Mevsimsel kt (Kış → Yaz): Ankara 0.679 → 0.922, Antalya 0.716 → 0.953, V
 Rize 0.626 → **0.772**. Rize'nin en açık mevsimi bile diğer illerin kışına yakın.
 
 **Rampalar** (`ramp_stats_by_city.csv`, gündüz saatlik |Δ|): medyan 82–115 W/m², %90'lık
-167–195, %99'luk 211–219, maksimum 423–1114 W/m². Dağılım dar bir gövde + uzun bir kuyruk:
-gövde günün deterministik yükseliş/alçalışı, kuyruk bulut geçişleri. `|Δkt|` medyanı ise
-sadece 0.014–0.030, %99'luğu 0.19–0.24 — yani hava kaynaklı ani değişim seyrek ama sert.
+167–195, %99'luk 211–219, maksimum 423–1114 W/m². `ramp_distribution` figürüne bakıldığında
+dağılımın şekli "dar gövde + uzun kuyruk" değil, **0–200 W/m² arasına yayılmış geniş ve
+neredeyse düzgün bir gövde + ince bir kuyruk**: gövde günün deterministik yükseliş/alçalışı
+(her gündüz saati bir rampa üretiyor), kuyruk bulut geçişleri. Mutlak rampalar yazın en
+büyük (geometrik), ama `|Δkt|` sıralamayı tersine çeviriyor — **rampalar kt üzerinden
+raporlanmalı**, aksi halde ölçülen şey hava değil gün uzunluğu olur. `|Δkt|` medyanı ise
+sadece 0.014–0.030, %99'luğu 0.18–0.24 — yani hava kaynaklı ani değişim seyrek ama sert.
 
 **UQ için anlamı:** %95 aralığın kapsaması gereken şey bu kuyruktur. Aralık genişliği
 (PINW/MPIW) tüm saatlerde sabit tutulursa, gövdede gereksiz geniş, kuyrukta yetersiz olur —
@@ -397,14 +415,14 @@ sınırıdır; makalede bir cümleyle belirtilmeli.
 
 **Kapsam kuralı: bir istisna dışında her tablo verinin tamamını kullanır** — 2019-06-30 →
 2026-03-30, il başına 59 184 saat / 2 466 gün, havuzlanmış 295 920 satır (gündüz alt kümesi
-156 909). Tek istisna `monthly_target_stats.csv`'dir: o, son 12 ayın kutu grafiğinin
+151 643). Tek istisna `monthly_target_stats.csv`'dir: o, son 12 ayın kutu grafiğinin
 verisidir ve bilerek 2025-04 → 2026-03 ile sınırlıdır. Figürlerde iki istisna vardır:
 `monthly_boxplot_last12m_*` (son 12 ay) ve `month_year_surface_*` / `month_year_anomaly_panel`
 (yalnız tam takvim yılları, 2020–2025).
 
 | Dosya | İçerik | Kapsam |
 |---|---|---|
-| `descriptive_stats_by_city_daylight.csv/.md/.tex` | **Birincil tablo.** Gündüz saatleri, il bazında + havuzlanmış. | tam veri (gündüz, n=156 909) |
+| `descriptive_stats_by_city_daylight.csv/.md/.tex` | **Birincil tablo.** Gündüz saatleri, il bazında + havuzlanmış. | tam veri (gündüz, n=151 643) |
 | `descriptive_stats_by_city_24h.csv/.md/.tex` | Aynı tablo 24 saat üzerinden — modelin bugüne kadar eğitildiği dağılım budur. | tam veri (n=295 920) |
 | `temporal_coverage_by_city.csv` | Zaman feature'larının tarifi: kapsam, saat/gün sayısı, gündüz payı, mevsime göre ortalama günlük gündüz süresi, hedefin mevsimsel özetleri. | tam veri |
 | `target_by_hour_by_city.csv` | Hedefin (il, mevsim, LST saati) dağılımı — günlük profil figürünün verisi. | tam veri |
@@ -423,12 +441,11 @@ verisidir ve bilerek 2025-04 → 2026-03 ile sınırlıdır. Figürlerde iki ist
 | `persistence_baseline.csv` | Referans tahmin zemini: kalıcılık, akıllı kalıcılık, klimatoloji için RMSE/MAE/R²/yanlılık. | **modelin test penceresi** (val_end sonrası) |
 
 **Basıklık Fisher (fazlalık) tanımıdır:** normal dağılım için 0, 3 değil. Gündüz verisinde
-hedefin çarpıklığı 0.47, fazlalık basıklığı −0.92 — yani ağır kuyruklu değil, basık/iki
-tepeli. Spearman bu yüzden değil, **doğrusal olmayan** ilişkiler için raporlanır.
+hedefin çarpıklığı 0.44, fazlalık basıklığı −0.93 — yani ağır kuyruklu değil, basık. Spearman bu yüzden değil, **doğrusal olmayan** ilişkiler için raporlanır.
 
 **Havuzlanmış ("Tümü") satırın standart sapması** iller-içi ve iller-arası varyansın
 karışımıdır; iller-arası bileşen `between_city_sd` sütununda ayrıca verilir (hedef için
-43.6 W/m²).
+43.9 W/m²).
 
 **Rüzgâr yönü** ana tablodan çıkarılmıştır: dairesel bir değişkenin aritmetik ortalaması
 anlamsızdır (havuzlanmış ham hesap "189.5° ± 107°" verir, bu bir istatistik değil bir
@@ -488,6 +505,40 @@ kopukluk olmaz.
 
 Meteorolojik mevsimler: **Kış** = Aralık, Ocak, Şubat · **İlkbahar** = Mart, Nisan, Mayıs ·
 **Yaz** = Haziran, Temmuz, Ağustos · **Sonbahar** = Eylül, Ekim, Kasım.
+
+## Yeni bulgular (EDA.md incelemesinden, 2026-08-28)
+
+`EDA.md` hazırlanırken tablolar bağımsız olarak yeniden okundu ve üç şey ortaya çıktı;
+üçü de burada doğrulandı ve makaleyi ilgilendiriyor.
+
+**1. Yağış için ikili gösterge, ham miktardan daha güçlü.** Gündüz satırlarının **%53.5'i**
+tam sıfır yağış. (İl, ay, saat) hücre ortalaması çıkarıldıktan sonra hedefle korelasyon:
+
+| | Ankara | Antalya | Konya | Rize | Van |
+|---|---|---|---|---|---|
+| `PRECTOTCORR` (ham) | −0.315 | −0.337 | −0.279 | −0.380 | −0.349 |
+| yağış var/yok (ikili) | **−0.479** | **−0.445** | **−0.480** | **−0.455** | **−0.435** |
+
+İkili bayrak **beş ilin hepsinde** ham miktarı yeniyor. Anlamı: bilginin taşıyıcısı yağışın
+*şiddeti* değil, yağış olup olmaması — yani bulut örtüsünün varlığı. Bu, `TODOs.md` B
+maddesindeki `log1p` önerisini güçlendiriyor ve genişletiyor: **`log1p(PRECTOTCORR)` +
+ayrı bir ikili gösterge sütunu**. Öznitelik sayısı 17 → 18 olur; C maddesindeki iki
+gereksiz sütun çıkarılırsa 16'da kalır.
+
+**2. `PRECTOTCORR`'un birim etiketi şüpheli.** mm/saat olarak okunursa yıllık toplamlar
+Ankara 8 184, Konya 7 862, Van 8 260, Antalya 15 962, Rize 33 619 mm — fiziksel olarak
+imkânsız. 24'e bölününce Ankara 341, Konya 328, Van 344, Antalya 665, Rize 1 401 mm/yıl
+çıkıyor; bunlar Türkiye normalleriyle aynı mertebede (yine de %15–35 düşük). Yani sütun
+büyük olasılıkla mm/gün ölçeğinde. **Modelleme açısından zararsız** (sabit bir ölçek
+çarpanı, üstelik ölçekleyici zaten normalleştiriyor), ama figür eksenleri ve
+`VARIABLE_LABELS_TR` "mm/saat" yazıyor. Makalede birim belirtilmeden önce NASA POWER
+dokümantasyonundan teyit edilmeli.
+
+**3. `T2MDEW` bir ölçüm değil, türev.** `TODOs.md` C maddesi bunu Magnus formülüyle
+r = 0.9992 olarak veriyordu; bağımsız kontrol RMSE'yi de ekliyor: **0.31 °C**. Buna karşılık
+`T2MDEW`'i `QV2M`'den doğrusal regresyonla tahmin etmek ancak r = 0.962'ye ulaşıyor —
+yani düz korelasyon tablosu bu fazlalığı **olduğundan az** gösteriyor. Çıkarılma gerekçesi
+düşünülenden güçlü.
 
 ## Düzeltme kaydı
 

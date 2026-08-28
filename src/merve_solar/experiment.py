@@ -128,6 +128,21 @@ def _plot_representative_forecasts(pooled_preds, y_true, city_id_test, config, e
         )
 
 
+def _save_test_predictions(exp_dir, pooled_preds, y_true, city_id, daylight, window_start) -> None:
+    """Summary of the predictive distribution, for the paired significance tests.
+
+    Stores mean/lower/upper rather than the full (S, N, horizon) sample, which is ~3.4 GB at
+    full fidelity; this is ~12 MB compressed. Gitignored alongside the .pt checkpoints.
+    """
+    dist = summarize_predictive_distribution(pooled_preds)
+    np.savez_compressed(
+        exp_dir / "metrics" / "test_predictions.npz",
+        mean=dist["mean"], lower=dist["lower"], upper=dist["upper"],
+        y_true=y_true, city_id=city_id, daylight=daylight,
+        window_start=window_start.astype("datetime64[h]").astype(np.int64),
+    )
+
+
 def _predict_replicas(splits, config, n_cities, device, exp_dir, checkpoint_stem,
                       seed_base, rng, log_prefix, log_lines):
     """Train n_bootstrap replicas on `splits` and MC-Dropout predict the test split.
@@ -167,6 +182,110 @@ def _predict_replicas(splits, config, n_cities, device, exp_dir, checkpoint_stem
     return out, {"hit_max_epochs": hit_cap, "n_models": replicas}
 
 
+def _fit_scale_window(base_df, config, train_end, val_end, cities, scaler_path):
+    """Fit a scaler on THESE rows' train range only, apply it, and build their windows.
+
+    Both scope arms call this; the only difference is which rows are passed in, which is
+    exactly what training_scope means. The train-only boundary is preserved either way.
+    """
+    scaler = fit_scaler(base_df, train_end)
+    scaled = apply_scaler(base_df, scaler)
+    save_scaler(scaler, scaler_path)
+    return build_experiment_windows(scaled, config, train_end, val_end, cities=cities), scaler
+
+
+def _zero_city_ids(splits: dict) -> dict:
+    """New dicts with city_id zeroed, for a model built with n_cities=1.
+
+    A per-city model sees one city, so its embedding table has a single row; passing the real
+    id (3 for Rize) would be an out-of-range index. Zeroing makes the embedding a learned
+    constant bias, leaving the architecture otherwise identical to the global arm. Returns
+    copies so the original city_id stays available for the alignment check.
+    """
+    return {
+        name: {**d, "city_id": np.zeros_like(d["city_id"])}
+        for name, d in splits.items()
+    }
+
+
+def _assert_city_block_aligned(city, city_test, layout_test, slot) -> None:
+    """The per_city arm is only valid if a city's own test windows are the SAME windows, in the
+    SAME order, as the pooled layout's slice for that city.
+
+    Asserted at runtime because a misalignment would swap two cities' scores without changing
+    a single array shape. The check is on window_start, deliberately not on y: the per-city y
+    is scaled by that city's own scaler while the layout y is raw W/m^2, so they are different
+    arrays representing the same windows. Timestamps are the arm-independent identity.
+    """
+    n = city_test["y"].shape[0]
+    if n != slot.size:
+        raise RuntimeError(f"{city}: {n} test windows but {slot.size} layout slots")
+    if slot.size and np.any(np.diff(slot) != 1):
+        raise RuntimeError(f"{city}: layout slice is not contiguous — the CITIES-order assumption broke")
+    if not np.array_equal(city_test["window_start"], layout_test["window_start"][slot]):
+        raise RuntimeError(f"{city}: window timestamps differ between the per-city and pooled builds")
+
+
+def _run_global_scope(base_df, config, train_end, val_end, layout, device, exp_dir, log_lines):
+    splits, scaler = _fit_scale_window(
+        base_df, config, train_end, val_end, None, exp_dir / "checkpoints" / "scaler.joblib"
+    )
+    if not np.array_equal(splits["test"]["window_start"], layout["test"]["window_start"]):
+        raise RuntimeError("scaled and unscaled window builds disagree on the test-set windows")
+    for name, d in splits.items():
+        log_lines.append(f"{name}: {d['y'].shape[0]} windows")
+
+    pooled_scaled, stats = _predict_replicas(
+        splits, config, len(CITIES), device, exp_dir, "bootstrap_model",
+        seed_base=config.seed + 1, rng=np.random.default_rng(config.seed),
+        log_prefix="", log_lines=log_lines,
+    )
+    out = inverse_transform_target(scaler, pooled_scaled)
+    del pooled_scaled
+    return out, stats
+
+
+def _run_per_city_scope(base_df, config, train_end, val_end, layout, device, exp_dir, log_lines):
+    """Train an independent model set per city, then assemble into the pooled test layout."""
+    n_pooled = config.n_bootstrap * config.mc_dropout_passes
+    layout_test = layout["test"]
+    pooled = np.full((n_pooled, layout_test["y"].shape[0], config.horizon_hours), np.nan, dtype=np.float32)
+    filled = np.zeros(layout_test["y"].shape[0], dtype=bool)
+    hit_cap = 0
+
+    for city_idx, city in enumerate(CITIES):
+        splits, city_scaler = _fit_scale_window(
+            base_df[base_df["city"] == city], config, train_end, val_end, [city],
+            exp_dir / "checkpoints" / f"scaler_{city}.joblib",
+        )
+        slot = np.flatnonzero(layout_test["city_id"] == city_idx)
+        _assert_city_block_aligned(city, splits["test"], layout_test, slot)
+        for name, d in splits.items():
+            log_lines.append(f"{city}/{name}: {d['y'].shape[0]} windows")
+
+        # Seeds must not collide across cities, or two cities would share weight inits and
+        # bootstrap draws. Documented alongside the global seed+b+1 scheme in methodology 13.3.
+        scaled_preds, stats = _predict_replicas(
+            _zero_city_ids(splits), config, 1, device, exp_dir, f"bootstrap_model_{city}",
+            seed_base=config.seed + 1 + city_idx * config.n_bootstrap,
+            rng=np.random.default_rng([config.seed, city_idx]),
+            log_prefix=f"{city} ", log_lines=log_lines,
+        )
+        pooled[:, slot, :] = inverse_transform_target(city_scaler, scaled_preds)
+        filled[slot] = True
+        hit_cap += stats["hit_max_epochs"]
+        del scaled_preds
+
+    if not filled.all():
+        raise RuntimeError(f"per_city assembly left {int((~filled).sum())} test windows unfilled")
+    if np.isnan(pooled).any():
+        raise RuntimeError("per_city assembly produced NaN predictions")
+    return pooled, {"hit_max_epochs": hit_cap, "n_models": config.n_bootstrap * len(CITIES)}
+
+
+SCOPE_RUNNERS = {"global": _run_global_scope, "per_city": _run_per_city_scope}
+
+
 def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
     start_time = time.time()
     assert_ledger_schema_ok()  # fail in milliseconds rather than after hours of training
@@ -181,6 +300,7 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
     if base_df is None:
         base_df = load_base_features(BASE_FEATURES_PATH)
 
+    # Boundaries come from the FULL frame once, so both arms split on identical dates.
     train_end, val_end = compute_split_boundaries(base_df, config)
 
     # Layout pass on the UNSCALED frame: the canonical ground truth in W/m^2, plus the daylight
@@ -192,31 +312,17 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
     daylight = layout["test"]["daylight"]
     city_id_test = layout["test"]["city_id"]
 
-    scaler = fit_scaler(base_df, train_end)
-    scaled_df = apply_scaler(base_df, scaler)
-    save_scaler(scaler, exp_dir / "checkpoints" / "scaler.joblib")
-    splits = build_experiment_windows(scaled_df, config, train_end, val_end)
-
-    if not np.array_equal(splits["test"]["window_start"], layout["test"]["window_start"]):
-        raise RuntimeError("scaled and unscaled window builds disagree on the test-set windows")
-
     device = get_device()
     log_lines = [
         f"device={device}",
         f"training_scope={config.training_scope} model_family={config.model_family}",
         f"train_end={train_end} val_end={val_end}",
+        f"test daylight elements: {int(daylight.sum())} of {daylight.size}",
     ]
-    for name, d in splits.items():
-        log_lines.append(f"{name}: {d['y'].shape[0]} windows")
-    log_lines.append(f"test daylight elements: {int(daylight.sum())} of {daylight.size}")
 
-    pooled_scaled, run_stats = _predict_replicas(
-        splits, config, len(CITIES), device, exp_dir, "bootstrap_model",
-        seed_base=config.seed + 1, rng=np.random.default_rng(config.seed),
-        log_prefix="", log_lines=log_lines,
+    pooled_preds, run_stats = SCOPE_RUNNERS[config.training_scope](
+        base_df, config, train_end, val_end, layout, device, exp_dir, log_lines
     )
-    pooled_preds = inverse_transform_target(scaler, pooled_scaled)
-    del pooled_scaled
 
     subsets = compute_metric_subsets(pooled_preds, y_true, city_id_test, CITIES, daylight=daylight)
 
@@ -224,6 +330,8 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
     horizon_df = results_by_horizon_dataframe(subsets)
     summary_df.to_csv(exp_dir / "metrics" / "results_summary.csv", index=False)
     horizon_df.to_csv(exp_dir / "metrics" / "results_by_horizon.csv", index=False)
+    _save_test_predictions(exp_dir, pooled_preds, y_true, city_id_test, daylight,
+                           layout["test"]["window_start"])
 
     _plot_representative_forecasts(pooled_preds, y_true, city_id_test, config, exp_dir)
     for subset in horizon_df["subset"].unique():

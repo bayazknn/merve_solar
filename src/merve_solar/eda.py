@@ -135,10 +135,17 @@ def attach_clearness(df: pd.DataFrame) -> pd.DataFrame:
     kt is defined only where the clear-sky reference is positive (i.e. astronomical
     daylight); elsewhere it is NaN rather than 0/0.
     """
-    clr = load_clearsky_reference()
-    out = df.merge(clr, on=["datetime", "city"], how="left", validate="one_to_one")
-    if out["CLRSKY_SFC_SW_DWN"].isna().any():
-        raise ValueError("clear-sky reference does not cover every (datetime, city) row.")
+    if "CLRSKY_SFC_SW_DWN" in df.columns:
+        # base_features.parquet now carries the column as metadata (never a model feature),
+        # so prefer it: one source of truth rather than two.
+        out = df.copy()
+    else:
+        out = df.merge(
+            load_clearsky_reference(), on=["datetime", "city"], how="left",
+            validate="one_to_one",
+        )
+        if out["CLRSKY_SFC_SW_DWN"].isna().any():
+            raise ValueError("clear-sky reference does not cover every (datetime, city) row.")
     out["kt"] = np.where(
         out["CLRSKY_SFC_SW_DWN"] > 0, out[TARGET_COLUMN] / out["CLRSKY_SFC_SW_DWN"], np.nan
     )
@@ -150,6 +157,10 @@ def attach_clearness(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------------------
 def daylight_mask(df: pd.DataFrame) -> pd.Series:
     """Geometric daylight: NASA POWER's clear-sky reference is positive.
+
+    Reads CLRSKY_SFC_SW_DWN from the frame when it is present (base_features.parquet now
+    carries it as metadata that is never a model feature) and falls back to the standalone
+    EDA cache otherwise.
 
     Clear-sky irradiance is a purely geometric quantity, so CLRSKY > 0 means exactly "the
     sun is above the horizon at this site and hour" -- computed by the data provider with
@@ -173,15 +184,17 @@ def daylight_mask(df: pd.DataFrame) -> pd.Series:
       mean marks the whole hour as daylight and admits 5,266 rows whose clear-sky value is
       exactly 0 -- i.e. night. That pulled every city's daylight mean down by 10-14 W/m^2.
     """
-    clr = load_clearsky_reference()
-    merged = df[["datetime", "city"]].merge(
-        clr, on=["datetime", "city"], how="left", validate="one_to_one"
-    )
-    if merged["CLRSKY_SFC_SW_DWN"].isna().any():
-        raise ValueError("clear-sky reference does not cover every (datetime, city) row.")
-    return pd.Series(
-        (merged["CLRSKY_SFC_SW_DWN"] > 0).to_numpy(), index=df.index, name="daylight"
-    )
+    if "CLRSKY_SFC_SW_DWN" in df.columns:
+        clrsky = df["CLRSKY_SFC_SW_DWN"]
+    else:
+        merged = df[["datetime", "city"]].merge(
+            load_clearsky_reference(), on=["datetime", "city"], how="left",
+            validate="one_to_one",
+        )
+        if merged["CLRSKY_SFC_SW_DWN"].isna().any():
+            raise ValueError("clear-sky reference does not cover every (datetime, city) row.")
+        clrsky = merged["CLRSKY_SFC_SW_DWN"]
+    return pd.Series((clrsky > 0).to_numpy(), index=df.index, name="daylight")
 
 
 def add_season(df: pd.DataFrame) -> pd.DataFrame:
