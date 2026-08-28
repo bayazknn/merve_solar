@@ -212,6 +212,11 @@ değil, bölgesel olarak eşlenik — ama genliği küçük.
 - **Ama tek yıllık test setinin içsel bir belirsizlik tabanı var:** yıllar arası %5–8'lik
   oynama, tek bir test yılıyla temsil ediliyor. Raporlanan RMSE'nin bu mertebede bir yıl
   seçimi belirsizliği taşıdığı makalede bir cümleyle belirtilmeli.
+  *(Not: buradaki "tek yıllık test seti" **modelin** kronolojik bölmesine aittir —
+  `train_ratio=0.74 / val_ratio=0.11` test kümesini tam bir mevsimsel yıla oturtuyor. Bu
+  bölümdeki "6 yıl" ise 3B yüzey/anomali analizinin kullandığı 2020–2025 tam takvim
+  yıllarıdır. Yukarıdaki tabloların hiçbiri son yılla sınırlı değildir; tek istisna
+  `monthly_target_stats.csv`'dir.)*
 - **3B yüzeyden trend iddiası çıkarılmamalı.** 6 yıl trend için zaten kısa, üstelik sinyal
   mevsimsel genliğin ~%5'i. Figürün doğru mesajı "iklimsel rejim istikrarlı, mevsimsel yapı
   yıldan yıla tekrar ediyor" — bu da bir model için iyi haber, çünkü öğrenilen mevsimsel
@@ -260,20 +265,27 @@ haksız biçimde iyi görünür.
 
 ## Tablolar (`tables/`)
 
-| Dosya | İçerik |
-|---|---|
-| `descriptive_stats_by_city_daylight.csv/.md/.tex` | **Birincil tablo.** Gündüz saatleri, il bazında + havuzlanmış. |
-| `descriptive_stats_by_city_24h.csv/.md/.tex` | Aynı tablo 24 saat üzerinden — modelin eğitildiği dağılım budur, hakem sorarsa tamamlayıcı olarak verilir. |
-| `temporal_coverage_by_city.csv` | Zaman feature'larının tarifi: kapsam, saat/gün sayısı, gündüz payı, mevsime göre ortalama günlük gündüz süresi, hedefin mevsimsel özetleri. |
-| `target_by_hour_by_city.csv` | Hedefin (il, mevsim, LST saati) dağılımı — günlük profil figürünün verisi. |
-| `time_feature_explained_variance.csv` | Saat ve yılın günü için η² ve harmonik R². Sin/cos sütunlarına karşı Pearson *r* yerine bu raporlanır: deterministik bir saat fonksiyonuna karşı korelasyon yorumlanamaz. |
-| `wind_direction_circular_stats.csv` | Rüzgâr yönü dairesel istatistiği (bkz. aşağıda). |
-| `correlation_pearson_<il>.csv`, `correlation_spearman_<il>.csv`, `..._pooled.csv` | 9 fiziksel değişkenin korelasyon matrisleri, gündüz saatleri. |
-| `target_correlation_by_city.csv` | Hedefle korelasyon + `partial_r_within_hour` (bkz. aşağıda). |
-| `collinear_pairs.csv` | \|r\| > 0.9 çiftler. |
-| `monthly_target_stats.csv` | Son 12 ay, günlük toplam özetleri. |
-| `seasonal_target_stats.csv` | Mevsim bazında saatlik ve günlük toplam özetleri. |
-| `daily_clearness_by_city.csv` | Ampirik berraklık oranı (günlük toplam ÷ aynı yılın-günü için gözlenen 95. persentil), açık/kapalı gün payları — illeri enlemden bağımsız olarak bulutluluk üzerinden kıyaslar. |
+**Kapsam kuralı: bir istisna dışında her tablo verinin tamamını kullanır** — 2019-06-30 →
+2026-03-30, il başına 59 184 saat / 2 466 gün, havuzlanmış 295 920 satır (gündüz alt kümesi
+156 909). Tek istisna `monthly_target_stats.csv`'dir: o, son 12 ayın kutu grafiğinin
+verisidir ve bilerek 2025-04 → 2026-03 ile sınırlıdır. Figürlerde iki istisna vardır:
+`monthly_boxplot_last12m_*` (son 12 ay) ve `month_year_surface_*` / `month_year_anomaly_panel`
+(yalnız tam takvim yılları, 2020–2025).
+
+| Dosya | İçerik | Kapsam |
+|---|---|---|
+| `descriptive_stats_by_city_daylight.csv/.md/.tex` | **Birincil tablo.** Gündüz saatleri, il bazında + havuzlanmış. | tam veri (gündüz, n=156 909) |
+| `descriptive_stats_by_city_24h.csv/.md/.tex` | Aynı tablo 24 saat üzerinden — modelin bugüne kadar eğitildiği dağılım budur. | tam veri (n=295 920) |
+| `temporal_coverage_by_city.csv` | Zaman feature'larının tarifi: kapsam, saat/gün sayısı, gündüz payı, mevsime göre ortalama günlük gündüz süresi, hedefin mevsimsel özetleri. | tam veri |
+| `target_by_hour_by_city.csv` | Hedefin (il, mevsim, LST saati) dağılımı — günlük profil figürünün verisi. | tam veri |
+| `time_feature_explained_variance.csv` | Saat ve yılın günü için η² ve harmonik R². Sin/cos sütunlarına karşı Pearson *r* yerine bu raporlanır: deterministik bir saat fonksiyonuna karşı korelasyon yorumlanamaz. | tam veri (her ikisi: 24 saat ve gündüz) |
+| `wind_direction_circular_stats.csv` | Rüzgâr yönü dairesel istatistiği (bkz. aşağıda). | tam veri (24 saat, WS>1 m/s) |
+| `correlation_pearson_<il>.csv`, `correlation_spearman_<il>.csv`, `..._pooled.csv` | 9 fiziksel değişkenin korelasyon matrisleri. | tam veri (gündüz) |
+| `target_correlation_by_city.csv` | Hedefle korelasyon + `partial_r_within_hour` (bkz. aşağıda). | tam veri (gündüz) |
+| `collinear_pairs.csv` | \|r\| > 0.9 çiftler. | tam veri (gündüz) |
+| `seasonal_target_stats.csv` | Mevsim bazında saatlik ve günlük toplam özetleri. | tam veri (2 466 gün/il) |
+| `daily_clearness_by_city.csv` | Ampirik berraklık oranı (günlük toplam ÷ aynı yılın-günü için gözlenen 95. persentil), açık/kapalı gün payları — illeri enlemden bağımsız olarak bulutluluk üzerinden kıyaslar. | tam veri (2 464 gün/il; 29 Şubat'lar hizalama için düşülür) |
+| `monthly_target_stats.csv` | Son 12 ayın günlük toplam özetleri — kutu grafiğinin verisi. | **SADECE 2025-04 → 2026-03** (364 gün/il) |
 
 **Basıklık Fisher (fazlalık) tanımıdır:** normal dağılım için 0, 3 değil. Gündüz verisinde
 hedefin çarpıklığı 0.47, fazlalık basıklığı −0.92 — yani ağır kuyruklu değil, basık/iki
