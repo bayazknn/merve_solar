@@ -1093,6 +1093,7 @@ Sınama (`uv run python -m pytest tests/ -q`) — her dosyanın koruduğu deği�
 | `tests/test_loss_function.py`| §10.1 kayıp seçiminin gerçekten ölçütü değiştirmesi, `huber_delta`'nın geçmesi   |
 | `tests/test_loss_masking.py` | `loss_daylight_only` maskesi ve gündüzsüz yığının atlanması                      |
 | `tests/test_baselines.py`    | Naif referansların model hedefleriyle aynı pencerelerde ve aynı gece kırpmasıyla puanlanması |
+| `tests/test_model_family.py` | `run_experiment`'ın LSTM dışı bir `model_family`'yi eğitmeyi reddetmesi; naif referans satır tarifçisinin kurulmaya devam etmesi |
 | `tests/test_cli_overrides.py`| Eksen geçersiz kılmalarının `--experiment-id` olmadan reddi                     |
 | `tests/test_grid.py`         | §13.5 gruplarında yinelenen `experiment_id` olmaması; ablasyon çiftlerinin tek eksende ayrılması |
 | `tests/test_eda.py`          | §3 betimleyici katman: gündüz maskesinin geometrik olması, ACF/PACF doğruluğu    |

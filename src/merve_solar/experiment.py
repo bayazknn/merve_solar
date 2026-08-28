@@ -69,6 +69,31 @@ def assert_ledger_schema_ok() -> None:
         )
 
 
+def assert_trainable_model_family(config) -> None:
+    """run_experiment trains an LSTM and nothing else, so any other family would be a lie.
+
+    SCOPE_RUNNERS dispatches on training_scope alone; model_family is only ever copied into the
+    ledger row. Without this check a config saying model_family="climatology" would train an
+    LSTM and append a row labelled `climatology` -- a fabricated comparison sitting in the file
+    the paper's tables are built from.
+
+    Deliberately NOT validated in ExperimentConfig.__post_init__: scripts/03_run_naive_baselines.py
+    constructs an ExperimentConfig with model_family set purely as a ROW DESCRIPTOR for a forecast
+    that was computed without ever going through run_experiment. There the config is metadata, not
+    a training instruction, and rejecting it at construction would break a working script. The
+    guard belongs where training is actually dispatched, which is here.
+    """
+    if config.model_family != "lstm":
+        raise ValueError(
+            f"run_experiment only trains model_family='lstm', got {config.model_family!r}. "
+            "The non-LSTM families (climatology, persistence, smart_persistence) are not trained "
+            "at all -- they are scored through the same windows and metrics by "
+            "scripts/03_run_naive_baselines.py, which writes their ledger rows directly. "
+            "Running this config would train an LSTM and label the row "
+            f"{config.model_family!r}."
+        )
+
+
 def _append_ledger_row(row: dict) -> None:
     if tuple(row) != LEDGER_COLUMNS:
         raise ValueError(f"ledger row keys do not match LEDGER_COLUMNS: {set(row) ^ set(LEDGER_COLUMNS)}")
@@ -322,7 +347,9 @@ SCOPE_RUNNERS = {"global": _run_global_scope, "per_city": _run_per_city_scope}
 
 def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
     start_time = time.time()
-    assert_ledger_schema_ok()  # fail in milliseconds rather than after hours of training
+    # Both fail in milliseconds rather than after hours of training.
+    assert_ledger_schema_ok()
+    assert_trainable_model_family(config)
     set_seed(config.seed)
 
     exp_dir = config.experiment_dir
