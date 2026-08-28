@@ -1,0 +1,12 @@
+device=cpu
+training_scope=per_city model_family=lstm
+loss_function=mae
+active_cities=['Rize'] excluded=['Ankara', 'Antalya', 'Konya', 'Van']
+train_end=2024-06-27 19:00:00 val_end=2025-03-26 01:00:00
+test daylight elements: 109043 of 211944
+Rize/train: 43749 windows
+Rize/val: 6463 windows
+Rize/test: 8831 windows
+Rize replica 0: val_loss=0.1912 epochs=28
+clamped 102901 night elements to zero
+total_training_time_sec=155.2
