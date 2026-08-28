@@ -179,6 +179,15 @@ Roughly translated, still outstanding:
 ### Paths
 
 All paths derive from `PROJECT_ROOT` in `config.py`; nothing takes a path argument on the CLI
-except `run_experiment.py --config`. `outputs/` is tracked in git (generated artifacts are
-committed deliberately), so a sweep produces a large, reviewable diff — mention it before running
-one that rewrites many experiment directories.
+except `run_experiment.py --config`.
+
+`outputs/` is tracked in git **except model checkpoints** (`.gitignore` ignores
+`outputs/**/checkpoints/*.pt`): configs, logs, metrics CSVs, figures, `scaler.joblib`, and the
+ledger all sync; the `.pt` weights stay local and are regenerated from the seeded config. This
+matters because long experiments are run on a remote server that syncs through git — results
+produced there only reach the paper if they are committed and pushed.
+
+Commit and push each coherent change immediately rather than batching at the end of a session
+(the user has given standing authorization for this); the remote otherwise runs stale code. Note
+that a sweep produces a large, reviewable diff — mention it before running one that rewrites many
+experiment directories.
