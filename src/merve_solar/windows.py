@@ -46,7 +46,14 @@ def compute_split_boundaries(df: pd.DataFrame, config) -> tuple[pd.Timestamp, pd
     return train_end, val_end
 
 
-def _build_city_windows(city_df: pd.DataFrame, lookback: int, horizon: int, stride: int, include_X: bool = True):
+def _build_city_windows(
+    city_df: pd.DataFrame,
+    lookback: int,
+    horizon: int,
+    stride: int,
+    include_X: bool = True,
+    extra_target_columns: tuple[str, ...] = (),
+):
     if len(city_df) == 0:
         raise ValueError("no rows for this city — check the city name and the frame passed in")
 
@@ -74,6 +81,7 @@ def _build_city_windows(city_df: pd.DataFrame, lookback: int, horizon: int, stri
             np.empty((0, lookback, n_features), dtype=np.float32) if include_X else None,
             np.empty((0, horizon), dtype=np.float32),
             np.empty((0, horizon), dtype=bool),
+            {c: np.empty((0, horizon), dtype=np.float32) for c in extra_target_columns},
             np.empty((0,), dtype=np.int64),
             empty_dt,
             empty_dt,
@@ -87,10 +95,14 @@ def _build_city_windows(city_df: pd.DataFrame, lookback: int, horizon: int, stri
         X = None
     y = np.stack([target[starts + lookback + o] for o in range(horizon)], axis=1)
     daylight = np.stack([daylight_hour[starts + lookback + o] for o in range(horizon)], axis=1)
+    extras = {}
+    for column in extra_target_columns:
+        series = city_df[column].to_numpy(dtype=np.float32)
+        extras[column] = np.stack([series[starts + lookback + o] for o in range(horizon)], axis=1)
     city_ids = np.full(n_windows, city_id, dtype=np.int64)
     window_start = dt[starts]
     window_end = dt[starts + span - 1]
-    return X, y, daylight, city_ids, window_start, window_end
+    return X, y, daylight, extras, city_ids, window_start, window_end
 
 
 def build_experiment_windows(
@@ -100,6 +112,7 @@ def build_experiment_windows(
     val_end: pd.Timestamp,
     cities: list | None = None,
     include_X: bool = True,
+    extra_target_columns: tuple[str, ...] = (),
 ) -> dict:
     """Returns {'train'/'val'/'test': {'X', 'y', 'daylight', 'city_id', 'window_start'}}.
 
@@ -111,6 +124,11 @@ def build_experiment_windows(
     include_X=False skips the (N, lookback, F) allocation. Used for a cheap "layout" pass that
     yields the canonical raw-W/m^2 ground truth, city ids, daylight mask and window timestamps
     without training anything.
+
+    extra_target_columns gathers further frame columns at the same target hours as `y`, into
+    (N, horizon) arrays under result[split]["extras"]. The naive reference baselines use this
+    so their predictions are gathered by exactly the indexing the model's targets are, rather
+    than by a parallel implementation that could drift out of alignment.
     """
     cities = list(CITIES) if cities is None else list(cities)
     train_end_np = np.datetime64(train_end)
@@ -118,12 +136,13 @@ def build_experiment_windows(
 
     per_split_parts = {"train": [], "val": [], "test": []}
     for city in cities:
-        X, y, daylight, city_ids, w_start, w_end = _build_city_windows(
+        X, y, daylight, extras, city_ids, w_start, w_end = _build_city_windows(
             df[df["city"] == city],
             config.lookback_hours,
             config.horizon_hours,
             config.window_stride,
             include_X=include_X,
+            extra_target_columns=extra_target_columns,
         )
 
         masks = {
@@ -133,16 +152,21 @@ def build_experiment_windows(
         }
         for split_name, m in masks.items():
             per_split_parts[split_name].append(
-                (None if X is None else X[m], y[m], daylight[m], city_ids[m], w_start[m])
+                (None if X is None else X[m], y[m], daylight[m],
+                 {c: v[m] for c, v in extras.items()}, city_ids[m], w_start[m])
             )
 
     result = {}
     for split_name, parts in per_split_parts.items():
-        Xs, ys, days, cids, starts = zip(*parts)
+        Xs, ys, days, extras_parts, cids, starts = zip(*parts)
         result[split_name] = {
             "X": None if Xs[0] is None else np.concatenate(Xs, axis=0),
             "y": np.concatenate(ys, axis=0),
             "daylight": np.concatenate(days, axis=0),
+            "extras": {
+                c: np.concatenate([e[c] for e in extras_parts], axis=0)
+                for c in extra_target_columns
+            },
             "city_id": np.concatenate(cids, axis=0),
             "window_start": np.concatenate(starts, axis=0),
         }

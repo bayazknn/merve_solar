@@ -75,7 +75,7 @@ SECONDARY_AGGREGATE_EXCLUDES = ["Rize"]
 # header migration. "global" is the headline configuration and the default; "per_city" exists
 # only as the ablation arm that tests the paper's cross-city transfer claim.
 TRAINING_SCOPES = ("global", "per_city")
-MODEL_FAMILIES = ("lstm", "climatology", "persistence")
+MODEL_FAMILIES = ("lstm", "climatology", "persistence", "smart_persistence")
 
 NUMERIC_FEATURE_COLUMNS = [
     "ALLSKY_SFC_SW_DWN",  # own-lag, autoregressive
