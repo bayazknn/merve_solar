@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 
 from merve_solar.config import LOSS_FUNCTIONS, ExperimentConfig
-from merve_solar.train import make_criterion, nonneg_penalty
+from merve_solar.train import fit_loss, make_criterion, nonneg_penalty
 
 
 def test_default_is_still_mse():
@@ -46,8 +46,11 @@ def test_the_nonneg_penalty_is_unchanged_by_the_criterion():
     penalty = nonneg_penalty(pred)
     assert penalty.item() == pytest.approx(2.0)  # mean of relu(-pred)^2 = (4 + 0) / 2
 
-    mse = make_criterion(ExperimentConfig(experiment_id="x", loss_function="mse"))
-    mae = make_criterion(ExperimentConfig(experiment_id="x", loss_function="mae"))
+    # Criteria are element-wise now (so the daylight mask can be applied), so go through
+    # fit_loss -- the path the training loop actually takes.
+    all_daylight = torch.ones_like(pred, dtype=torch.bool)
     weight = 0.1
-    assert (mse(pred, y) + weight * penalty).item() == pytest.approx(2.5 + 0.2)
-    assert (mae(pred, y) + weight * penalty).item() == pytest.approx(1.5 + 0.2)
+    for loss_function, expected_fit in (("mse", 2.5), ("mae", 1.5)):
+        criterion = make_criterion(ExperimentConfig(experiment_id="x", loss_function=loss_function))
+        fit = fit_loss(criterion, pred, y, all_daylight, False)
+        assert (fit + weight * penalty).item() == pytest.approx(expected_fit + 0.2)

@@ -25,9 +25,26 @@ def make_criterion(config) -> nn.Module:
     """The fit criterion for this config, in SCALED target space (unchanged from before).
 
     Exposed separately so a test can assert on the criterion itself rather than inferring the
-    choice from a metric, which a lucky seed could fake.
+    choice from a metric, which a lucky seed could fake. reduction="none" so the daylight mask
+    can be applied per element; the unmasked path takes the plain mean and is unchanged.
     """
-    return LOSS_CRITERIA[config.loss_function]()
+    return LOSS_CRITERIA[config.loss_function](reduction="none")
+
+
+def fit_loss(criterion, pred, target, daylight, daylight_only: bool):
+    """Mean fit loss, over daylight elements only when the config asks for it.
+
+    Returns None when a batch has no daylight element at all, so the caller can skip it rather
+    than propagate a NaN. Night rows are ~48.8% of the target and identical across provinces,
+    so masking them concentrates the gradient on the hours that actually carry signal -- but it
+    leaves night outputs unsupervised, which is why it is off by default.
+    """
+    per_element = criterion(pred, target)
+    if not daylight_only:
+        return per_element.mean()
+    if not daylight.any():
+        return None
+    return per_element[daylight].mean()
 
 
 def nonneg_penalty(pred: torch.Tensor) -> torch.Tensor:
@@ -37,10 +54,14 @@ def nonneg_penalty(pred: torch.Tensor) -> torch.Tensor:
 def train_model(model: nn.Module, train_data: dict, val_data: dict, config, device: str | None = None):
     device = device or get_device()
     train_loader = make_dataloader(
-        train_data["X"], train_data["y"], train_data["city_id"], config.batch_size, shuffle=True
+        train_data["X"], train_data["y"], train_data["city_id"], config.batch_size,
+        shuffle=True, daylight=train_data.get("daylight"),
     )
+    # The validation loss must use the same masking as training, or early stopping and the LR
+    # schedule would be selecting on a different objective than the one being optimised.
     val_loader = make_dataloader(
-        val_data["X"], val_data["y"], val_data["city_id"], config.batch_size, shuffle=False
+        val_data["X"], val_data["y"], val_data["city_id"], config.batch_size,
+        shuffle=False, daylight=val_data.get("daylight"),
     )
 
     model.to(device)
@@ -58,27 +79,35 @@ def train_model(model: nn.Module, train_data: dict, val_data: dict, config, devi
     for epoch in range(config.max_epochs):
         model.train()
         train_loss_sum, n_train = 0.0, 0
-        for X, city_id, y in train_loader:
+        for X, city_id, y, daylight in train_loader:
             X, city_id, y = X.to(device), city_id.to(device), y.to(device)
+            daylight = daylight.to(device)
             optimizer.zero_grad()
             pred = model(X, city_id)
-            loss = criterion(pred, y) + config.nonneg_penalty_weight * nonneg_penalty(pred)
+            fit = fit_loss(criterion, pred, y, daylight, config.loss_daylight_only)
+            if fit is None:  # no daylight element in this batch; nothing to learn from
+                continue
+            loss = fit + config.nonneg_penalty_weight * nonneg_penalty(pred)
             loss.backward()
             optimizer.step()
             train_loss_sum += loss.item() * X.size(0)
             n_train += X.size(0)
-        train_loss = train_loss_sum / n_train
+        train_loss = train_loss_sum / max(n_train, 1)
 
         model.eval()
         val_loss_sum, n_val = 0.0, 0
         with torch.no_grad():
-            for X, city_id, y in val_loader:
+            for X, city_id, y, daylight in val_loader:
                 X, city_id, y = X.to(device), city_id.to(device), y.to(device)
+                daylight = daylight.to(device)
                 pred = model(X, city_id)
-                loss = criterion(pred, y) + config.nonneg_penalty_weight * nonneg_penalty(pred)
+                fit = fit_loss(criterion, pred, y, daylight, config.loss_daylight_only)
+                if fit is None:
+                    continue
+                loss = fit + config.nonneg_penalty_weight * nonneg_penalty(pred)
                 val_loss_sum += loss.item() * X.size(0)
                 n_val += X.size(0)
-        val_loss = val_loss_sum / n_val
+        val_loss = val_loss_sum / max(n_val, 1)
 
         scheduler.step(val_loss)
         history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss})

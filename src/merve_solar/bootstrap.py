@@ -29,8 +29,10 @@ def resample_train_split(train_data: dict, block_length: int, rng: np.random.Gen
         block_idx = _moving_block_bootstrap_indices(len(city_positions), block_length, rng)
         resampled_positions.append(city_positions[block_idx])
     idx = np.concatenate(resampled_positions)
+    # Every per-window array is resampled by the same index, so a daylight-masked loss sees the
+    # mask that belongs to each resampled window rather than a stale one.
     return {
-        "X": train_data["X"][idx],
-        "y": train_data["y"][idx],
-        "city_id": train_data["city_id"][idx],
+        key: value[idx]
+        for key, value in train_data.items()
+        if key in ("X", "y", "city_id", "daylight", "window_start")
     }
