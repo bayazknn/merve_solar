@@ -204,15 +204,15 @@ bu iki döngü sinyalin baskın bileşenleridir.
 
 `NUMERIC_FEATURE_COLUMNS` (`src/merve_solar/config.py`) — sıra kodda tanımlı sıradır:
 
-| # | Öznitelik | Tür |
-| --- | --- | --- |
-| 1 | `ALLSKY_SFC_SW_DWN` | **Hedefin kendi gecikmeli değerleri (özbağlanımlı girdi)** |
-| 2 | `CLRSKY_SFC_SW_DWN` | Açık gökyüzü referans ışınımı |
-| 3–7 | `T2M`, `RH2M`, `QV2M`, `T2MDEW`, `PS` | Sıcaklık, nem, basınç |
-| 8–10 | `WS10M`, `WS50M`, `PRECTOTCORR` | Rüzgâr hızı, yağış |
-| 11–14 | `WD10M_sin`, `WD10M_cos`, `WD50M_sin`, `WD50M_cos` | Rüzgâr yönü (döngüsel) |
-| 15–16 | `hour_sin`, `hour_cos` | Günlük (diurnal) döngü |
-| 17–18 | `doy_sin`, `doy_cos` | Mevsimsel döngü |
+| #     | Öznitelik                                          | Tür                                                        |
+| ----- | -------------------------------------------------- | ---------------------------------------------------------- |
+| 1     | `ALLSKY_SFC_SW_DWN`                                | **Hedefin kendi gecikmeli değerleri (özbağlanımlı girdi)** |
+| 2     | `CLRSKY_SFC_SW_DWN`                                | Açık gökyüzü referans ışınımı                              |
+| 3–7   | `T2M`, `RH2M`, `QV2M`, `T2MDEW`, `PS`              | Sıcaklık, nem, basınç                                      |
+| 8–10  | `WS10M`, `WS50M`, `PRECTOTCORR`                    | Rüzgâr hızı, yağış                                         |
+| 11–14 | `WD10M_sin`, `WD10M_cos`, `WD50M_sin`, `WD50M_cos` | Rüzgâr yönü (döngüsel)                                     |
+| 15–16 | `hour_sin`, `hour_cos`                             | Günlük (diurnal) döngü                                     |
+| 17–18 | `doy_sin`, `doy_cos`                               | Mevsimsel döngü                                            |
 
 Hedef değişkenin kendisi girdi penceresinde yer alır (özbağlanımlı yapı); bu **veri sızıntısı
 değildir**, çünkü pencere yalnızca geçmiş $L$ saati içerir, tahmin edilen $H$ saat penceredeki
