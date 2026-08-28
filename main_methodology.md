@@ -49,7 +49,9 @@ $F = 17$ sayısal öznitelik.
 her adımın hatası bir sonraki adımın girdisine taşınır ve hata birikimi 24 saatlik ufukta
 ciddi bozulmaya yol açar; ayrıca özyineleme, belirsizlik dağılımının ufuk boyunca yayılımını
 analitik olarak izlenemez hâle getirir. Doğrudan yaklaşımda her ufuk adımı için belirsizlik
-doğrudan gözlemlenebilir (bkz. `cp_vs_horizon.png`).
+ayrı ayrı gözlemlenebilir hâle gelir; ufka göre kapsama figürü (`cp_vs_horizon.png`) her
+koşuda üretilir. (Şu ana dek yalnızca smoke koşuları tamamlandığından bu figürün mevcut
+örnekleri boru hattı doğrulamasıdır, sonuç değildir — bkz. §11.3.)
 
 **Küresel (global) model:** İl başına ayrı model eğitilmez. Beş ilin verisi tek bir modelde
 birleştirilir ve il kimliği yalnızca öğrenilen bir gömme vektörü olarak modele girer. Bu,
@@ -118,7 +120,7 @@ modelin il gömme vektöründen ne öğrenmesi gerektiğine dair doğrudan kanı
 | ------------------------ | ------------------------------------------------------------------ | ------- |
 | `YEAR`, `MO`, `DY`, `HR` | Zaman damgası bileşenleri                                          | —       |
 | `ALLSKY_SFC_SW_DWN`      | **Hedef.** Tüm gökyüzü koşullarında yüzeye gelen kısa dalga ışınım | W/m²    |
-| `CLRSKY_SFC_SW_DWN`      | Açık gökyüzü referans ışınımı — **kullanılmadı, silindi**          | W/m²    |
+| `CLRSKY_SFC_SW_DWN`      | Açık gökyüzü referansı — **öznitelik değil**, gündüz maskesi (§4.2) | W/m²    |
 | `T2M`                    | 2 m sıcaklık                                                       | °C      |
 | `RH2M`                   | 2 m bağıl nem                                                      | %       |
 | `QV2M`                   | 2 m özgül nem                                                      | g/kg    |
@@ -158,11 +160,29 @@ NASA POWER, eksik değerleri `-999` ile kodlar. Veri setinde iki tür `-999` bul
 2. **`ALLSKY_KT` sütunu:** Açıklık indeksi gece saatlerinde tanımsızdır; sütunun yaklaşık
    %50'si `-999`'dur. → Sütun **tümüyle düşürülmüştür**.
 
-Bunlara ek olarak `CLRSKY_SFC_SW_DWN` sütunu da (eksik veri nedeniyle değil, modelleme kararı
-gereği) düşürülmüştür: açık gökyüzü ışınımı, hedefin neredeyse tümüyle geometrik olarak
-belirlenen üst zarfıdır; girdi olarak tutulması problemi kısmen bir "açıklık indeksi
-regresyonuna" indirger ve operasyonel olarak elde edilebilir bilgiden daha iyimser bir başarı
-tablosu üretir. Her iki sütun da `DROPPED_COLUMNS` sabiti üzerinden okuma anında düşürülür.
+`ALLSKY_KT` `DROPPED_COLUMNS` sabiti üzerinden okuma anında tümüyle düşürülür.
+
+**`CLRSKY_SFC_SW_DWN` ise farklı işlem görür: öznitelik kümesinden çıkarılır ama çerçevede
+kalır.** Modelden çıkarılmasının gerekçesi eksik veri değil, modelleme kararıdır: açık
+gökyüzü ışınımı, hedefin neredeyse tümüyle geometrik olarak belirlenen üst zarfıdır; girdi
+olarak tutulması problemi kısmen bir "açıklık indeksi regresyonuna" indirger ve operasyonel
+olarak elde edilebilir bilgiden daha iyimser bir başarı tablosu üretir. Buna karşılık **aynı
+özellik onu kusursuz bir gündüz göstergesi yapar**: NASA'nın açık gökyüzü modeli saf güneş
+geometrisidir, içinde hiçbir hava durumu terimi yoktur, dolayısıyla
+$\text{CLRSKY}_{ih} > 0$ koşulu "güneş ufkun üzerinde mi" sorusunun tam yanıtıdır ve
+**gerçekleşen hedefi hiçbir biçimde okumaz** — yani seçim-sonuç üzerinden koşullama itirazı
+doğmaz. Bu nedenle sütun `MASK_COLUMNS` sabitiyle çerçevede *üstveri* olarak tutulur;
+gündüz alt kümesini (§12) ve gece kırpmasını (§11.3) tanımlar, ama **hiçbir zaman model
+girdisi değildir**. `config.py` içindeki içe aktarma anında çalışan bir kontrol, bu iki
+sabitteki hiçbir sütunun `NUMERIC_FEATURE_COLUMNS` içine ya da hedef olarak sızmadığını
+doğrular ve aksi hâlde hata fırlatır.
+
+> **Ölçüm.** `CLRSKY > 0` maskesi 295.920 saatin 151.643'ünü seçer; hedef eşiği
+> ($y \ge 1$ W/m²) 151.638'ini. İkisi saatlerin **%99,9983'ünde** aynı fikirdedir, yani
+> geometrik gösterge hiçbir bilgi kaybı olmadan kullanılabilmektedir. İklimsel
+> (il, ay, saat) hücre ortalaması ise 156.909 satır seçerek 5.266 alacakaranlık saatini
+> içeri alır (medyan ışınımları 12,0 W/m², gündüz iç bölgesinin medyanı 395,7 W/m²);
+> metrik maskesi olarak bu nedenle kullanılmaz.
 
 ### 4.3 Doğrulama (fail-fast)
 
@@ -254,8 +274,9 @@ Sınırlar ilk ilin saat sayısı üzerinden hesaplanır ve tüm illere aynı ta
 (tüm iller aynı zaman aralığını kapsadığı için bu tutarlıdır).
 
 > **Bölme oranlarının gerekçesi (makalede mutlaka belirtilmeli):**
-> `0,74 / 0,11 / 0,15` oranları keyfi değildir. Bu oranlarla test kümesi **tam olarak bir
-> mevsimsel yıla** (369 gün) denk gelir. Güneş ışınımında bu kritik bir tasarım kararıdır:
+> `0,74 / 0,11 / 0,15` oranları keyfi değildir. Bu oranlarla test kümesi **yaklaşık bir tam
+> yıla** denk gelir: 8.878 saatlik dilim, yani 369 gün 22 saat ≈ 370 gün
+> (2025-03-26 02:00 → 2026-03-30 23:00), dolayısıyla dört mevsimi de içerir. Güneş ışınımında bu kritik bir tasarım kararıdır:
 > test kümesi yalnızca yaz aylarına düşerse model olduğundan iyi, yalnızca kışa düşerse
 > olduğundan kötü görünür. Tam bir yıl, tüm mevsimleri dengeli biçimde içerir ve mevsimsel
 > yanlılığı ortadan kaldırır. Kaynak makalenin kendi 64/16/20 bölmesi karşılaştırma amacıyla
@@ -321,8 +342,9 @@ $$
    - test: $\text{pencere\_başı} > \text{val\_end}$
    
    Sınırı kesen (straddling) pencereler **atılır**. Bu, eğitim penceresinin hedefinin doğrulama
-   dönemine taşmasını, yani sızıntıyı engeller. Kayıp, bölme başına en fazla $(L+H-1)$ penceredir
-   ve toplam veri hacmi yanında ihmal edilebilir.
+   dönemine taşmasını, yani sızıntıyı engeller. Kayıp, **il ve sınır başına** en fazla
+   $(L+H-1) = 47$ penceredir; varsayılan konfigürasyonda 2 sınır × 5 il × 47 = **470 pencere**
+   (295.685 pencerenin ≈%0,16'sı) ve toplam veri hacmi yanında ihmal edilebilir.
 
 **Varsayılan konfigürasyonla elde edilen pencere sayıları (5 il toplamı):**
 
@@ -345,9 +367,9 @@ Girdi: X (batch, L=24, F=17)   ve   city_id (batch,)
    │
    ├─ Embedding(5 → 4) ──► e_c, her zaman adımına kopyalanır: (batch, 24, 4)
    │
-   ├─ concat([X, e_c])  ──────────────────────────────► (batch, 24, 22)
+   ├─ concat([X, e_c])  ──────────────────────────────► (batch, 24, 21)
    │
-   ├─ LSTM(input=22, hidden=64, num_layers=2, dropout=0.3, batch_first=True)
+   ├─ LSTM(input=21, hidden=64, num_layers=2, dropout=0.3, batch_first=True)
    │        └─► son zaman adımının gizli durumu: (batch, 64)
    │
    ├─ Dropout(0.3)
@@ -366,7 +388,8 @@ Girdi: X (batch, L=24, F=17)   ve   city_id (batch,)
 - `hidden_sizes[1:]` → çıkış başlığındaki (head) ek `Linear` katmanların boyutları
 
 Varsayılan `[64, 32]` şu anlama gelir: **2 katmanlı** LSTM (gizli boyut 64) + `Linear(64→32)`
-→ ReLU → Dropout → `Linear(32→24)` başlığı. Toplam öğrenilebilir parametre: **58.700**.
+→ ReLU → Dropout → `Linear(32→24)` başlığı. Toplam öğrenilebilir parametre: **58.444**
+($F = 17$ ve `city_embedding_dim = 4` ile, doğrudan modelden sayılarak doğrulanmıştır; 58.700 değeri $F = 18$ dönemine ait eskimiş bir sayıdır).
 `[128, 64, 32]` ise 3 katmanlı LSTM(128) + iki katmanlı başlık demektir.
 
 > Makalede mimari tablosu verilirken bu yorum açıkça yazılmalıdır; aksi hâlde `[64, 32]`
@@ -426,8 +449,11 @@ kısıtının ışınımda karşılığı olmadığından uygulanmamıştır.
 | Model seçimi             | **En iyi doğrulama kaybını veren epoktaki ağırlıklar** saklanır ve eğitim sonunda geri yüklenir (son epok değil)       |
 
 Doğrulama kaybı da aynı kısıtlı kayıp fonksiyonuyla, `model.eval()` modunda ve `torch.no_grad()`
-altında hesaplanır. Eğitim ve doğrulama kayıpları epok bazında kaydedilir (`history`) ve deney
-günlüğüne (`log.txt`) yazılır.
+altında hesaplanır. Eğitim ve doğrulama kayıpları epok bazında **bellekte** tutulur
+(`history`); deney günlüğüne (`log.txt`) replika başına yalnızca son doğrulama kaybı ve
+çalışılan epok sayısı yazılır (`replica {b}: final val_loss=… epochs=…`). Epok bazlı eğitim
+eğrisi hiçbir dosyaya kaydedilmemektedir; eğri figürü istenirse `history`'nin diske yazılması
+gerekir.
 
 ---
 
@@ -531,6 +557,21 @@ $$
 Havuzlama tensör boyutuyla: $(B \cdot T,\, N,\, H) = (800,\, 44155,\, 24)$. Havuzlama
 **ölçeklenmiş uzayda** yapılır, ardından tüm dağılım W/m²'ye geri dönüştürülür.
 
+> **Uyarı — bu değerler tasarım hedefidir, ölçüm değildir.** Varsayılan konfigürasyonun
+> ($B=8$, $T=100$) tam koşusu bu ana dek tamamlanmamıştır; ledger'daki LSTM satırlarının
+> tamamı hızlı doğrulama (smoke) koşularıdır ($B=1$, $T=10$). $T=10$ örnekten kestirilen
+> %2,5/%97,5 yüzdelikleri anlamsızdır: **smoke koşularının aralık metrikleri (CP, PINW,
+> MPIW, CWC) makaleye asla girmemelidir**, yalnızca boru hattı doğrulaması içindir.
+
+**Gece kırpması (`clamp_night_to_zero`, varsayılan açık).** W/m²'ye geri dönüştürmeden hemen
+sonra, $\text{CLRSKY}_{ih} = 0$ olan her $(i, h)$ elemanında havuzun **tamamı** sıfıra
+çekilir. Bu bir uydurma (fitting) değil, bilinen bir fiziksel olgunun dayatılmasıdır: güneş
+ufkun altındayken yüzeye gelen kısa dalga ışınım tam olarak sıfırdır ve bu, hedefe hiç
+bakmadan yalnızca geometriden bilinir. Ölçülen etkisi büyüktür — MSE ile eğitilmiş bir
+modelin gece medyan tahmini 29,3 W/m² iken gerçek değer 0'dır; kırpma tüm-saat MAE'sini
+≈%27 düşürür. Kırpmanın **aralık metrikleri üzerindeki yan etkisi** §11.5'te ele alınmıştır
+ve makalede mutlaka belirtilmelidir.
+
 ### 11.4 Güven aralığı — yüzdelik tabanlı
 
 $$
@@ -550,6 +591,42 @@ gündüz bulut geçişlerinde çok modlu olabilir). Yüzdelik tabanlı aralık d
 gerektirmez ve bootstrap yaklaşımıyla tutarlıdır. **Bu, makalede vurgulanması gereken bilinçli
 bir metodolojik tercihtir.**
 
+### 11.5 Tasarımın bilinen sınırları — aralıkların yorumu
+
+Aşağıdakiler tasarımın *bilinen* sınırlarıdır; "gelecek iş" değil, sonuçların doğru
+okunması için gereken ön koşullardır.
+
+**1. Havuzlanan dağılım aleatorik bileşen içermez.** $\mathcal{P}$, bootstrap replikaları
+(veri/örneklem belirsizliği) ile MC-Dropout geçişlerinden (model parametresi belirsizliği)
+oluşur; **gözlem gürültüsü terimi hiçbir aşamada eklenmez**
+(`metrics.py::summarize_predictive_distribution` doğrudan geçişlerin yüzdeliklerini alır).
+Dolayısıyla aralıklar "gözlem nerede olabilir" sorusunu değil, "modelin ortalama tahmini
+nerede olabilir" sorusunu yanıtlar ve %95 kapsamaya **ilkesel olarak** ulaşamayabilirler.
+Ölçülen değerler bu beklentiyle uyumludur: ön koşularda gündüz CP $\approx 0{,}62$–$0{,}67$,
+hedef ise $0{,}95$. Standart çare $\sigma^2_{\text{toplam}} = \sigma^2_{\text{model}} +
+\sigma^2_{\text{gürültü}}$ biçiminde bir rezidüel-varyans eklentisi ya da split-conformal
+bir kalibrasyon katmanıdır; **kaynak makalenin PICP $= 0{,}9472$ değeriyle karşılaştırma bu
+düzeltme yapılmadan adil olmayacaktır.**
+
+**2. Gece kırpması tüm-saat CP'sini yapısal olarak şişirir.** `clamp_night_to_zero`
+varsayılan olarak açıktır (§11.3): $\text{CLRSKY} = 0$ olan adımlarda havuzun *tamamı* sıfıra
+çekilir. Bu adımlarda aralık $[0,\,0]$ genişliğindedir ve gerçek değer de tam olarak 0
+olduğundan **tanım gereği kapsanır**. Elemanların ≈%48,8'i gece olduğuna göre, tüm-saat CP'si
+yaklaşık yarısı 1,0 olan bir karışımdır — ölçülen tüm-saat CP $\approx 0{,}80$'e karşılık
+gündüz CP $\approx 0{,}62$–$0{,}67$. **Aralık kalitesi yalnızca gündüz alt kümesinden
+okunmalıdır**; tüm-saat CP'si makalede raporlanacaksa bu yapısal şişme ile birlikte
+verilmelidir.
+
+**3. Doğrulama kümesi tüm replikalar için ortaktır.** Her replika aynı `splits["val"]`
+üzerinde erken durdurulur, bu da replikaların bağımsızlığı varsayımını zayıflatır. Bootstrap
+yalnızca eğitim bölmesine uygulandığı için sızıntı yoktur, ancak belirsizlik bandının bir
+miktar dar kalmasına katkı verir.
+
+**4. Test pencereleri bağımsız gözlem değildir.** `window_stride = 1` ile ardışık pencereler
+48 saatlik açıklığın 47'sini paylaşır. `n_samples` sütunu makalede "bağımsız gözlem sayısı"
+gibi okunmamalıdır; anlamlılık testi yapılacaksa (Diebold–Mariano vb.) bu blok yapısı HAC
+varyansı ile hesaba katılmalıdır.
+
 ---
 
 ## 12. Başarım metrikleri
@@ -567,6 +644,17 @@ $$
 
 İkisi de W/m² birimindedir ve düşük olması iyidir. RMSE büyük hataları daha ağır cezalandırır;
 MAE aykırı değerlere daha dayanıklıdır.
+
+$$
+R^2 = 1 - \frac{\sum_{i,h}\left(y_{ih} - \hat{\mu}_{ih}\right)^2}{\sum_{i,h}\left(y_{ih} - \bar{y}\right)^2}
+$$
+
+burada $\bar{y}$ **o alt kümenin** gerçek değer ortalamasıdır; alt küme sabit hedefliyse
+tanımsızdır ve `nan` raporlanır. $R^2$ birimsizdir ve 1'e yakın olması iyidir — ancak
+**paydası alt kümeye görelidir**, dolayısıyla tüm-saat ve gündüz $R^2$'leri aynı ölçekte
+değildir: gece/gündüz salınımı toplam varyansı şişirdiği için tüm-saat $R^2$'si yapay olarak
+yüksek çıkar (§16.1). Aynı gerekçe PINW için de geçerlidir. **Manşet değer gündüz
+$R^2$'sidir.**
 
 ### 12.2 Aralık kalitesi metrikleri
 
@@ -633,13 +721,34 @@ W/m² birimindedir; düşük olması iyidir, mükemmel deterministik tahminde 0'
 
 ### 12.3 Raporlama düzeyleri
 
-Her metrik **üç düzeyde** hesaplanır:
+Her metrik **üç düzeyde** ve **iki alt küme** için hesaplanır. Alt küme, dosyalarda ayrı bir
+`subset` sütunudur:
 
-| Düzey              | Dosya                            | İçerik                                    |
-| ------------------ | -------------------------------- | ----------------------------------------- |
-| Toplulaştırılmış   | ledger satırı                    | Tüm iller + tüm ufuk adımları havuzlanmış |
-| İl bazında         | `metrics/results_summary.csv`    | Aggregate + 5 il için birer satır         |
-| Ufuk adımı bazında | `metrics/results_by_horizon.csv` | 1 saat ileri … 24 saat ileri, 24 satır    |
+| Alt küme    | Maske                       | Eleman payı | Rolü                                  |
+| ----------- | --------------------------- | ----------- | ------------------------------------- |
+| `all_hours` | yok                         | %100        | Bütünlük için; gece tarafından şişer  |
+| `daylight`  | $\text{CLRSKY}_{ih} > 0$    | ≈%51,2      | **Makalenin manşet sayıları buradan** |
+
+Gündüz payı 24 ufuk adımının **her birinde** 0,515'tir, yani hiçbir adım gece/gündüz
+bileşimi bakımından ayrıcalıklı değildir ve ufuk bazlı gündüz karşılaştırması anlamlıdır.
+
+| Düzey              | Dosya                            | İçerik                                          |
+| ------------------ | -------------------------------- | ----------------------------------------------- |
+| Toplulaştırılmış   | ledger satırı                    | Tüm iller + tüm ufuk adımları havuzlanmış       |
+| İl bazında         | `metrics/results_summary.csv`    | Alt küme × (Aggregate + Aggregate_excl_Rize + iller) |
+| Ufuk adımı bazında | `metrics/results_by_horizon.csv` | Alt küme × (1 saat ileri … 24 saat ileri)       |
+
+İki sütun kaç şeyin puanlandığını ayırır: `n_samples` **pencere** sayısıdır ve alt kümeden
+bağımsızdır; `n_elements` puanlanan $(pencere, ufuk adımı)$ çifti sayısıdır ve gündüz alt
+kümesinde yaklaşık yarıya iner. Ledger, at-a-glance karşılaştırma için tüm-saat sütunlarının
+yanına `RMSE_daylight`, `MAE_daylight`, `R2_daylight`, `CP_daylight` ve
+`n_elements_daylight` sütunlarını da taşır; tam döküm `results_summary.csv`'dedir.
+
+> **`Aggregate_excl_Rize` satırı neden var?** Rize, betimleyici analizde diğer dört ilden
+> ayrı bir rejim çıkmıştır (günlük açıklık indeksi 0,697'ye karşı 0,806–0,840; kapalı gün
+> payı %8,0'e karşı %1,0–2,8). Düz toplulaştırma Rize'yi 4'e 1 gömer — oysa il gömmesinin
+> işini yapması gereken yer tam olarak orasıdır. Bu satır, iller arası transferin katkısını
+> manşet sayıda görünür kılar.
 
 ### 12.4 Metriklerin birlikte yorumlanması
 
@@ -736,9 +845,12 @@ metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan b
 - **Çatı:** PyTorch (≥2.2), scikit-learn (ölçekleme), pandas/numpy, matplotlib.
 - **Cihaz seçimi otomatiktir:** MPS (Apple Silicon) → CUDA (Nvidia) → CPU sırasıyla denenir
   (`get_device()`); kullanılan cihaz her koşunun `log.txt` dosyasına yazılır.
-- **Süre:** Tam konfigürasyon (8 replika × 100 MC geçiş) donanıma ve erken durdurmanın
-  devreye girdiği epoğa göre yaklaşık 30 dakika – birkaç saat sürer. Hızlı doğrulama
-  konfigürasyonu (`n_bootstrap=1`, `max_epochs=5`, `mc_dropout_passes=10`) birkaç dakikadır.
+- **Süre (ölçülmemiştir, tasarım hedefidir):** Varsayılan konfigürasyonun tam koşusu
+  (8 replika × 100 MC geçiş) bu ana dek **hiç tamamlanmamıştır**, dolayısıyla süre iddiası
+  doğrulanmış değildir. Eldeki tek ölçüm: CPU'da hızlı doğrulama konfigürasyonu
+  (`n_bootstrap=1`, `max_epochs=5`, `mc_dropout_passes=10`) ≈160 saniye. GPU (MPS/CUDA)
+  üzerinde tam koşunun saatler mertebesinde olması beklenir; kesin değer ilk tam koşu
+  bittiğinde bu bölüme yazılacaktır.
 - **Bağımlılık yönetimi:** `uv` + `uv.lock` ile sürümler sabitlenmiştir (tekrarlanabilirlik).
 
 ---
@@ -760,7 +872,8 @@ metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan b
 > olamayacağı fiziksel kısıtını yansıtan yumuşak bir düzenlileştirme teriminden oluşan bileşik
 > bir kayıp fonksiyonu ile eğitilmiştir. Belirsizlik tahmini için Bootstrap Ensemble ve Monte
 > Carlo Dropout yöntemleri hibrit biçimde kullanılmıştır: zamansal otokorelasyonun korunması
-> amacıyla hareketli blok bootstrap (blok uzunluğu 168 saat) ile oluşturulan sekiz farklı
+> amacıyla hareketli blok bootstrap (blok uzunluğu 168 ardışık pencere; saatlik kaydırma ile
+> ≈1 haftalık dilim) ile oluşturulan sekiz farklı
 > eğitim kümesi üzerinde sekiz model eğitilmiş, her model çıkarım aşamasında dropout etkin
 > tutularak 100 kez çalıştırılmış ve elde edilen 800 tahmin tek bir öngörü dağılımı olarak
 > değerlendirilmiştir. %95 güven aralıkları, normallik varsayımı gerektirmemesi nedeniyle
@@ -776,26 +889,36 @@ metriklerini yan yana tutar; makaledeki karşılaştırma tabloları doğrudan b
 
 **Makalede tartışılması gereken sınırlılıklar:**
 
-1. **Gece saatleri metrikleri şişirir.** Işınımın sıfır olduğu gece saatleri tüm bölmelerde yer
-   almaktadır. Bu saatler tahmin edilmesi kolay olduğundan MAE/RMSE'yi olduğundan iyi, CP'yi ise
-   olduğundan yüksek gösterir. **Yalnızca gündüz saatlerini (örn. $\text{ALLSKY} > 0$ veya güneş
-   yükseklik açısı $> 0$) kapsayan ek bir değerlendirme** literatürle adil karşılaştırma için
-   gereklidir.
+1. **Gece saatleri metrikleri şişirir — nicelenmiş ve ele alınmıştır.** Hedef değerlerinin
+   **%48,76'sı tam olarak 0'dır** ve bu saatler tüm bölmelerde yer alır. Tahmin edilmeleri
+   önemsiz derecede kolay olduğundan MAE/RMSE'yi olduğundan iyi gösterirler: aynı iklimsel
+   ortalama arama tablosu gündüz RMSE 106,9 W/m² verirken tüm saatlerde 76,7 W/m² ve
+   R² $= 0{,}923$ vermektedir. Gece kırpması açıkken CP de aynı yönde şişer (§11.5).
+   Bu nedenle `metrics.py` her metriği **iki alt küme** için raporlar (`all_hours`,
+   `daylight`; gündüz göstergesi $\text{CLRSKY} > 0$, §4.2) ve **makalenin manşet sayıları
+   gündüz alt kümesinden alınmalıdır**. Tüm-saat R²'si üç metrik içinde en yanıltıcı olanıdır.
 2. **Negatiflik cezası ölçeklenmiş uzayda uygulanmaktadır** (§10.1 uyarısı).
 3. **Tek bir tohum (seed).** Sonuçlar tek bir tohumla üretilmiştir; çoklu tohumla ortalama ±
    standart sapma raporlanması istatistiksel olarak daha güçlü olur.
 4. **Dış (exogenous) girdiler gerçek gözlemdir.** Model, tahmin ufkunda değil yalnızca geçmiş
    pencerede meteorolojik değişken kullanmaktadır; operasyonel bir sistemde bu değişkenlerin
    sayısal hava tahmini (NWP) çıktısı olarak gelmesi gerekir.
-5. **Kalibrasyon sonrası düzeltme yapılmamıştır** (örn. conformal prediction); CP hedeften
-   saparsa bu bir sonraki iyileştirme adayıdır.
+5. **Aralıklar ölçülen biçimde alt-kapsamalıdır ve bunun yapısal bir nedeni vardır.**
+   "CP hedeften saparsa" biçiminde koşullu yazılamaz: eldeki tüm koşularda gündüz CP
+   $\approx 0{,}62$–$0{,}67$ ölçülmüştür (hedef $0{,}95$) ve CWC buna karşılık gelen
+   büyüklüktedir — §12.4'ün kendi ölçütüne göre "dar ama güvenilmez aralık" tanısı.
+   Nedeni §11.5'te açıklanmıştır: havuzlanan dağılım aleatorik terim içermez. Kalibrasyon
+   sonrası düzeltme (rezidüel-varyans eklentisi ya da conformal katman) bu nedenle isteğe
+   bağlı bir iyileştirme değil, %95 kapsama iddiasının **ön koşuludur**. Koşuların tamamı
+   smoke kalitesinde olduğundan sayılar nihai değildir, ama yön tüm koşularda aynıdır.
 
 **Açık işler (bkz. `TODOs.md`):**
 
-- `CLRSKY_SFC_SW_DWN` sütunu **çıkarılmıştır** (bkz. §4.2, §5.2). Güçlü bir fiziksel yordayıcı
-  olduğundan sonuçları belirgin biçimde değiştirir; bu karardan önce üretilmiş ledger satırları
-  ($F = 18$) yeni satırlarla karşılaştırılamaz, tüm tarama yeniden koşulmalıdır.
-- **R² metriği henüz uygulanmamıştır**; MAE/RMSE/R² tablosu için `metrics.py`'ye eklenmelidir.
+- `CLRSKY_SFC_SW_DWN` **öznitelik kümesinden çıkarılmıştır** (bkz. §4.2, §5.2) ama gündüz
+  maskesi olarak çerçevede tutulmaktadır. Bu karardan önce üretilmiş ledger satırları
+  ($F = 18$) yeni satırlarla karşılaştırılamaz; tarama yeni kimliklerle yeniden koşulmalıdır.
+- **R² metriği uygulanmıştır** (`metrics.py::r2`); özet, ufuk bazlı ve ledger çıktılarının
+  üçünde de MAE/RMSE ile birlikte, her iki alt küme için raporlanır.
 - Karşılaştırma modelleri (SVM, Prophet, GRU; Prophet uygulanabilir değilse Random Forest veya
   MLP) — §13.4 kurallarına uygun biçimde eklenmelidir.
 - Makale için betimleyici şekiller: beş ili gösteren harita, değişken–ışınım saçılım grafikleri,
