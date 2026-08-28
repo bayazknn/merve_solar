@@ -194,7 +194,7 @@ Verilenler ve neden bunların verilebileceği:
   okuduğu nokta metrikleri, $T=100$ stokastik geçişin ortalamasıdır.
 - **`max_epochs` 200 → 100**, `early_stop_patience` 15'te sabit. **Ölçülen sonuç: bu kısıt hiçbir
   kolda bağlayıcı olmadı.** Erken durdurma 18–39 epok arasında devreye girdi ve `hit_max_epochs`
-  ledger'daki on bir kolun **hepsinde 0**'dır. Yani 200 ile 100 arasındaki fark bu çalışmanın
+  ledger'daki on iki kolun **hepsinde 0**'dır. Yani 200 ile 100 arasındaki fark bu çalışmanın
   hiçbir sayısını etkilemez; tam doğruluktan maddi olarak sapan tek eksen `n_bootstrap`'tir.
 - `mc_dropout_passes` **değişmedi** (100), dolayısıyla yüzdelik CI aynı örnek büyüklüğünden
   kestirilir.
@@ -221,20 +221,33 @@ $B=8$ havuzlaması nokta tahmininin varyansını düşürecektir.
 | 2 il | `abl_rize_plus_antalya_s42_b1` | 534 s (39 epok) |
 | Rize | `abl_rize_solo_s42/43/44_b1` | 332 / 223 / 268 s (23 / 18 / 26 epok) |
 
-On bir kolun toplam işlemci süresi ≈ 13 250 s; iki paralel akışla duvar saati ≈ 2.5–3 saat.
+On iki kolun toplam işlemci süresi ≈ 14 280 s (`abl_rize_all5_s44_b1` tek başına, çekişmesiz,
+1 026 s / 23 epok); iki paralel akışla duvar saati ≈ 3 saat.
 
-**Eksik kol.** `abl_rize_all5_s44_b1` bu makinede tamamlanmadı; kullanıcı isteğiyle durduruldu ve
-sunucuda koşulmak üzere bırakıldı. Ledger satırı ve çıktı klasörü yoktur, dolayısıyla mükerrer
-satır riski de yoktur. Bu nedenle **`all5` ucu üç değil iki tohumla raporlanmaktadır** ve
-aşağıdaki `all5` sapması (±) iki gözlemden hesaplanmıştır — zayıf bir kestirimdir. Tamamlamak için:
+**Cihaz sağlaması (device provenance).** On iki kolun tamamı **CPU** üzerinde üretilmiştir ve bu
+artık ledger'da `device` sütunuyla kayıtlıdır. Bu, kozmetik bir ayrıntı değil: `get_device()`
+sırası MPS > CUDA > CPU'dur, yani Apple Silicon bir makinede koşu sessizce MPS'e düşer ve
+MPS/CUDA/CPU aynı tohumdan bit düzeyinde aynı sonucu vermez (`utils.py::set_seed` docstring'i,
+metodoloji §13.3). `abl_rize_all5_s44_b1` önce bir Mac'te MPS üzerinde koşturulmuş, sonuç
+**atılmış** ve kol kardeşleriyle (`s42`, `s43`) aynı CPU ana makinesinde yeniden üretilmiştir;
+aksi hâlde aşağıdaki `all5` ortalama ± sd'si üç tohumun değil, iki cihaz sınıfının karışımı
+olurdu. Somut risk yalnızca teorik değildir: `hidden_sizes=[64, 32]` iki katmanlı bir LSTM
+demektir ve `model.py` bu durumda `nn.LSTM(..., dropout=0.3)` kurar; PyTorch'ta LSTM'in
+**katman-arası** dropout'unun MPS'te CPU'dan saptığına dair açık bir kayıt vardır
+([pytorch#173640](https://github.com/pytorch/pytorch/issues/173640), 2026-01-28 tarihli, henüz
+kapanmamış — bu çalışma kapsamında bağımsız olarak doğrulanmamıştır). Bu dropout, MC-Dropout
+gürültüsünün kaynaklarından biridir, yani en çok etkilenecek metrikler tam da belirsizlik
+katmanınınkilerdir.
+
+Bir koşuyu belirli bir arka uca sabitlemek için `MERVE_DEVICE` ortam değişkeni kullanılır:
 
 ```bash
-git pull
-uv run python scripts/run_all_experiments.py --group rize_curve_b1 \
-    --only abl_rize_all5_s44_b1 --skip-existing --continue-on-error
-git add outputs/experiments/abl_rize_all5_s44_b1 outputs/experiments_ledger.csv
-git commit -m "Add the third all5 seed of the Rize transfer curve" && git push
+MERVE_DEVICE=cpu uv run python scripts/run_all_experiments.py \
+    --group rize_curve_b1 --only abl_rize_all5_s44_b1
 ```
+
+Çok tohumlu bir kolun tohumları **aynı cihaz sınıfında** koşturulmalıdır; aksi hâlde ortalama ±
+sd temiz değildir.
 
 ### 1.5 Aşama 1 sonuçları — kayıp fonksiyonu seçimi
 
@@ -298,13 +311,14 @@ Kayıp fonksiyonu tüm eğri boyunca **MSE**'dir (bkz. §1.8, tehdit T-1).
 | `plus_ankara` (s42) | 2 (+Ankara) | 87 498 | **109.80** | 83.00 | 0.8011 | 0.7748 | 60.68 |
 | `plus_antalya` (s42) | 2 (+Antalya) | 87 498 | **119.66** | 87.55 | 0.7638 | 0.7526 | 64.50 |
 | `minus_antalya` (s42) | 4 | 174 996 | 111.77 | 84.60 | 0.7939 | 0.7759 | 60.85 |
-| `all5` (2 tohum) | 5 | 218 745 | **112.09 ± 1.12** | **83.95 ± 1.41** | 0.7927 ± 0.0041 | 0.7733 | 61.00 |
+| `all5` (3 tohum) | 5 | 218 745 | **111.68 ± 1.06** | **83.71 ± 1.08** | 0.7942 ± 0.0039 | 0.7747 | 60.82 |
 | *Taban: klimatoloji* | — | — | *130.68* | *95.72* | *0.7183* | — | — |
 | *Taban: akıllı kalıcılık* | — | — | *136.66* | *85.23* | *0.6919* | — | — |
 | *Taban: kalıcılık* | — | — | *141.89* | *90.89* | *0.6679* | — | — |
 
-Tekil tohum değerleri: `solo` RMSE 115.21 / 110.93 / 113.50 (s42/s43/s44); `all5` RMSE
-112.88 / 111.30 (s42/s43; s44 sunucuda beklemede).
+Tekil tohum değerleri (s42/s43/s44): `solo` RMSE 115.21 / 110.93 / 113.50; `all5` RMSE
+112.88 / 111.30 / 110.86. `all5`'in üç tohumu da `solo` ortalamasının altındadır, ama üçü de
+`solo` aralığının içinde kalır.
 
 **24 saat (ikincil), `Rize` satırı:**
 
@@ -314,7 +328,7 @@ Tekil tohum değerleri: `solo` RMSE 115.21 / 110.93 / 113.50 (s42/s43/s44); `all
 | `plus_ankara` | 78.76 | 42.70 | 0.8832 | 0.8841 |
 | `plus_antalya` | 85.83 | 45.04 | 0.8612 | 0.8727 |
 | `minus_antalya` | 80.17 | 43.52 | 0.8789 | 0.8847 |
-| `all5` (2 tohum) | 80.40 ± 0.80 | 43.19 ± 0.72 | 0.8782 ± 0.0024 | 0.8833 |
+| `all5` (3 tohum) | 80.11 ± 0.76 | 43.07 ± 0.55 | 0.8791 ± 0.0023 | 0.8841 |
 | *Taban: klimatoloji* | *93.73* | *49.31* | *0.8345* | — |
 
 **Taban değerleri hakkında uyarı.** Yukarıdaki taban satırları, gece kelepçesi naif tabanlara
@@ -361,7 +375,7 @@ Bunun lisans verdiği ve vermediği şeyler:
   girecek bir H2 iddiası için iki çift kolun da üç tohumla koşulması gerekir
   (`abl_rize_plus_{ankara,antalya}_s{43,44}_b1`; ~1 000 s'lik ek maliyet, en ucuz eksik iş).
 
-Şekle ilişkin ikinci gözlem: 4 il (111.77) ile 5 il (112.09 ± 1.12) arasında iyileşme yoktur;
+Şekle ilişkin ikinci gözlem: 4 il (111.77) ile 5 il (111.68 ± 1.06) arasında fark yoktur;
 beşinci il **Antalya**'dır, yani çift kollarda zarar verdiği ölçülen ildir. İki bağımsız kol aynı
 yöne işaret ediyor.
 
@@ -370,10 +384,20 @@ yöne işaret ediyor.
 **H1 — "Rize'nin hatası havuzlanan il sayısıyla monoton azalır": DESTEKLENMEDİ.**
 
 Eğri monoton değildir. Gündüz RMSE'si 113.22 (1 il) → 109.80 (2 il, Ankara) → 119.66 (2 il,
-Antalya) → 111.77 (4 il) → 112.09 (5 il) izler; il sayısına göre sıralandığında bile artıp
-azalır. Dahası, iddianın taşıyıcı olduğu **uçlar arası fark ölçülemiyor**: `solo` 113.22 ± 2.15'e
-karşı `all5` 112.09 ± 1.12, fark **−1.12 W/m²**, ki bu `solo` tohum sapmasının (2.15) yarısından
-azdır. MAE'de de aynı: 85.07 ± 1.15'e karşı 83.95 ± 1.41, fark −1.13, yine sapmanın içinde.
+Antalya) → 111.77 (4 il) → 111.68 (5 il) izler; il sayısına göre sıralandığında bile artıp
+azalır — ve son iki nokta pratikte aynıdır.
+
+Dahası, iddianın taşıyıcı olduğu **uçlar arası fark ölçülemiyor**. Üç tohumla her iki uçta:
+`solo` 113.22 ± 2.15'e karşı `all5` 111.68 ± 1.06, fark **−1.53 W/m²**. Ortalamalar farkının
+standart hatası (tohumlar bağımsız çekilişlerdir, $n=3$) $\sqrt{2.153^2/3 + 1.063^2/3} = 1.39$,
+yani gözlenen fark **≈1.1 standart hatadır** — tespit eşiğinin çok altında. MAE'de fark −1.36,
+standart hata 0.91 (≈1.5 SH); her ikisinde de `solo` ve `all5` tohum aralıkları örtüşür
+(`solo` [110.93, 115.21], `all5` [110.86, 112.88]).
+
+Üçüncü `all5` tohumu eklendiğinde fark −1.12'den −1.53'e büyüdü ve `all5`'in sapması yarıya
+indi; üç `all5` tohumu da `solo` ortalamasının altındadır, yani **yön tutarlıdır**. Ama üçü de
+`solo` aralığının içinde kalır ve $n=3$ ile standart hata kestirimi zaten çok zayıftır. İşaret
+testi bile ($3/3$) $p = 0.125$'ten iyi olamaz. Yön lehte, büyüklük ölçülemiyor.
 
 Dürüst ifade: **bu doğrulukta, Rize için beş ili havuzlamanın tek-il modeline üstünlüğü tespit
 edilememiştir.** Yön (küçük bir iyileşme) doğrudur ama büyüklüğü tohum gürültüsünün altındadır.
@@ -409,15 +433,17 @@ mevcut hâliyle, seçilmemiş bir kriter altındaki transfer davranışını öl
 - **T-2 — `Aggregate` tuzağı.** Kollar farklı il kümelerinde skorlandığı için `Aggregate`
   satırları karşılaştırılamaz. Ölçülmüş örnek K-1'de. Bu belgedeki Aşama 2 tablolarının tamamı
   `Rize` satırındandır; makaleye taşınırken bu korunmalıdır.
-- **T-3 — Tohum kapsamı yetersiz.** `solo` 3 tohum, `all5` **2** tohum (üçüncüsü sunucuda
-  beklemede), ara kollar **1** tohum. H1 hükmü zaten "tespit edilemedi"dir; ara kolların ve
-  özellikle çift kolların tek tohumlu olması H2'yi "güçlü ama kesinleşmemiş" seviyesinde tutar.
+- **T-3 — Tohum kapsamı yetersiz.** Her iki uç 3 tohumludur (`solo`, `all5`), ara kollar
+  **1** tohum. $n=3$, bir sapma kestirimi için asgarinin de altındadır: H1'in "tespit edilemedi"
+  hükmü bu yüzden bir güç (power) ifadesidir, bir yokluk kanıtı değil. Ara kolların ve özellikle
+  H2'nin dayandığı çift kolların tek tohumlu olması H2'yi "güçlü ama kesinleşmemiş" seviyesinde
+  tutar.
 - **T-4 — $B=1$ doğruluğu.** Nokta tahminleri 100 MC geçişin ortalamasıdır, 800'ün değil;
   $B=8$'in varyans azaltması yoktur, dolayısıyla tohumlar arası sapma tam doğruluktakinden
   büyüktür. Bu, H1'i tespit etmeyi **zorlaştıran** yöndedir: gerçek ama küçük bir havuzlama
   kazancı bu gürültünün altında kalmış olabilir. Bu yüzden H1 hükmü "desteklenmedi" değil
   "**tespit edilemedi**" biçimindedir.
-- **T-5 — Epok tavanı.** Bağlayıcı olmadı: `hit_max_epochs` on bir kolun hepsinde 0, epoklar
+- **T-5 — Epok tavanı.** Bağlayıcı olmadı: `hit_max_epochs` on iki kolun hepsinde 0, epoklar
   18–39. Ancak kollar **farklı sayıda epok** eğitildi (erken durdurma kararıyla), ve özellikle
   `plus_antalya` 39 epokla `plus_ankara`'nın 19'unun iki katı adım gördü. Bu bir kırpılma değil
   yakınsama farkıdır, ama H2'nin dayandığı çiftin iki kolunun eşit miktarda eğitilmediği
