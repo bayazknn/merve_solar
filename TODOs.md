@@ -116,6 +116,24 @@ ledger satırlarını karşılaştırılamaz yapar**; ayrıca ledger satırı co
 taşımıyor, dolayısıyla eklenecekse `experiment.py`'deki ledger satır sözlüğüne bir sütun
 girmeli (bkz. CLAUDE.md *Comparability rules*).
 
+**Ek bulgu (EDA.md incelemesi, doğrulandı).** Bilgiyi taşıyan şey yağışın *şiddeti* değil,
+yağış olup olmadığı. Gündüz satırlarının **%53.5'i** tam sıfır. (İl, ay, saat) hücre ortalaması
+çıkarıldıktan sonra hedefle korelasyon — ikili bayrak **beş ilin hepsinde** ham miktarı yeniyor:
+
+| | Ankara | Antalya | Konya | Rize | Van |
+|---|---|---|---|---|---|
+| `PRECTOTCORR` (ham) | −0.315 | −0.337 | −0.279 | −0.380 | −0.349 |
+| yağış var/yok (ikili) | **−0.479** | **−0.445** | **−0.480** | **−0.455** | **−0.435** |
+
+Dolayısıyla öneri genişliyor: **`log1p(PRECTOTCORR)` + ayrı bir ikili gösterge sütunu.**
+Öznitelik sayısı 17 → 18 olur; C maddesindeki iki gereksiz sütun da çıkarılırsa 16'da kalır.
+
+**Ayrıca birim etiketi şüpheli.** mm/saat olarak okunursa yıllık toplamlar Ankara 8 184,
+Rize 33 619 mm — imkânsız. 24'e bölününce Türkiye normalleri mertebesine geliyor (Ankara 341,
+Konya 328, Van 344 mm/yıl). Modellemeye zararsız (sabit ölçek çarpanı), ama figür eksenleri ve
+`VARIABLE_LABELS_TR` "mm/saat" yazıyor; makalede birim verilmeden önce NASA POWER
+dokümantasyonundan teyit edilmeli.
+
 **Durum:** yapılacak. Model şu an fine-tune ediliyor, bu görev sıraya alındı.
 
 ### C. Öznitelik ablasyonu: 17 → 15 sütun
@@ -129,8 +147,10 @@ Bu bir istatistik tesadüfü değil, fizik:
 
 - **`T2MDEW` zaten `T2M` ve `RH2M`'nin deterministik bir fonksiyonu.** Magnus formülüyle
   ikisinden yeniden hesaplandığında gerçek `T2MDEW` ile **r = 0.9992**, ortalama mutlak
-  fark **0.161 °C**. Yani sütun, sette hâlihazırda bulunan iki sütunun türevi; bağımsız
-  hiçbir bilgi taşımıyor.
+  fark **0.161 °C**, RMSE **0.31 °C**. Yani sütun, sette hâlihazırda bulunan iki sütunun
+  türevi; bağımsız hiçbir bilgi taşımıyor. Not: `T2MDEW`'i yalnız `QV2M`'den doğrusal
+  regresyonla tahmin etmek ancak r = 0.962'ye ulaşıyor — yani düz korelasyon tablosu bu
+  fazlalığı **olduğundan az** gösteriyor; gerçek gerekçe Magnus ilişkisidir.
 - **`WS50M` ≈ 1.33 × `WS10M`** (oran medyanı 1.330) — aynı sınır tabakasının logaritmik
   rüzgâr profili üzerinde iki farklı yüksekliği.
 
@@ -231,3 +251,28 @@ guard bu ayrımı korumalı.
 Sayısal etki: gündüz satırı 156 909 → 151 643; havuzlanmış gündüz ortalaması
 363.7 → 376.3 W/m²; korelasyonlar ≤ 0.031 kaydı; zemin RMSE 105.0 → 106.8, R² 0.864 →
 0.856. Nitel sonuçların hiçbiri değişmedi.
+
+### G. Kapanış notu (EDA oturumu, 2026-08-28)
+
+**Tamamlananlar.** Betimsel istatistik katmanı bitti: `scripts/02_descriptive_analysis.py`
+→ `outputs/eda/` (28 tablo, 34 figür × PNG+PDF). İki belge eşlik ediyor:
+`outputs/eda/README.md` (nasıl üretildi, kapsam, uyarılar, düzeltme kaydı) ve
+`outputs/eda/EDA.md` (makaleye alıntılanmak üzere yazılmış yorum, iddia–dosya eşlemesiyle).
+
+**Makaleye girmesi gereken, henüz yazılmamış olanlar** — hepsinin dayanağı `EDA.md`'de:
+
+1. Kısmi korelasyon tablosu ve gerekçesi. Ham korelasyonda basınç, 10 m ve 50 m rüzgârının
+   işareti iller arasında **tutarsız**; güneş geometrisi sabitlendikten sonra dokuz
+   değişkenin hepsi beş ilde **aynı işarete** sahip. Öznitelik seçimini gerekçelendiren asıl
+   argüman budur, "sıcaklık en önemli öznitelik" değil.
+2. Referans tahmin zemini (kalıcılık / akıllı kalıcılık / klimatoloji) sonuç tablosunda.
+3. Rize'nin ayrı bir rejim olarak tartışılması + "Rize hariç" agregat satırı.
+4. Saat ekseninin il-bazlı yerel güneş saati (LST) olduğu — yöntem bölümüne bir cümle.
+5. Gündüz tanımının `CLRSKY_SFC_SW_DWN > 0` olduğu ve bunun neden sızıntı olmadığı;
+   `DROPPED_COLUMNS` gerekçesinin yanına bir dipnot.
+
+**Alıntılanmaması gereken sayı:** Van'ın 1215.9 W/m² maksimumu (kt = 3.28, ölçüm artefaktı).
+Savunulabilir maksimum 1068.7. Ayrıntı `outputs/eda/README.md` §1'deki uyarı kutusunda;
+`METHODOLOGY_REVIEW.md` de aynı uyarıyı taşıyor.
+
+**Hâlâ açık:** 5 ilin haritası ve iklim/coğrafya paragrafı (dış geoveri gerektiriyor).

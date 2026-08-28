@@ -67,8 +67,9 @@ Two-stage design, and the split matters: **`data.py` is config-independent, ever
 is per-config.**
 
 1. **Base data (once)** — `data.py` reads the 5 sheets, trims NASA POWER's trailing `-999` latency
-   gap at `LAST_VALID_TIMESTAMP`, drops the `DROPPED_COLUMNS` (`ALLSKY_KT`, ~50% `-999` at
-   night, and `CLRSKY_SFC_SW_DWN`) at read time so the xlsx stays untouched, adds cyclical
+   gap at `LAST_VALID_TIMESTAMP`, drops the `DROPPED_COLUMNS` (`ALLSKY_KT` only, ~50% `-999`
+   at night) at read time so the xlsx stays untouched, keeps `CLRSKY_SFC_SW_DWN` as a
+   `MASK_COLUMNS` entry that is never a model input, adds cyclical
    hour/day-of-year/wind-direction sin-cos features, and caches all cities concatenated to a
    parquet. Every experiment reuses this cache.
 2. **One experiment (per config)** — `experiment.py::run_experiment(config)` is the single
@@ -109,6 +110,15 @@ Add sweep entries to `build_experiment_grid()` in `configs/experiment_grid.py`.
   still scored via MC-Dropout alone.
 - **Scripts add `src/` to `sys.path`** rather than relying on the editable install; keep that
   prologue when adding a script under `scripts/`.
+- **Daylight means `CLRSKY_SFC_SW_DWN > 0`, everywhere in the project.** Clear-sky irradiance is
+  pure solar geometry with no weather term, so the boolean is an exact "is the sun above the
+  horizon" indicator that never reads the realised target — which is why it is not leakage even
+  though the column itself must never be a feature. Two alternatives were tried and are wrong:
+  a `target > 0` threshold looks like conditioning on the outcome (it happens to select the
+  identical 151,643 rows here, but only by coincidence), and a climatological `(city, month,
+  hour)` cell mean is too coarse — sunrise shifts 30-60 minutes within a month, so it admitted
+  5,266 rows whose clear-sky value is exactly 0, i.e. night. See `outputs/eda/README.md`,
+  *Düzeltme kaydı*.
 - **The hourly clock is per-site Local Solar Time, not a shared time zone.** Verified from the
   data: mean-irradiance peak hour runs Konya 11.25 < Ankara 11.26 < Antalya 11.41 < Van 11.56 <
   Rize 11.89, which is the *reverse* of what a common clock would give and matches
@@ -161,9 +171,12 @@ usually the more honest comparison against literature.
 available). New plots should follow the same pattern: a function taking an explicit `save_path`,
 creating parent dirs, closing the figure.
 
-EDA figures that describe the dataset rather than a single run live in `eda.py` and are driven by
-`scripts/02_descriptive_analysis.py`, writing to `outputs/eda/{figures,tables}/` — never inside
-`run_experiment`. They share a separate style contract in `paper_style.py` (Turkish labels, always
+EDA figures and tables that describe the dataset rather than a single run live in `eda.py` and
+are driven by `scripts/02_descriptive_analysis.py`, writing to `outputs/eda/{figures,tables}/` —
+never inside `run_experiment`. Two hand-written documents sit beside them and must be kept in
+step with the numbers: `outputs/eda/README.md` (how each output was produced, its span and its
+caveats, plus a correction log) and `outputs/eda/EDA.md` (the manuscript-facing discussion, with
+a claim-to-file mapping). They share a separate style contract in `paper_style.py` (Turkish labels, always
 a white background, PNG at 300 dpi + vector PDF with Type 42 fonts, validated season palette with
 linestyle as a second channel). `paper_style.py` deliberately never mutates global rcParams — it
 exposes `PAPER_RC` for `plt.rc_context`, because a `sns.set_theme()` at import would silently
@@ -176,16 +189,18 @@ readable axis labels with units (W/m²), and a caption-ready title.
 
 Roughly translated, still outstanding:
 
-- **Dataset decisions: DONE (2026-08-28).** `CLRSKY_SFC_SW_DWN` and `ALLSKY_KT` are now dropped
-  at read time via `DROPPED_COLUMNS` (`config.py`), the feature set is 17 columns, and
-  `ALLSKY_SFC_SW_DWN` is confirmed as `TARGET_COLUMN`. Ledger rows written before this change ran
-  with 18 features and are **not comparable** — the sweep needs rerunning under new ids.
+- **Dataset decisions: DONE (2026-08-28).** `ALLSKY_KT` is dropped at read time via
+  `DROPPED_COLUMNS`; `CLRSKY_SFC_SW_DWN` is retained in the frame as a `MASK_COLUMNS` entry but
+  is **never a model input** (it defines the daylight subset — see the invariant below). The
+  feature set is 17 columns and `ALLSKY_SFC_SW_DWN` is confirmed as `TARGET_COLUMN`. Ledger rows
+  written before this change ran with 18 features and are **not comparable** — the sweep needs
+  rerunning under new ids.
 - **Model configuration:** settle layer count / neuron sizes and the lookback lag; build an
   "optimal LSTM config" from the reference papers.
 - **Baselines for comparison:** SVM, Prophet, GRU (Random Forest or MLP if Prophet is unworkable
   on this framing) — see *Comparability rules* before adding any.
-- **Metrics table:** MAE, RMSE, **R²** — R² is not implemented anywhere yet; it needs adding to
-  `metrics.py` and to the ledger row.
+- **Metrics table: R² DONE (2026-08-28)** — `metrics.py::r2` feeds the summary, per-horizon and
+  ledger outputs alongside MAE/RMSE, with a daylight-only breakdown.
 - **Paper figures: DONE (2026-08-28) except the map.** Per-variable scatter, correlation
   matrices, monthly boxplots, the 3D month × year × irradiance surface (plus a 2-D anomaly
   companion) and both seasonal views are built by `scripts/02_descriptive_analysis.py` into
