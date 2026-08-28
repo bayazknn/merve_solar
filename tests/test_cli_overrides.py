@@ -83,4 +83,8 @@ def test_an_invalid_override_is_rejected_before_anything_runs(base_config):
 
 def test_an_unknown_loss_is_rejected_by_the_parser():
     with pytest.raises(SystemExit):
-        _parse("--loss", "huber", "--experiment-id", "x")
+        _parse("--loss", "quantile", "--experiment-id", "x")
+
+
+def test_huber_is_an_accepted_loss():
+    assert _parse("--loss", "huber", "--experiment-id", "x").loss == "huber"

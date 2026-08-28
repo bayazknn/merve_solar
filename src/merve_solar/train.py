@@ -18,7 +18,7 @@ from merve_solar.utils import get_device
 # config.loss_function -> criterion. MSE optimises the conditional mean, L1 the conditional
 # median; on a right-skewed error distribution those are different forecasts. See
 # config.LOSS_FUNCTIONS for why that matters here.
-LOSS_CRITERIA = {"mse": nn.MSELoss, "mae": nn.L1Loss}
+LOSS_CRITERIA = {"mse": nn.MSELoss, "mae": nn.L1Loss, "huber": nn.HuberLoss}
 
 
 def make_criterion(config) -> nn.Module:
@@ -28,7 +28,10 @@ def make_criterion(config) -> nn.Module:
     choice from a metric, which a lucky seed could fake. reduction="none" so the daylight mask
     can be applied per element; the unmasked path takes the plain mean and is unchanged.
     """
-    return LOSS_CRITERIA[config.loss_function](reduction="none")
+    kwargs = {"reduction": "none"}
+    if config.loss_function == "huber":
+        kwargs["delta"] = config.huber_delta
+    return LOSS_CRITERIA[config.loss_function](**kwargs)
 
 
 def fit_loss(criterion, pred, target, daylight, daylight_only: bool):

@@ -25,5 +25,9 @@
   "training_scope": "global",
   "model_family": "smart_persistence",
   "loss_daylight_only": false,
-  "per_city_scaler": true
+  "per_city_scaler": true,
+  "clamp_night_to_zero": true,
+  "huber_delta": 1.0,
+  "excluded_cities": [],
+  "loss_function": "mse"
 }

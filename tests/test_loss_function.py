@@ -36,7 +36,19 @@ def test_every_declared_loss_function_is_constructible():
 
 def test_unknown_loss_function_is_rejected_at_config_time():
     with pytest.raises(ValueError, match="loss_function must be one of"):
-        ExperimentConfig(experiment_id="x", loss_function="huber")
+        ExperimentConfig(experiment_id="x", loss_function="quantile")
+
+
+def test_huber_uses_the_configured_delta():
+    """Huber is quadratic below delta and linear above, so delta is the whole behaviour knob."""
+    criterion = make_criterion(ExperimentConfig(experiment_id="x", loss_function="huber", huber_delta=0.5))
+    assert isinstance(criterion, nn.HuberLoss)
+    assert criterion.delta == 0.5
+    # Below delta it matches MSE's shape (halved), above it grows linearly like L1.
+    pred, target = torch.tensor([[0.2, 5.0]]), torch.zeros(1, 2)
+    per_element = criterion(pred, target)
+    assert per_element[0, 0].item() == pytest.approx(0.5 * 0.2**2)
+    assert per_element[0, 1].item() == pytest.approx(0.5 * (5.0 - 0.5 * 0.5))
 
 
 def test_the_nonneg_penalty_is_unchanged_by_the_criterion():

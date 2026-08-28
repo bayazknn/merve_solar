@@ -59,10 +59,20 @@ def test_unknown_province_name_is_rejected():
         ExperimentConfig(experiment_id="x", excluded_cities=["Rize", "Izmir"])
 
 
-def test_leaving_fewer_than_two_provinces_is_rejected():
-    """A one-province 'global' model is a per-city model under a misleading ledger label."""
-    with pytest.raises(ValueError, match="at least 2 are required"):
-        ExperimentConfig(experiment_id="x", excluded_cities=[c for c in CITIES if c != "Van"])
+def test_one_province_is_allowed_but_only_under_per_city():
+    """One province is a legitimate arm -- the zero-transfer end of the pooling curve -- but
+    calling it 'global' would put a cross-province claim in the ledger that it cannot support."""
+    others = [c for c in CITIES if c != "Rize"]
+    solo = ExperimentConfig(experiment_id="x", training_scope="per_city", excluded_cities=others)
+    assert solo.active_cities == ["Rize"]
+
+    with pytest.raises(ValueError, match="rather than calling it global"):
+        ExperimentConfig(experiment_id="x", excluded_cities=others)
+
+
+def test_excluding_every_province_is_rejected():
+    with pytest.raises(ValueError, match="leaves no provinces"):
+        ExperimentConfig(experiment_id="x", training_scope="per_city", excluded_cities=list(CITIES))
 
 
 def test_active_cities_keeps_canonical_order_and_ledger_key_is_a_stable_string():

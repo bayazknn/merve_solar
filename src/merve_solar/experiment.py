@@ -42,7 +42,8 @@ LEDGER_COLUMNS: tuple[str, ...] = (
     "hidden_sizes", "dropout_rate", "city_embedding_dim",
     "train_ratio", "val_ratio",
     "n_bootstrap", "mc_dropout_passes", "max_epochs", "early_stop_patience",
-    "loss_function", "loss_daylight_only", "per_city_scaler", "seed",
+    "loss_function", "huber_delta", "loss_daylight_only", "per_city_scaler",
+    "clamp_night_to_zero", "seed",
     "RMSE", "MAE", "R2", "CP", "PINW", "MPIW", "Reliability", "CWC", "CRPS",
     "n_samples", "n_elements",
     "RMSE_daylight", "MAE_daylight", "R2_daylight", "CP_daylight", "n_elements_daylight",
@@ -102,8 +103,10 @@ def _ledger_row(config, subsets: dict, run_stats: dict, training_time_sec: float
         "max_epochs": config.max_epochs,
         "early_stop_patience": config.early_stop_patience,
         "loss_function": config.loss_function,
+        "huber_delta": config.huber_delta,
         "loss_daylight_only": config.loss_daylight_only,
         "per_city_scaler": config.per_city_scaler,
+        "clamp_night_to_zero": config.clamp_night_to_zero,
         "seed": config.seed,
         **{k: agg.get(k) for k in
            ("RMSE", "MAE", "R2", "CP", "PINW", "MPIW", "Reliability", "CWC", "CRPS",
@@ -365,6 +368,15 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
     pooled_preds, run_stats = SCOPE_RUNNERS[config.training_scope](
         base_df, config, train_end, val_end, layout, device, exp_dir, log_lines
     )
+
+    if config.clamp_night_to_zero:
+        # Applied once here rather than inside each scope runner, so every arm gets it
+        # identically. `daylight` is CLRSKY > 0, i.e. pure solar geometry, so this asserts a
+        # known physical fact rather than fitting anything: below the horizon the target is
+        # exactly 0. Done in place to avoid duplicating a multi-GB array.
+        night = ~daylight
+        pooled_preds[:, night] = 0.0
+        log_lines.append(f"clamped {int(night.sum())} night elements to zero")
 
     subsets = compute_metric_subsets(
         pooled_preds, y_true, city_id_test, config.active_cities, daylight=daylight

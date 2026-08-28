@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from merve_solar.config import ExperimentConfig
+from merve_solar.config import CITIES, ExperimentConfig
 
 # The ablation pair's shared settings. Both arms are constructed from this one dict so the pair
 # provably differs only in training_scope (and seed) -- far safer than two hand-written blocks
@@ -125,10 +125,79 @@ def _ablation_configs() -> list:
     return configs
 
 
+# ---------------------------------------------------------------------------------------------
+# Rize transfer curve: the paper's cross-province claim, tested in the direction it is made.
+#
+# The claim is that pooling improves EACH province's forecast versus a province-specific model --
+# transfer *into* a province. Rize is the sharpest place to test it: the EDA puts it in a separate
+# climatic regime (daily clear-sky index 0.697 against 0.806-0.840, overcast-day share 8.0%
+# against 1.0-2.8%, its best season near the others' winter), and it is where the model currently
+# earns its keep -- the global smoke run beats climatology by 14.1% on Rize against 0.2-3.0%
+# elsewhere. If pooling buys anything, it should show up there.
+#
+# So instead of removing Rize, we remove the OTHERS and watch Rize degrade. Every arm is scored on
+# Rize's own test windows, which are identical across arms because the split boundaries come from
+# the full frame before any exclusion.
+#
+# The confound is that adding provinces also adds data, so a monotone curve alone cannot separate
+# "more data" from "more diverse data". The pair arms are the control: Rize+Ankara and
+# Rize+Antalya train on exactly the same number of windows, and differ only in WHICH province is
+# added -- Ankara being the cloudiest of the other four (kt 0.806) and Antalya the sunniest
+# (0.840). If transfer is about information rather than volume, those two should not be equal.
+RIZE = "Rize"
+_OTHERS = [c for c in CITIES if c != RIZE]
+
+RIZE_CURVE_ARMS = [
+    # (id suffix,        provinces kept,                      scope,       what it isolates)
+    ("solo",             [RIZE],                              "per_city"),   # zero transfer
+    ("plus_ankara",      [RIZE, "Ankara"],                    "global"),     # +1, cloudiest partner
+    ("plus_antalya",     [RIZE, "Antalya"],                   "global"),     # +1, sunniest partner
+    ("minus_antalya",    [RIZE, "Ankara", "Konya", "Van"],    "global"),     # 4 of 5
+    ("all5",             [RIZE] + _OTHERS,                    "global"),     # full pooling
+]
+
+
+def _rize_curve_configs() -> list:
+    """The transfer curve, plus a loss-selection stage that must run first.
+
+    Stage 1 fixes pooling at all five provinces and varies the loss, so the headline criterion is
+    chosen once on a comparison where nothing else moves. Stage 2 fixes that criterion and varies
+    pooling. Running the full cross product would multiply cost for no extra claim.
+    """
+    configs = []
+
+    # Stage 1 -- loss selection, all five provinces, one axis moving.
+    for loss in ("mse", "mae", "huber"):
+        configs.append(
+            ExperimentConfig(
+                experiment_id=f"abl_loss_{loss}_s42", loss_function=loss, seed=42, **ABLATION_FULL
+            )
+        )
+
+    # Stage 2 -- the curve. Seeds: the two endpoints carry the headline claim and get three each,
+    # since a one-seed gap between two arms is not evidence; the intermediate arms are mechanism
+    # evidence about the SHAPE of the curve and get one.
+    for suffix, kept, scope in RIZE_CURVE_ARMS:
+        excluded = [c for c in CITIES if c not in kept]
+        seeds = ABLATION_SEEDS if suffix in ("solo", "all5") else (42,)
+        for seed in seeds:
+            configs.append(
+                ExperimentConfig(
+                    experiment_id=f"abl_rize_{suffix}_s{seed}",
+                    training_scope=scope,
+                    excluded_cities=excluded,
+                    seed=seed,
+                    **ABLATION_FULL,
+                )
+            )
+    return configs
+
+
 EXPERIMENT_GROUPS = {
     "smoke": _smoke_configs,
     "main": _main_configs,
     "ablation": _ablation_configs,
+    "rize_curve": _rize_curve_configs,
 }
 
 

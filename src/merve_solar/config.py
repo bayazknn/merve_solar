@@ -86,7 +86,7 @@ MODEL_FAMILIES = ("lstm", "climatology", "persistence", "smart_persistence")
 # the model currently loses to a climatology baseline on daylight MAE (78.49 vs 73.38) while
 # winning on RMSE. Training on L1 is expected to improve MAE and worsen RMSE; the trade-off is
 # the finding, which is why this is a recorded axis rather than a silent default change.
-LOSS_FUNCTIONS = ("mse", "mae")
+LOSS_FUNCTIONS = ("mse", "mae", "huber")
 
 NUMERIC_FEATURE_COLUMNS = [
     "ALLSKY_SFC_SW_DWN",  # own-lag, autoregressive
@@ -181,6 +181,19 @@ class ExperimentConfig:
     # independently of anything the model learned. Running one seed both ways turns that from an
     # admitted assumption into a measured number.
     per_city_scaler: bool = True
+    # Zero the predictions at hours the sun is below the horizon. This is not a heuristic:
+    # CLRSKY = 0 is pure solar geometry, so the target is exactly 0 there and any nonzero
+    # prediction is provably wrong -- the same kind of physics constraint as the non-negativity
+    # penalty, just exactly known rather than softly penalised. Measured on smoke runs, an
+    # MSE-trained model leaves a median night prediction of 29.3 W/m^2, and clamping improves
+    # its all-hours MAE by 27% at no cost. Default on.
+    clamp_night_to_zero: bool = True
+    # Huber transition point, in SCALED target space. Only used when loss_function="huber".
+    # Huber is quadratic below delta and linear above: it keeps MSE's vanishing gradient near
+    # zero (so the ~48.8% of elements that are night do not contribute constant-magnitude
+    # gradient noise, as they would under a bare L1) while behaving like L1 where the errors
+    # that matter live.
+    huber_delta: float = 1.0
     # Provinces dropped from this run ENTIRELY -- train, val and test alike -- so the resulting
     # metric table covers only the remainder. The motivating case is Rize: the EDA established it
     # as a separate climatic regime (daily clear-sky index 0.697 against 0.806-0.840 elsewhere),
@@ -211,13 +224,17 @@ class ExperimentConfig:
         unknown = [c for c in self.excluded_cities if c not in CITY_TO_ID]
         if unknown:
             raise ValueError(f"excluded_cities contains unknown province(s) {unknown}; known: {CITIES}")
-        if len(self.active_cities) < 2:
+        if not self.active_cities:
+            raise ValueError(f"excluded_cities={self.excluded_cities} leaves no provinces at all")
+        if len(self.active_cities) == 1 and self.training_scope != "per_city":
             # A one-province "global" model is a per-city model wearing the wrong label, and the
-            # ledger row would claim a cross-province result that the run cannot support.
+            # ledger row would claim a cross-province result the run cannot support. One province
+            # IS a legitimate arm -- it is the zero-transfer end of the pooling curve -- so it is
+            # allowed, just not under a label that misdescribes it.
             raise ValueError(
-                f"excluded_cities={self.excluded_cities} leaves {len(self.active_cities)} "
-                "province(s); at least 2 are required. Use training_scope='per_city' for a "
-                "single-province model."
+                f"excluded_cities={self.excluded_cities} leaves one province "
+                f"({self.active_cities[0]}); use training_scope='per_city' for a single-province "
+                "model rather than calling it global."
             )
 
     @property
