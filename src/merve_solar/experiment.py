@@ -79,7 +79,7 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
     device = get_device()
     log_lines = [f"device={device}", f"train_end={train_end} val_end={val_end}"]
     for name, d in splits.items():
-        log_lines.append(f"{name}: {d['X'].shape[0]} windows")
+        log_lines.append(f"{name}: {d['y'].shape[0]} windows")  # y always present; X is None on a layout pass
 
     rng = np.random.default_rng(config.seed)
     bootstrap_preds = []

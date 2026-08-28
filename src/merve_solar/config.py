@@ -40,13 +40,28 @@ TARGET_COLUMN = "ALLSKY_SFC_SW_DWN"
 
 # Columns dropped while reading the xlsx (see data.py). The source file is left
 # physically untouched so it stays the raw NASA POWER export; the drop list lives here.
-#   ALLSKY_KT         - clearness index, undefined at night (~50% -999); dropping it is
-#                       what makes the "no -999 remains" integrity check pass.
-#   CLRSKY_SFC_SW_DWN - clear-sky reference irradiance. It is a near-deterministic
-#                       geometric upper envelope of the target, so keeping it turns part
-#                       of the task into a clear-sky-index fit and inflates skill relative
-#                       to what is available operationally. Dropped per TODOs.md.
-DROPPED_COLUMNS = ["ALLSKY_KT", "CLRSKY_SFC_SW_DWN"]
+#   ALLSKY_KT - clearness index, undefined at night (~50% -999); dropping it is what
+#               makes the "no -999 remains" integrity check pass.
+DROPPED_COLUMNS = ["ALLSKY_KT"]
+
+# Kept in the frame but NEVER a model input.
+#
+# CLRSKY_SFC_SW_DWN is a near-deterministic geometric upper envelope of the target, so as a
+# *feature* it turns part of the task into a clear-sky-index fit and inflates skill relative
+# to what is available operationally -- which is why it was removed from the feature set.
+# That same property is exactly what makes it the right *instrument*: clear-sky irradiance is
+# pure solar geometry with no weather term, so `CLRSKY > 0` is an exact "is the sun above the
+# horizon" indicator that never reads the realised target. Useless as a predictor, ideal as a
+# mask. It defines the daylight subset used for metrics (see metrics.py).
+#
+# Measured against the alternatives on the full record (295,920 rows): `CLRSKY > 0` selects
+# 151,643 rows and agrees with a `y >= 1 W/m^2` target threshold on 99.9983% of hours, but
+# never conditions on the outcome. A (city, month, hour) climatological cell selects 156,909
+# -- it over-admits 5,266 twilight hours at the edges of monthly cells, whose median irradiance
+# is 12.0 W/m^2 against the daylight interior's 395.7, which would put much of the night
+# inflation straight back into the "daylight" numbers.
+MASK_COLUMNS = ["CLRSKY_SFC_SW_DWN"]
+DAYLIGHT_REFERENCE_COLUMN = "CLRSKY_SFC_SW_DWN"
 
 NUMERIC_FEATURE_COLUMNS = [
     "ALLSKY_SFC_SW_DWN",  # own-lag, autoregressive
@@ -79,10 +94,15 @@ RAW_METEO_COLUMNS = [c for c in NUMERIC_FEATURE_COLUMNS if not c.endswith(("_sin
 # deg" is an artifact, not a statistic). Reported separately via circular statistics.
 CIRCULAR_COLUMNS = ["WD10M", "WD50M"]
 
-_dropped_but_used = set(DROPPED_COLUMNS) & (set(NUMERIC_FEATURE_COLUMNS) | {TARGET_COLUMN})
-if _dropped_but_used:
+# CLRSKY_SFC_SW_DWN now sits in the frame rather than being dropped, which makes it the column
+# most likely to drift back into the feature list by accident -- there is even a cached parquet
+# of it on disk inviting the mistake. This guard is what stops that, so it must keep covering
+# MASK_COLUMNS as well as DROPPED_COLUMNS.
+_non_feature = set(DROPPED_COLUMNS) | set(MASK_COLUMNS)
+_misused = _non_feature & (set(NUMERIC_FEATURE_COLUMNS) | {TARGET_COLUMN})
+if _misused:
     raise ValueError(
-        f"Columns are both dropped at load time and used as features/target: {sorted(_dropped_but_used)}"
+        f"Columns reserved as non-features are used as a feature or the target: {sorted(_misused)}"
     )
 
 
