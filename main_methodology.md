@@ -891,10 +891,22 @@ değiştirilmişse iki satır tabloda ayırt edilemez (§13.4).
   olduğundan iki (il, replika) çifti aynı tohuma düşemez); çakışma olsaydı iki ilin ağırlık
   ilklendirmesi ve blok çekilişleri birbiriyle ilintili hâle gelirdi. MBB üreticisi ise il
   başına `numpy.random.default_rng([\text{seed}, c])` ile ayrılır.
-- **Tekrarlanabilirlik cihaz başınadır.** `set_seed` CPU, CUDA ve MPS üreticilerinin üçünü
-  de tohumlar, ama farklı arka uçlar (MPS / CUDA / CPU) bit düzeyinde aynı sonucu vermez;
-  bir sonucun yeniden üretilmesi aynı cihaz sınıfını gerektirir ve kullanılan cihaz her
-  koşunun `log.txt` dosyasına yazılır.
+- **Tekrarlanabilirlik cihaz başınadır — ve fark ölçülmüştür.** `set_seed` CPU, CUDA ve MPS
+  üreticilerinin üçünü de tohumlar, ama farklı arka uçlar aynı tohumdan aynı çekilişi
+  üretmez. Birebir aynı konfigürasyonun iki arka uçta koşulmasıyla ölçülen fark
+  (`abl_parity_cpu_s42` / `abl_parity_mps_s42`, Rize gündüz):
+
+  | metrik grubu | CPU → MPS farkı | tohum dağılımıyla kıyas |
+  | --- | --- | --- |
+  | Nokta (RMSE / MAE / R²) | %0,25 / %0,46 / %0,13 | tohum gürültüsünün çok altında |
+  | Aralık (MPIW / PINW) | **%4,49** | tohum s.s.'sının ≈5 katı |
+  | CP | +0,0220 | 3 tohumun tüm aralığından geniş |
+
+  Yani **nokta metrikleri arka uçtan bağımsız okunabilir, aralık metrikleri okunamaz**.
+  Belirsizlik katmanı bu makalenin konusu olduğundan kural nettir: bir arka uçta üretilmiş
+  CP/PINW/MPIW/CWC değeri başka bir arka uçta üretilmiş olanla **karşılaştırılmaz**, ve bir
+  çok-tohumlu ortalama tek bir arka uçtan gelmelidir. Kullanılan cihaz hem `log.txt`'ye hem de
+  ledger'ın `device` sütununa yazılır; karşılaştırma yapılmadan önce o sütun kontrol edilir.
 - Konfigürasyon, ölçekleyici ve tüm model ağırlıkları diske yazılır; sonuçlar yeniden
   üretilebilir.
 

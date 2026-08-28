@@ -482,6 +482,47 @@ Bu, `main_methodology.md` §13.3'ün determinizm iddiası için ölçülmüş bi
 kurgulanmamıştı — Aşama 1 ile Aşama 2'nin kesişmesinden doğdu — ama makalede alıntılanmaya
 değer. (Maliyeti bir koşudur; ileride grid'de bu çakışma bilerek korunabilir veya kaldırılabilir.)
 
+### 1.11 Cihaz eşdeğerliği (parity) — MPS ile CPU aynı sayıları vermez
+
+`abl_parity_cpu_s42` ve `abl_parity_mps_s42`, `experiment_id` dışında **birebir aynı**
+konfigürasyondur (Rize tek başına, `per_city`, L1, tohum 42, B=1, T=100); tek fark
+`MERVE_DEVICE` ile sabitlenen arka uçtur. Amaç, bir denetimde ileri sürülen ama
+**doğrulanamamış** bir iddiayı sınamaktı: `nn.LSTM`'in katmanlar arası dropout'unun MPS'te
+CPU'dan ayrıştığı. `hidden_sizes=[64, 32]` gerçekten `nn.LSTM(num_layers=2, dropout=0.3)`
+kuruyor ve o dropout çıkarım anındaki MC-Dropout gürültü kaynaklarından biri, yani maruziyet
+gerçek — iddia doğrulanmamış olsa bile.
+
+| metrik (Rize, gündüz) | CPU | MPS | fark |
+| --- | --- | --- | --- |
+| RMSE | 110,557 | 110,832 | **+%0,25** |
+| MAE | 77,559 | 77,920 | +%0,46 |
+| R² | 0,7984 | 0,7974 | −%0,13 |
+| CP | 0,8674 | 0,8894 | **+0,0220** |
+| MPIW | 318,38 | 332,66 | **+%4,49** |
+| PINW | 0,3248 | 0,3394 | +%4,49 |
+| CRPS | 57,055 | 56,579 | −%0,83 |
+| süre | 155,2 s | 71,4 s | **2,17× hızlı** |
+
+**Sonuç 1 — iddia edilen hata bu biçimde görünmüyor.** Dropout MPS'te işlevsiz olsaydı öngörü
+dağılımının yayılımı *çökerdi*: MPIW daralır, CP düşerdi. Gözlenen yön tam tersidir (MPIW %4,5
+daha *geniş*). Koşular gerçekten farklı çekilişlerdir — erken durdurma CPU'da 28, MPS'te 30
+epokta bağladı — ama benzer bir çözüme yakınsamışlardır (doğrulama kaybı 0,1912 / 0,1915).
+
+**Sonuç 2 — ama arka uçlar aralık metriklerinde değiştirilebilir değil.** Ölçek için: aynı
+kolun üç tohumu arasında MPIW standart sapması ortalamanın **%0,91'i**, tüm aralık %1,82'dir.
+Arka uç farkı %4,49 — yani **tohum s.s.'sının ≈5 katı ve üç tohumun tüm aralığının 2,5 katı**.
+CP'de de fark (0,0220) üç tohumun tüm aralığından (0,0182) geniştir. Nokta metriklerinde ise
+fark %0,25 ile tohum gürültüsünün çok altında kalır.
+
+Pratik kural: **nokta metrikleri arka uçlar arasında okunabilir, aralık metrikleri okunamaz.**
+Bir çok-tohumlu ortalama tek bir arka uçtan gelmelidir; ledger'ın `device` sütunu bunun
+kontrol edilebilmesi için vardır.
+
+**Sınır:** bu tek bir tohumla yapılmış tek bir karşılaştırmadır. %4,49'un sistematik bir arka
+uç kayması mı yoksa şanssız tek bir çekiliş mi olduğunu ayırmak için her arka uçta üç tohum
+gerekir. Bu koşuların maliyeti düşüktür (Rize tek başına, arka uç başına ≈3 × 100 s) ve
+belirsizlik katmanı hakkında bir tablo yayımlanacaksa yapılması önerilir.
+
 ---
 
 ## A. Bu belge bir şablondur — yeni bir ablasyon nasıl eklenir
