@@ -76,3 +76,31 @@ def test_scope_and_family_reach_the_ledger():
     )
     assert row["training_scope"] == "per_city"
     assert row["model_family"] == "lstm"
+
+
+def test_excluded_cities_and_loss_function_reach_the_ledger():
+    """Same rule as above: two runs differing only on these must not look identical in the table."""
+    config = ExperimentConfig(
+        experiment_id="x", excluded_cities=["Van", "Rize"], loss_function="mae"
+    )
+    row = _ledger_row(config, _fake_subsets(), {}, 1.0)
+    # A stable, greppable string, not a Python list repr.
+    assert row["excluded_cities"] == "Rize|Van"
+    assert row["loss_function"] == "mae"
+
+    default = _ledger_row(ExperimentConfig(experiment_id="y"), _fake_subsets(), {}, 1.0)
+    assert default["excluded_cities"] == ""
+    assert default["loss_function"] == "mse"
+
+
+def test_the_new_axes_survive_a_round_trip_through_the_csv(ledger_path):
+    """An empty excluded_cities must read back as an empty string, not as NaN-shaped surprise."""
+    for config in (
+        ExperimentConfig(experiment_id="plain"),
+        ExperimentConfig(experiment_id="excl", excluded_cities=["Rize"], loss_function="mae"),
+    ):
+        _append_ledger_row(_ledger_row(config, _fake_subsets(), {}, 1.0))
+
+    written = pd.read_csv(ledger_path, keep_default_na=False)
+    assert list(written["excluded_cities"]) == ["", "Rize"]
+    assert list(written["loss_function"]) == ["mse", "mae"]

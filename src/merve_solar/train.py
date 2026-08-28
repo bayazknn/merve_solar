@@ -1,8 +1,11 @@
-"""Training loop: MSE + a soft non-negativity penalty, early stopping, LR scheduling.
+"""Training loop: config-selected fit criterion + a soft non-negativity penalty, early
+stopping, LR scheduling.
 
 The non-negativity penalty is the one piece of the source paper's physics-constraint
 machinery that transfers directly to irradiance (irradiance can't be negative either);
-the paper's capacity-ceiling term has no analog for irradiance and is not included.
+the paper's capacity-ceiling term has no analog for irradiance and is not included. It is
+added on top of whichever fit criterion is selected -- it is a physics constraint, not part
+of the fit criterion, so it must not change when the criterion does.
 """
 import copy
 
@@ -11,6 +14,20 @@ import torch.nn as nn
 
 from merve_solar.datasets import make_dataloader
 from merve_solar.utils import get_device
+
+# config.loss_function -> criterion. MSE optimises the conditional mean, L1 the conditional
+# median; on a right-skewed error distribution those are different forecasts. See
+# config.LOSS_FUNCTIONS for why that matters here.
+LOSS_CRITERIA = {"mse": nn.MSELoss, "mae": nn.L1Loss}
+
+
+def make_criterion(config) -> nn.Module:
+    """The fit criterion for this config, in SCALED target space (unchanged from before).
+
+    Exposed separately so a test can assert on the criterion itself rather than inferring the
+    choice from a metric, which a lucky seed could fake.
+    """
+    return LOSS_CRITERIA[config.loss_function]()
 
 
 def nonneg_penalty(pred: torch.Tensor) -> torch.Tensor:
@@ -31,7 +48,7 @@ def train_model(model: nn.Module, train_data: dict, val_data: dict, config, devi
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=config.lr_reduce_factor, patience=config.lr_reduce_patience
     )
-    mse_loss = nn.MSELoss()
+    criterion = make_criterion(config)
 
     best_val_loss = float("inf")
     best_state = None
@@ -45,7 +62,7 @@ def train_model(model: nn.Module, train_data: dict, val_data: dict, config, devi
             X, city_id, y = X.to(device), city_id.to(device), y.to(device)
             optimizer.zero_grad()
             pred = model(X, city_id)
-            loss = mse_loss(pred, y) + config.nonneg_penalty_weight * nonneg_penalty(pred)
+            loss = criterion(pred, y) + config.nonneg_penalty_weight * nonneg_penalty(pred)
             loss.backward()
             optimizer.step()
             train_loss_sum += loss.item() * X.size(0)
@@ -58,7 +75,7 @@ def train_model(model: nn.Module, train_data: dict, val_data: dict, config, devi
             for X, city_id, y in val_loader:
                 X, city_id, y = X.to(device), city_id.to(device), y.to(device)
                 pred = model(X, city_id)
-                loss = mse_loss(pred, y) + config.nonneg_penalty_weight * nonneg_penalty(pred)
+                loss = criterion(pred, y) + config.nonneg_penalty_weight * nonneg_penalty(pred)
                 val_loss_sum += loss.item() * X.size(0)
                 n_val += X.size(0)
         val_loss = val_loss_sum / n_val

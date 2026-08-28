@@ -11,7 +11,7 @@ O(S log S) sorted-sample estimator for a finite predictive sample).
 import numpy as np
 import pandas as pd
 
-from merve_solar.config import SECONDARY_AGGREGATE_EXCLUDES
+from merve_solar.config import CITY_TO_ID, SECONDARY_AGGREGATE_EXCLUDES
 
 TARGET_CI_COVERAGE = 0.95
 
@@ -203,18 +203,25 @@ def compute_all_metrics(
 
     result = {"aggregate": compute_metrics_for_subset(pooled_preds, y_true, element_mask, dist)}
 
+    # City ids come from the frame via CITY_TO_ID and are NEVER renumbered, so `cities` here is
+    # a list of provinces to REPORT, not an index mapping. Using enumerate() instead would
+    # mis-assign every city after a gap whenever `cities` is a subset (a run excluding Rize
+    # would score Van's windows under the label "Rize" and drop Van from the table entirely).
     keep = np.ones(len(city_id), dtype=bool)
-    for idx, city in enumerate(cities):
+    for city in cities:
         if city in SECONDARY_AGGREGATE_EXCLUDES:
-            keep &= city_id != idx
+            keep &= city_id != CITY_TO_ID[city]
+    # If the secondary-aggregate province is not in `cities` at all (a run that already excluded
+    # it), the row would be a byte-for-byte duplicate of Aggregate -- omit it rather than emit a
+    # second copy of the same numbers under a name that implies a contrast.
     excluded = [c for c in cities if c in SECONDARY_AGGREGATE_EXCLUDES]
     result["aggregate_excl"] = _subset(rows=keep) if (excluded and keep.any()) else None
     result["aggregate_excl_label"] = "Aggregate_excl_" + "_".join(excluded) if excluded else None
 
     result["per_city"] = {
-        city: _subset(rows=(city_id == idx))
-        for idx, city in enumerate(cities)
-        if (city_id == idx).any()
+        city: _subset(rows=(city_id == CITY_TO_ID[city]))
+        for city in cities
+        if (city_id == CITY_TO_ID[city]).any()
     }
     result["per_horizon"] = {h + 1: _subset(step=h) for h in range(y_true.shape[1])}
     return result

@@ -11,7 +11,13 @@ import pandas as pd
 import torch
 
 from merve_solar.bootstrap import resample_train_split
-from merve_solar.config import BASE_FEATURES_PATH, CITIES, LEDGER_PATH, NUMERIC_FEATURE_COLUMNS
+from merve_solar.config import (
+    BASE_FEATURES_PATH,
+    CITIES,
+    CITY_TO_ID,
+    LEDGER_PATH,
+    NUMERIC_FEATURE_COLUMNS,
+)
 from merve_solar.data import load_base_features
 from merve_solar.mc_dropout import mc_dropout_predict
 from merve_solar.metrics import (
@@ -31,12 +37,12 @@ from merve_solar.windows import build_experiment_windows, compute_split_boundari
 # header -- so any change to the row dict silently misaligns every column of the new row
 # against the existing header. Declaring the schema makes that a loud failure instead.
 LEDGER_COLUMNS: tuple[str, ...] = (
-    "experiment_id", "model_family", "training_scope",
+    "experiment_id", "model_family", "training_scope", "excluded_cities",
     "lookback_hours", "horizon_hours", "window_stride", "n_features",
     "hidden_sizes", "dropout_rate", "city_embedding_dim",
     "train_ratio", "val_ratio",
     "n_bootstrap", "mc_dropout_passes", "max_epochs", "early_stop_patience",
-    "loss_daylight_only", "per_city_scaler", "seed",
+    "loss_function", "loss_daylight_only", "per_city_scaler", "seed",
     "RMSE", "MAE", "R2", "CP", "PINW", "MPIW", "Reliability", "CWC", "CRPS",
     "n_samples", "n_elements",
     "RMSE_daylight", "MAE_daylight", "R2_daylight", "CP_daylight", "n_elements_daylight",
@@ -79,6 +85,9 @@ def _ledger_row(config, subsets: dict, run_stats: dict, training_time_sec: float
         "experiment_id": config.experiment_id,
         "model_family": config.model_family,
         "training_scope": config.training_scope,
+        # A stable, greppable string ("Rize", "" when nothing is excluded) rather than a Python
+        # list repr, so the column can be filtered without parsing.
+        "excluded_cities": config.excluded_cities_key,
         "lookback_hours": config.lookback_hours,
         "horizon_hours": config.horizon_hours,
         "window_stride": config.window_stride,
@@ -92,6 +101,7 @@ def _ledger_row(config, subsets: dict, run_stats: dict, training_time_sec: float
         "mc_dropout_passes": config.mc_dropout_passes,
         "max_epochs": config.max_epochs,
         "early_stop_patience": config.early_stop_patience,
+        "loss_function": config.loss_function,
         "loss_daylight_only": config.loss_daylight_only,
         "per_city_scaler": config.per_city_scaler,
         "seed": config.seed,
@@ -111,8 +121,8 @@ def _ledger_row(config, subsets: dict, run_stats: dict, training_time_sec: float
 
 def _plot_representative_forecasts(pooled_preds, y_true, city_id_test, config, exp_dir) -> None:
     horizon_axis = np.arange(1, config.horizon_hours + 1)
-    for city_idx, city in enumerate(CITIES):
-        mask = city_id_test == city_idx
+    for city in config.active_cities:
+        mask = city_id_test == CITY_TO_ID[city]
         if not mask.any():
             continue
         sample_idx = np.where(mask)[0][0]
@@ -236,6 +246,9 @@ def _run_global_scope(base_df, config, train_end, val_end, layout, device, exp_d
     for name, d in splits.items():
         log_lines.append(f"{name}: {d['y'].shape[0]} windows")
 
+    # n_cities is len(CITIES), NOT len(active_cities): the embedding table keeps a row per
+    # province so that city_id values are never renumbered by an exclusion and checkpoints stay
+    # comparable across runs. An excluded province's row simply never receives a gradient.
     pooled_scaled, stats = _predict_replicas(
         splits, config, len(CITIES), device, exp_dir, "bootstrap_model",
         seed_base=config.seed + 1, rng=np.random.default_rng(config.seed),
@@ -262,7 +275,8 @@ def _run_per_city_scope(base_df, config, train_end, val_end, layout, device, exp
         save_scaler(shared_scaler, exp_dir / "checkpoints" / "scaler.joblib")
         log_lines.append("per_city_scaler=False: all provinces share the pooled scaler")
 
-    for city_idx, city in enumerate(CITIES):
+    for city in config.active_cities:
+        city_idx = CITY_TO_ID[city]  # canonical id, never a position in active_cities
         city_rows = base_df[base_df["city"] == city]
         if shared_scaler is None:
             splits, city_scaler = _fit_scale_window(
@@ -296,7 +310,8 @@ def _run_per_city_scope(base_df, config, train_end, val_end, layout, device, exp
         raise RuntimeError(f"per_city assembly left {int((~filled).sum())} test windows unfilled")
     if np.isnan(pooled).any():
         raise RuntimeError("per_city assembly produced NaN predictions")
-    return pooled, {"hit_max_epochs": hit_cap, "n_models": config.n_bootstrap * len(CITIES)}
+    return pooled, {"hit_max_epochs": hit_cap,
+                    "n_models": config.n_bootstrap * len(config.active_cities)}
 
 
 SCOPE_RUNNERS = {"global": _run_global_scope, "per_city": _run_per_city_scope}
@@ -316,8 +331,17 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
     if base_df is None:
         base_df = load_base_features(BASE_FEATURES_PATH)
 
-    # Boundaries come from the FULL frame once, so both arms split on identical dates.
+    # Boundaries come from the FULL frame once, BEFORE any exclusion is applied, so both arms
+    # of every comparison split on identical dates. compute_split_boundaries counts hours off
+    # CITIES[0] and raises on a partial frame, so filtering first would either crash (Ankara
+    # excluded) or silently produce different split dates for the excluded-city arm.
     train_end, val_end = compute_split_boundaries(base_df, config)
+
+    # Only now drop the excluded provinces. Everything downstream -- the scaler fit, the
+    # windows, the models, the metric table -- sees only the active ones, which is what
+    # "removed entirely" means.
+    if config.excluded_cities:
+        base_df = base_df[base_df["city"].isin(config.active_cities)].reset_index(drop=True)
 
     # Layout pass on the UNSCALED frame: the canonical ground truth in W/m^2, plus the daylight
     # mask and window identities. Taking y_true from here rather than inverse-transforming the
@@ -332,6 +356,8 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
     log_lines = [
         f"device={device}",
         f"training_scope={config.training_scope} model_family={config.model_family}",
+        f"loss_function={config.loss_function}",
+        f"active_cities={config.active_cities} excluded={config.excluded_cities}",
         f"train_end={train_end} val_end={val_end}",
         f"test daylight elements: {int(daylight.sum())} of {daylight.size}",
     ]
@@ -340,7 +366,9 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
         base_df, config, train_end, val_end, layout, device, exp_dir, log_lines
     )
 
-    subsets = compute_metric_subsets(pooled_preds, y_true, city_id_test, CITIES, daylight=daylight)
+    subsets = compute_metric_subsets(
+        pooled_preds, y_true, city_id_test, config.active_cities, daylight=daylight
+    )
 
     summary_df = results_summary_dataframe(subsets)
     horizon_df = results_by_horizon_dataframe(subsets)

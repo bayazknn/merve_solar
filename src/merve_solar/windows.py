@@ -116,7 +116,8 @@ def build_experiment_windows(
 ) -> dict:
     """Returns {'train'/'val'/'test': {'X', 'y', 'daylight', 'city_id', 'window_start'}}.
 
-    cities=None means all CITIES (the global arm). Passing a single-element list builds that
+    cities=None means config.active_cities -- every province except those in
+    config.excluded_cities (the global arm). Passing a single-element list builds that
     city's block alone, with output row-identical and order-identical to that city's slice of
     the pooled global build — which is what lets the per_city ablation arm assemble its
     predictions back into the global layout by mask.
@@ -130,7 +131,10 @@ def build_experiment_windows(
     so their predictions are gathered by exactly the indexing the model's targets are, rather
     than by a parallel implementation that could drift out of alignment.
     """
-    cities = list(CITIES) if cities is None else list(cities)
+    # Note this reads config.active_cities, NOT CITIES: an excluded province must not produce
+    # windows in any split. Split boundaries are still computed on the full frame upstream, so
+    # excluding a province cannot move a split date.
+    cities = list(config.active_cities) if cities is None else list(cities)
     train_end_np = np.datetime64(train_end)
     val_end_np = np.datetime64(val_end)
 

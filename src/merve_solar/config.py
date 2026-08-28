@@ -77,6 +77,17 @@ SECONDARY_AGGREGATE_EXCLUDES = ["Rize"]
 TRAINING_SCOPES = ("global", "per_city")
 MODEL_FAMILIES = ("lstm", "climatology", "persistence", "smart_persistence")
 
+# Training criterion, in SCALED target space (the non-negativity penalty is added on top of it
+# either way -- that term is a physics constraint, not part of the fit criterion).
+#
+# The choice is not cosmetic: MSE is minimised by the conditional mean, MAE by the conditional
+# median, and this target's error distribution is strongly right-skewed (measured residual mean
+# 8.25 W/m^2 against median 0.92, a 7.34 skew). That is the same order as the margin by which
+# the model currently loses to a climatology baseline on daylight MAE (78.49 vs 73.38) while
+# winning on RMSE. Training on L1 is expected to improve MAE and worsen RMSE; the trade-off is
+# the finding, which is why this is a recorded axis rather than a silent default change.
+LOSS_FUNCTIONS = ("mse", "mae")
+
 NUMERIC_FEATURE_COLUMNS = [
     "ALLSKY_SFC_SW_DWN",  # own-lag, autoregressive
     "T2M",
@@ -170,6 +181,19 @@ class ExperimentConfig:
     # independently of anything the model learned. Running one seed both ways turns that from an
     # admitted assumption into a measured number.
     per_city_scaler: bool = True
+    # Provinces dropped from this run ENTIRELY -- train, val and test alike -- so the resulting
+    # metric table covers only the remainder. The motivating case is Rize: the EDA established it
+    # as a separate climatic regime (daily clear-sky index 0.697 against 0.806-0.840 elsewhere),
+    # so a four-province run against the five-province run's Aggregate_excl_Rize row measures
+    # whether pooling across regimes helps or hurts the other four.
+    #
+    # City ids are NOT renumbered by this: CITY_TO_ID is fixed, ids come from the frame, and the
+    # model keeps a full len(CITIES) embedding table so the excluded province's row simply never
+    # receives a gradient. Renumbering would silently change what every id in every saved
+    # checkpoint and predictions file means.
+    excluded_cities: list = field(default_factory=list)
+    # Training criterion; see LOSS_FUNCTIONS above.
+    loss_function: str = "mse"
 
     def __post_init__(self) -> None:
         # Validate here rather than at use: from_json() runs this too, so a typo'd
@@ -178,8 +202,39 @@ class ExperimentConfig:
             raise ValueError(f"training_scope must be one of {TRAINING_SCOPES}, got {self.training_scope!r}")
         if self.model_family not in MODEL_FAMILIES:
             raise ValueError(f"model_family must be one of {MODEL_FAMILIES}, got {self.model_family!r}")
+        if self.loss_function not in LOSS_FUNCTIONS:
+            raise ValueError(f"loss_function must be one of {LOSS_FUNCTIONS}, got {self.loss_function!r}")
         if not 0.0 < self.dropout_rate < 1.0:
             raise ValueError("dropout_rate must be in (0, 1): it is the only source of MC-Dropout randomness")
+
+        self.excluded_cities = list(self.excluded_cities)
+        unknown = [c for c in self.excluded_cities if c not in CITY_TO_ID]
+        if unknown:
+            raise ValueError(f"excluded_cities contains unknown province(s) {unknown}; known: {CITIES}")
+        if len(self.active_cities) < 2:
+            # A one-province "global" model is a per-city model wearing the wrong label, and the
+            # ledger row would claim a cross-province result that the run cannot support.
+            raise ValueError(
+                f"excluded_cities={self.excluded_cities} leaves {len(self.active_cities)} "
+                "province(s); at least 2 are required. Use training_scope='per_city' for a "
+                "single-province model."
+            )
+
+    @property
+    def active_cities(self) -> list:
+        """The provinces this run actually uses, in canonical CITIES order.
+
+        Single source of truth for "which cities" -- windows, scaler, per-city training loop,
+        figures and the metric table all route through this, so an exclusion cannot reach one
+        of them and miss another.
+        """
+        excluded = set(self.excluded_cities)
+        return [c for c in CITIES if c not in excluded]
+
+    @property
+    def excluded_cities_key(self) -> str:
+        """Stable, greppable ledger representation ("" when nothing is excluded)."""
+        return "|".join(sorted(self.excluded_cities))
 
     @property
     def test_ratio(self) -> float:
