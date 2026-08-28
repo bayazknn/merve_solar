@@ -157,12 +157,54 @@ RIZE_CURVE_ARMS = [
 ]
 
 
-def _rize_curve_configs() -> list:
+# Reduced-fidelity variant of ABLATION_FULL, used because the full setting does not fit the
+# available compute. MEASURED on this CPU-only host (12 cores, torch using 6 threads) with a
+# timing probe over the real windows: 25.7 s/epoch and 1.83 s/MC-pass on the pooled five-province
+# split (218,745 train windows), 9.9 s / 0.72 s on a two-province split, 5.0 s / 0.37 s on Rize
+# alone. At B=8 x T=100 the twelve-arm study costs 22 h if early stopping bites at epoch 40 and
+# 96 h if every replica runs to the 200-epoch cap -- days, not hours.
+#
+# What is given up, and why it is the right thing to give up:
+#   n_bootstrap 8 -> 1  is the sanctioned fast path, not a separate code path (experiment.py):
+#       no moving-block resampling, one LSTM, still scored by MC-Dropout alone. It removes the
+#       data/sampling component of the UQ layer, so the interval metrics of a B=1 arm are
+#       MC-Dropout-only and must not be compared against a B=8 row. The point metrics are the
+#       mean over T=100 stochastic passes, which is what this study reads.
+#   max_epochs 200 -> 100 with early_stop_patience kept at 15: the minimum setting at which
+#       early stopping, rather than the cap, is expected to decide when training ends. Whether
+#       it actually did is recorded per arm in the ledger's hit_max_epochs column and MUST be
+#       checked before any arm-to-arm claim -- arms that differ in training amount are not
+#       comparable.
+# T=100 MC passes is unchanged, so the percentile CI is estimated from the same sample size.
+#
+# The two dicts are deliberately built from one another rather than written out twice: the
+# reduced arms must differ from the full ones in exactly these three fields and nothing else.
+ABLATION_B1 = {**ABLATION_FULL, "n_bootstrap": 1, "max_epochs": 100}
+
+# Smoke fidelity for the curve's two structurally new code paths (a per_city arm with four
+# provinces excluded, and a global arm with three excluded). Minutes, and it is what stops a
+# multi-hour sweep from dying at the metrics step.
+RIZE_SMOKE_ARMS = ("solo", "plus_ankara")
+
+
+def _rize_curve_configs(fidelity: dict = ABLATION_FULL, suffix: str = "",
+                        arms=None, seeds_override=None) -> list:
     """The transfer curve, plus a loss-selection stage that must run first.
 
     Stage 1 fixes pooling at all five provinces and varies the loss, so the headline criterion is
     chosen once on a comparison where nothing else moves. Stage 2 fixes that criterion and varies
     pooling. Running the full cross product would multiply cost for no extra claim.
+
+    CAVEAT, recorded here because it is invisible at the call site: stage 2 takes the loss from
+    the ExperimentConfig default ("mse"), NOT from stage 1's winner. If stage 1 selects mae or
+    huber, the curve as defined here does not use it and stage 2 would have to be re-declared
+    with loss_function set explicitly. Stage 1 and stage 2 are then two independent one-axis
+    comparisons that happen to share a fidelity, which is a weaker design than the docstring
+    above implies but is the one the ids describe.
+
+    `fidelity` and `suffix` exist so a reduced-cost replica of the whole study is provably the
+    same study: the arms, provinces, scopes and seeds come from the same code, and only the
+    fidelity dict and the id suffix differ.
     """
     configs = []
 
@@ -170,27 +212,46 @@ def _rize_curve_configs() -> list:
     for loss in ("mse", "mae", "huber"):
         configs.append(
             ExperimentConfig(
-                experiment_id=f"abl_loss_{loss}_s42", loss_function=loss, seed=42, **ABLATION_FULL
+                experiment_id=f"abl_loss_{loss}_s42{suffix}", loss_function=loss, seed=42, **fidelity
             )
         )
 
     # Stage 2 -- the curve. Seeds: the two endpoints carry the headline claim and get three each,
     # since a one-seed gap between two arms is not evidence; the intermediate arms are mechanism
     # evidence about the SHAPE of the curve and get one.
-    for suffix, kept, scope in RIZE_CURVE_ARMS:
+    for suffix_arm, kept, scope in (arms if arms is not None else RIZE_CURVE_ARMS):
         excluded = [c for c in CITIES if c not in kept]
-        seeds = ABLATION_SEEDS if suffix in ("solo", "all5") else (42,)
+        if seeds_override is not None:
+            seeds = seeds_override
+        else:
+            seeds = ABLATION_SEEDS if suffix_arm in ("solo", "all5") else (42,)
         for seed in seeds:
             configs.append(
                 ExperimentConfig(
-                    experiment_id=f"abl_rize_{suffix}_s{seed}",
+                    experiment_id=f"abl_rize_{suffix_arm}_s{seed}{suffix}",
                     training_scope=scope,
                     excluded_cities=excluded,
                     seed=seed,
-                    **ABLATION_FULL,
+                    **fidelity,
                 )
             )
     return configs
+
+
+def _rize_curve_b1_configs() -> list:
+    """The same twelve arms at the reduced fidelity that fits this host. See ABLATION_B1."""
+    return _rize_curve_configs(ABLATION_B1, suffix="_b1")
+
+
+def _rize_curve_smoke_configs() -> list:
+    """Two arms, smoke fidelity, only to prove the exclusion code paths before the real sweep."""
+    arms = [a for a in RIZE_CURVE_ARMS if a[0] in RIZE_SMOKE_ARMS]
+    configs = _rize_curve_configs(
+        {**ABLATION_FULL, **ABLATION_SMOKE}, suffix="_smoke", arms=arms, seeds_override=(42,)
+    )
+    # Stage 1 needs no smoke: the pooled five-province path is already exercised by the
+    # `smoke` group. Keep only the curve arms.
+    return [c for c in configs if c.experiment_id.startswith("abl_rize_")]
 
 
 EXPERIMENT_GROUPS = {
@@ -198,6 +259,8 @@ EXPERIMENT_GROUPS = {
     "main": _main_configs,
     "ablation": _ablation_configs,
     "rize_curve": _rize_curve_configs,
+    "rize_curve_b1": _rize_curve_b1_configs,
+    "rize_curve_smoke": _rize_curve_smoke_configs,
 }
 
 
