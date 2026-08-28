@@ -1,0 +1,12 @@
+device=mps
+training_scope=global model_family=lstm
+loss_function=mae
+active_cities=['Ankara', 'Rize'] excluded=['Antalya', 'Konya', 'Van']
+train_end=2024-06-27 19:00:00 val_end=2025-03-26 01:00:00
+test daylight elements: 218687 of 423888
+train: 87498 windows
+val: 12926 windows
+test: 17662 windows
+replica 0: val_loss=0.1633 epochs=28
+clamped 205201 night elements to zero
+total_training_time_sec=136.5
