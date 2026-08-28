@@ -63,6 +63,20 @@ DROPPED_COLUMNS = ["ALLSKY_KT"]
 MASK_COLUMNS = ["CLRSKY_SFC_SW_DWN"]
 DAYLIGHT_REFERENCE_COLUMN = "CLRSKY_SFC_SW_DWN"
 
+# A secondary aggregate that leaves Rize out, reported alongside the plain one.
+# The five provinces are two regimes, not one: Rize's daily clear-sky index is 0.697 against
+# 0.806-0.840 elsewhere, its overcast-day share (kt < 0.3) is 8.0% against 1.0-2.8%, and its
+# best season (kt 0.772) sits near the others' winter. The plain aggregate therefore buries
+# Rize four-to-one -- which is exactly where the city embedding has to do its work, so the
+# contribution of cross-city transfer is invisible in the headline number without this row.
+SECONDARY_AGGREGATE_EXCLUDES = ["Rize"]
+
+# Arm-selection axes. Both are recorded in the ledger, so adding GRU/SVR/RF later needs no
+# header migration. "global" is the headline configuration and the default; "per_city" exists
+# only as the ablation arm that tests the paper's cross-city transfer claim.
+TRAINING_SCOPES = ("global", "per_city")
+MODEL_FAMILIES = ("lstm", "climatology", "persistence")
+
 NUMERIC_FEATURE_COLUMNS = [
     "ALLSKY_SFC_SW_DWN",  # own-lag, autoregressive
     "T2M",
@@ -139,6 +153,26 @@ class ExperimentConfig:
     bootstrap_block_length: int = 168
 
     seed: int = 42
+
+    # arm selection (see TRAINING_SCOPES / MODEL_FAMILIES above)
+    training_scope: str = "global"
+    model_family: str = "lstm"
+    # Mask the training loss to daylight steps. Default off: it is a modelling change, not a
+    # reporting one -- night outputs become unsupervised and free to drift, only ~13 of the 24
+    # horizon steps stay supervised (and which 13 shifts with the season), and it leaves the UQ
+    # layer unconstrained at night so CP and PINW become partly meaningless there. Evaluate it
+    # as its own experiment rather than folding it into another comparison.
+    loss_daylight_only: bool = False
+
+    def __post_init__(self) -> None:
+        # Validate here rather than at use: from_json() runs this too, so a typo'd
+        # "per-city" fails at load instead of three hours into a sweep.
+        if self.training_scope not in TRAINING_SCOPES:
+            raise ValueError(f"training_scope must be one of {TRAINING_SCOPES}, got {self.training_scope!r}")
+        if self.model_family not in MODEL_FAMILIES:
+            raise ValueError(f"model_family must be one of {MODEL_FAMILIES}, got {self.model_family!r}")
+        if not 0.0 < self.dropout_rate < 1.0:
+            raise ValueError("dropout_rate must be in (0, 1): it is the only source of MC-Dropout randomness")
 
     @property
     def test_ratio(self) -> float:

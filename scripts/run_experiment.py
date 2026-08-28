@@ -15,10 +15,13 @@ def main():
     args = parser.parse_args()
 
     config = ExperimentConfig.from_json(Path(args.config))
-    all_metrics = run_experiment(config)
+    subsets = run_experiment(config)
     print(f"experiment_id={config.experiment_id}")
-    for key, value in all_metrics["aggregate"].items():
-        print(f"  {key}: {value}")
+    for subset, block in subsets.items():
+        summary = "  ".join(
+            f"{k}={block['aggregate'][k]:.4g}" for k in ("RMSE", "MAE", "R2", "CP")
+        )
+        print(f"  [{subset:9s}] {summary}")
 
 
 if __name__ == "__main__":

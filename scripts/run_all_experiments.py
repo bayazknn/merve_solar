@@ -16,8 +16,11 @@ def main():
     base_df = load_base_features(BASE_FEATURES_PATH)
     for config in build_experiment_grid():
         print(f"Running {config.experiment_id}...")
-        all_metrics = run_experiment(config, base_df=base_df)
-        print(f"  RMSE={all_metrics['aggregate']['RMSE']:.2f}  CP={all_metrics['aggregate']['CP']:.3f}")
+        subsets = run_experiment(config, base_df=base_df)
+        for subset, block in subsets.items():
+            agg = block["aggregate"]
+            print(f"  [{subset:9s}] RMSE={agg['RMSE']:.2f}  MAE={agg['MAE']:.2f}  "
+                  f"R2={agg['R2']:.3f}  CP={agg['CP']:.3f}")
 
 
 if __name__ == "__main__":
