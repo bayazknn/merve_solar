@@ -10,6 +10,12 @@ BASE_FEATURES_PATH = OUTPUTS_DIR / "processed" / "base_features.parquet"
 EXPERIMENTS_DIR = OUTPUTS_DIR / "experiments"
 LEDGER_PATH = OUTPUTS_DIR / "experiments_ledger.csv"
 
+# Descriptive-statistics / EDA outputs (scripts/02_descriptive_analysis.py). These describe
+# the dataset itself rather than one experiment, so they live outside outputs/experiments/.
+EDA_DIR = OUTPUTS_DIR / "eda"
+EDA_FIGURES_DIR = EDA_DIR / "figures"
+EDA_TABLES_DIR = EDA_DIR / "tables"
+
 CITIES = ["Ankara", "Antalya", "Konya", "Rize", "Van"]
 CITY_TO_ID = {city: i for i, city in enumerate(CITIES)}
 
@@ -54,6 +60,17 @@ NUMERIC_FEATURE_COLUMNS = [
     "doy_sin",
     "doy_cos",
 ]
+
+# Physical meteorological variables, for the paper's descriptive-statistics table. Derived
+# from NUMERIC_FEATURE_COLUMNS rather than written out a second time: if the feature set ever
+# changes, the dataset table must not keep describing the old one. The sin/cos encodings are
+# excluded because their mean/std are constants by construction (mean~0, std~0.707) and carry
+# no information; the time features are described separately (see eda.temporal_coverage_table).
+RAW_METEO_COLUMNS = [c for c in NUMERIC_FEATURE_COLUMNS if not c.endswith(("_sin", "_cos"))]
+
+# Wind direction is circular: its arithmetic mean/std are meaningless (a pooled "189.5 +- 107
+# deg" is an artifact, not a statistic). Reported separately via circular statistics.
+CIRCULAR_COLUMNS = ["WD10M", "WD50M"]
 
 _dropped_but_used = set(DROPPED_COLUMNS) & (set(NUMERIC_FEATURE_COLUMNS) | {TARGET_COLUMN})
 if _dropped_but_used:

@@ -109,6 +109,13 @@ Add sweep entries to `build_experiment_grid()` in `configs/experiment_grid.py`.
   still scored via MC-Dropout alone.
 - **Scripts add `src/` to `sys.path`** rather than relying on the editable install; keep that
   prologue when adding a script under `scripts/`.
+- **The hourly clock is per-site Local Solar Time, not a shared time zone.** Verified from the
+  data: mean-irradiance peak hour runs Konya 11.25 < Ankara 11.26 < Antalya 11.41 < Van 11.56 <
+  Rize 11.89, which is the *reverse* of what a common clock would give and matches
+  `UTC + round(lon/15)` to within 0.1 h. So `HR=11` is a different physical instant in Rize than
+  in Ankara — never compare hours across cities, and label hour axes "yerel saat (LST)". Hour
+  labels are interval *starts*. This makes `hour_sin`/`hour_cos` a better encoding than it looks
+  (each city is encoded in its own solar time) and is worth a sentence in the paper's methods.
 - **Data-integrity checks in `data.py` raise rather than warn** (exact trimmed row count,
   no residual `-999`, no NaN). If the source xlsx is ever refreshed, `LAST_VALID_TIMESTAMP`,
   `EXPECTED_TRIMMED_ROWS_PER_SHEET`, and `FULL_ROWS_PER_SHEET` in `tests/test_data.py` all need
@@ -149,14 +156,21 @@ usually the more honest comparison against literature.
 
 ### Figures and tables
 
-`utils.py` holds the plotting helpers; all figures go to `outputs/experiments/<id>/figures/` at
-120 dpi via the `Agg` backend (no interactive display available). New plots should follow the same
-pattern: a function taking an explicit `save_path`, creating parent dirs, closing the figure.
+`utils.py` holds the plotting helpers for **experiment** figures; those go to
+`outputs/experiments/<id>/figures/` at 120 dpi via the `Agg` backend (no interactive display
+available). New plots should follow the same pattern: a function taking an explicit `save_path`,
+creating parent dirs, closing the figure.
+
+EDA figures that describe the dataset rather than a single run live in `eda.py` and are driven by
+`scripts/02_descriptive_analysis.py`, writing to `outputs/eda/{figures,tables}/` — never inside
+`run_experiment`. They share a separate style contract in `paper_style.py` (Turkish labels, always
+a white background, PNG at 300 dpi + vector PDF with Type 42 fonts, validated season palette with
+linestyle as a second channel). `paper_style.py` deliberately never mutates global rcParams — it
+exposes `PAPER_RC` for `plt.rc_context`, because a `sns.set_theme()` at import would silently
+restyle the `utils.py` experiment figures whenever both modules load in one process.
 
 For anything destined for the manuscript, prefer vector output (`.pdf`/`.svg`) alongside the PNG,
-readable axis labels with units (W/m²), and a caption-ready title. EDA figures that describe the
-dataset rather than a single run belong in a dedicated `scripts/` entry point writing to
-`outputs/figures/`, not inside `run_experiment`.
+readable axis labels with units (W/m²), and a caption-ready title.
 
 ## Open work (from `TODOs.md`, Turkish)
 
@@ -172,10 +186,11 @@ Roughly translated, still outstanding:
   on this framing) — see *Comparability rules* before adding any.
 - **Metrics table:** MAE, RMSE, **R²** — R² is not implemented anywhere yet; it needs adding to
   `metrics.py` and to the ledger row.
-- **Paper figures not yet built:** map of the 5 provinces; per-variable scatter vs. solar
-  radiation; correlation matrix; monthly boxplots of irradiance per city; 3D month × year ×
-  irradiance surface per city; seasonal day-vs-radiation plot. Plus a written paragraph on the
-  climatic/geographic differences between the 5 provinces.
+- **Paper figures: DONE (2026-08-28) except the map.** Per-variable scatter, correlation
+  matrices, monthly boxplots, the 3D month × year × irradiance surface (plus a 2-D anomaly
+  companion) and both seasonal views are built by `scripts/02_descriptive_analysis.py` into
+  `outputs/eda/`. Still outstanding: the map of the 5 provinces and the written paragraph on
+  their climatic/geographic differences (both need external geodata).
 
 ### Paths
 

@@ -80,7 +80,30 @@ uv run python scripts/01_prepare_base_data.py
 This writes `outputs/processed/base_features.parquet` and prints a
 per-city row count / date-range sanity check.
 
-### 2. Run a single experiment
+### 2. Descriptive statistics of the dataset (optional, seconds)
+
+```bash
+uv run python scripts/02_descriptive_analysis.py
+```
+
+Produces the manuscript's dataset-description tables and figures under
+`outputs/eda/` — per-city descriptive statistics, correlation heatmaps,
+per-variable scatter plots against irradiance, the last-12-months monthly
+box plot, the 3-D month × year × irradiance surface (plus its 2-D anomaly
+companion), and the two seasonal views. Figure and table labels are in
+Turkish. This reads the cached parquet only; it does not touch any
+experiment.
+
+`outputs/eda/README.md` documents every file and, importantly, the three
+analysis decisions behind them: daylight is defined **climatologically**
+(a `(city, month, hour)` cell whose mean is > 0) rather than as
+`target > 0`, which would condition on the dependent variable; everything
+month-to-month is computed on **daily totals**, because a box of
+daylight-hourly values is mostly solar geometry and makes winter look less
+variable than summer; and the hourly clock is NASA POWER's **per-site Local
+Solar Time**, so hours are never compared across cities.
+
+### 3. Run a single experiment
 
 ```bash
 uv run python scripts/run_experiment.py --config configs/config_000_smoke.json
@@ -98,7 +121,7 @@ Results print to the console and are persisted under
 `outputs/experiments/<experiment_id>/` — see
 [Interpreting results](#interpreting-results).
 
-### 3. Run a sweep of experiments
+### 4. Run a sweep of experiments
 
 `configs/experiment_grid.py` enumerates a list of `ExperimentConfig`s (a
 hidden-layer-size sweep, a lookback-window sweep, a dropout sweep, etc. —
@@ -112,7 +135,7 @@ Every config in the sweep runs one after another, each writing to its own
 `outputs/experiments/<experiment_id>/` and appending one row to
 `outputs/experiments_ledger.csv`.
 
-### 4. Creating your own config
+### 5. Creating your own config
 
 Two ways:
 
@@ -187,7 +210,11 @@ outputs/
 │       ├── forecast_ci_<city>.png      # one per city
 │       ├── rmse_vs_horizon.png
 │       └── cp_vs_horizon.png
-└── experiments_ledger.csv              # ONE ROW PER RUN — compare configs at a glance
+├── experiments_ledger.csv              # ONE ROW PER RUN — compare configs at a glance
+└── eda/                                # dataset description, not tied to any run
+    ├── README.md                       # what each file is + the analysis caveats
+    ├── tables/                         # descriptive stats, correlations, coverage (CSV/MD/TEX)
+    └── figures/                        # each figure as .png (300 dpi) and .pdf (vector)
 ```
 
 `experiments_ledger.csv` is the fastest way to compare many runs: it has one
