@@ -3,6 +3,8 @@ import random
 from pathlib import Path
 
 import numpy as np
+import os
+
 import torch
 
 
@@ -21,8 +23,25 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+VALID_DEVICES = ("cpu", "cuda", "mps")
+
+
 def get_device() -> str:
-    """Best available torch device: MPS (Apple Silicon) > CUDA (Nvidia) > CPU."""
+    """Best available torch device: MPS (Apple Silicon) > CUDA (Nvidia) > CPU.
+
+    `MERVE_DEVICE` overrides the choice. Results are only reproducible within a device class --
+    MPS, CUDA and CPU do not agree bitwise (methodology 13.3) -- so a multi-seed arm whose seeds
+    were run on different backends is not a clean mean +- sd. The override is what lets a run be
+    pinned to the backend its siblings used, on a machine that would otherwise pick another.
+    It is an environment variable rather than an ExperimentConfig field on purpose: the device is
+    a property of where a run happened, not of what was run, and a saved config must stay loadable
+    on a machine that has no GPU.
+    """
+    requested = os.environ.get("MERVE_DEVICE", "").strip().lower()
+    if requested:
+        if requested not in VALID_DEVICES:
+            raise ValueError(f"MERVE_DEVICE must be one of {VALID_DEVICES}, got {requested!r}")
+        return requested
     if torch.backends.mps.is_available():
         return "mps"
     if torch.cuda.is_available():

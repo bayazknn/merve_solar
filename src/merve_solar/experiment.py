@@ -43,7 +43,7 @@ LEDGER_COLUMNS: tuple[str, ...] = (
     "train_ratio", "val_ratio",
     "n_bootstrap", "mc_dropout_passes", "max_epochs", "early_stop_patience",
     "loss_function", "huber_delta", "loss_daylight_only", "per_city_scaler",
-    "clamp_night_to_zero", "seed",
+    "clamp_night_to_zero", "seed", "device",
     "RMSE", "MAE", "R2", "CP", "PINW", "MPIW", "Reliability", "CWC", "CRPS",
     "n_samples", "n_elements",
     "RMSE_daylight", "MAE_daylight", "R2_daylight", "CP_daylight", "n_elements_daylight",
@@ -133,6 +133,10 @@ def _ledger_row(config, subsets: dict, run_stats: dict, training_time_sec: float
         "per_city_scaler": config.per_city_scaler,
         "clamp_night_to_zero": config.clamp_night_to_zero,
         "seed": config.seed,
+        # Which backend produced the numbers. Not a config field -- see utils.get_device. Without
+        # it the ledger cannot tell a CPU row from an MPS one, and a multi-seed mean would silently
+        # average across backends that do not agree bitwise.
+        "device": run_stats.get("device", "unknown"),
         **{k: agg.get(k) for k in
            ("RMSE", "MAE", "R2", "CP", "PINW", "MPIW", "Reliability", "CWC", "CRPS",
             "n_samples", "n_elements")},
@@ -430,5 +434,7 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
     log_lines.append(f"total_training_time_sec={training_time_sec:.1f}")
     (exp_dir / "log.txt").write_text("\n".join(log_lines) + "\n")
 
-    _append_ledger_row(_ledger_row(config, subsets, run_stats, training_time_sec))
+    _append_ledger_row(
+        _ledger_row(config, subsets, {**run_stats, "device": device}, training_time_sec)
+    )
     return subsets

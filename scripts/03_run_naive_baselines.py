@@ -71,7 +71,13 @@ def main() -> None:
         )
         row_config.to_json(exp_dir / "config.json")
         _append_ledger_row(
-            _ledger_row(row_config, subsets, {"hit_max_epochs": 0, "n_models": 0}, time.time() - start)
+            # device="n/a": these are numpy lookups, no torch backend is selected at all, so
+            # "cpu" would misdescribe them as a backend choice that could have gone otherwise.
+            _ledger_row(
+                row_config, subsets,
+                {"hit_max_epochs": 0, "n_models": 0, "device": "n/a"},
+                time.time() - start,
+            )
         )
 
         agg = subsets["daylight"]["aggregate"]
