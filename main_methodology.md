@@ -697,17 +697,29 @@ bir metodolojik tercihtir.**
 Aşağıdakiler tasarımın *bilinen* sınırlarıdır; "gelecek iş" değil, sonuçların doğru
 okunması için gereken ön koşullardır.
 
-**1. Havuzlanan dağılım aleatorik bileşen içermez.** $\mathcal{P}$, bootstrap replikaları
-(veri/örneklem belirsizliği) ile MC-Dropout geçişlerinden (model parametresi belirsizliği)
-oluşur; **gözlem gürültüsü terimi hiçbir aşamada eklenmez**
-(`metrics.py::summarize_predictive_distribution` doğrudan geçişlerin yüzdeliklerini alır).
-Dolayısıyla aralıklar "gözlem nerede olabilir" sorusunu değil, "modelin ortalama tahmini
-nerede olabilir" sorusunu yanıtlar ve %95 kapsamaya **ilkesel olarak** ulaşamayabilirler.
-Ölçülen değerler bu beklentiyle uyumludur: ön koşularda gündüz CP $\approx 0{,}62$–$0{,}67$,
-hedef ise $0{,}95$. Standart çare $\sigma^2_{\text{toplam}} = \sigma^2_{\text{model}} +
-\sigma^2_{\text{gürültü}}$ biçiminde bir rezidüel-varyans eklentisi ya da split-conformal
-bir kalibrasyon katmanıdır; **kaynak makalenin PICP $= 0{,}9472$ değeriyle karşılaştırma bu
-düzeltme yapılmadan adil olmayacaktır.**
+**1. Havuzlanan dağılım aleatorik bileşen içermez — ama bu bir kalibrasyon sorunu
+çıkarmamaktadır.** $\mathcal{P}$, bootstrap replikaları (veri/örneklem belirsizliği) ile
+MC-Dropout geçişlerinden (model parametresi belirsizliği) oluşur; **gözlem gürültüsü terimi
+hiçbir aşamada eklenmez** (`metrics.py::summarize_predictive_distribution` doğrudan geçişlerin
+yüzdeliklerini alır). Bu nedenle bir dönem, %95 kapsamaya ilkesel olarak ulaşılamayabileceği ve
+rezidüel-varyans eklentisinin bir *ön koşul* olduğu değerlendirilmişti
+(`METHODOLOGY_REVIEW.md` K3).
+
+> **Bu değerlendirme ölçümle çürütülmüştür.** Alt-kapsamanın kaynağı eksik aleatorik terim
+> değil, **eksik doğruluktu**. Erken koşuların tamamı $B = 1$ idi, yani havuzun bootstrap
+> yarısı hiç üretilmiyordu; ölçülen CP $\approx 0{,}62$–$0{,}67$ bunun sonucudur. Aynı
+> konfigürasyon tam doğrulukta ($B = 8$, $T = 100$, `ABLATION.md` §3) koşulduğunda Rize'nin
+> gündüz CP'si üç tohumda **0,9521 ± 0,0009** ve Reliability **0,001** çıkmaktadır — nominal
+> %95'e pratikte tam oturma. Kriter de katkı verir: MSE ile 0,825, L1 ile 0,954 ($B=1$).
+> Dolayısıyla kaynak makalenin PICP $= 0{,}9472$ değeriyle karşılaştırma **artık adildir**.
+>
+> **Yeni sorun ters yöndedir.** Diğer dört il aynı koşularda CP 0,981–0,984 ile hedefi
+> *aşmaktadır*; `Aggregate` 0,977 bu ikisinin ortalamasıdır. Rezidüel-varyans eklentisi bu
+> illerde durumu **kötüleştirirdi**. İyileştirme yönü artık genişletme değil **daraltmadır**:
+> il bazlı aralık ölçekleme veya split-conformal bir katman, dört ilin aralığını daraltıp
+> Rize'ninkine dokunmayacak biçimde uygulanabilir. Fazla kapsamanın tembellik olmadığına dair
+> kanıt: $B{=}1 \to B{=}8$ geçişinde CRPS her ilde iyileşmektedir (%1,8–3,3), yani dağılım
+> bir bütün olarak daha iyidir, yalnızca daha geniş değil.
 
 **2. Gece kırpması tüm-saat CP'sini yapısal olarak şişirir.** `clamp_night_to_zero`
 varsayılan olarak açıktır (§11.3): $\text{CLRSKY} = 0$ olan adımlarda havuzun *tamamı* sıfıra
@@ -1161,14 +1173,14 @@ seçilir (grup verilmezse **hepsi** seçilir).
 4. **Dış (exogenous) girdiler gerçek gözlemdir.** Model, tahmin ufkunda değil yalnızca geçmiş
    pencerede meteorolojik değişken kullanmaktadır; operasyonel bir sistemde bu değişkenlerin
    sayısal hava tahmini (NWP) çıktısı olarak gelmesi gerekir.
-5. **Aralıklar ölçülen biçimde alt-kapsamalıdır ve bunun yapısal bir nedeni vardır.**
-   "CP hedeften saparsa" biçiminde koşullu yazılamaz: eldeki tüm koşularda gündüz CP
-   $\approx 0{,}62$–$0{,}67$ ölçülmüştür (hedef $0{,}95$) ve CWC buna karşılık gelen
-   büyüklüktedir — §12.4'ün kendi ölçütüne göre "dar ama güvenilmez aralık" tanısı.
-   Nedeni §11.5'te açıklanmıştır: havuzlanan dağılım aleatorik terim içermez. Kalibrasyon
-   sonrası düzeltme (rezidüel-varyans eklentisi ya da conformal katman) bu nedenle isteğe
-   bağlı bir iyileştirme değil, %95 kapsama iddiasının **ön koşuludur**. Koşuların tamamı
-   smoke kalitesinde olduğundan sayılar nihai değildir, ama yön tüm koşularda aynıdır.
+5. **Kalibrasyon: tam doğrulukta Rize hedefte, diğer dört il hedefin üzerindedir.**
+   Tam doğruluklu koşularda ($B = 8$, L1) Rize gündüz CP $= 0{,}9521 \pm 0{,}0009$,
+   Reliability $= 0{,}001$; Ankara/Antalya/Konya/Van ise 0,981–0,984 ile **fazla**
+   kapsamaktadır. Erken koşulardaki CP $\approx 0{,}62$–$0{,}67$ değerleri $B = 1$
+   doğruluğunun eseriydi ve artık geçerli değildir (§11.5). Kalan iş, dört ilin aralığını
+   *daraltacak* bir kalibrasyon katmanıdır; makalede tek bir CP sayısı verilirse il bazlı
+   dağılım da verilmelidir, aksi hâlde 0,977'lik toplulaştırılmış değer iki karşıt hatanın
+   ortalaması olduğu görülmez.
 
 **Açık işler (bkz. `TODOs.md`):**
 

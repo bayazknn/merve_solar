@@ -55,6 +55,17 @@ düzenlemesinde güncellenmemiş eski değerdir.
 
 ### K3. Belge, ölçülen kalibrasyon başarısızlığı (CP ≈ 0,67) konusunda sessiz (satır 52, 790–791)
 
+> **ÇÖZÜLDÜ — ve teşhisin ikinci yarısı yanlıştı (2026-08-29).** Belgenin sessizliğine dair
+> tespit doğruydu ve düzeltildi. Ancak bu bulgunun "alt-kapsama yapısaldır, çünkü aleatorik
+> terim eklenmiyor; rezidüel-varyans eklentisi bir ön koşuldur" biçimindeki açıklaması
+> **ölçümle çürütülmüştür.** CP ≈ 0,67 değerleri $B = 1$ doğruluğunun eseriydi: havuzun
+> bootstrap yarısı hiç üretilmiyordu. Tam doğrulukta ($B = 8$, L1) Rize gündüz CP'si
+> 0,9521 ± 0,0009, Reliability 0,001'dir; diğer dört il ise hedefi *aşmaktadır* (0,981–0,984).
+> Önerilen rezidüel-varyans eklentisi o dört ilde durumu kötüleştirirdi. Ayrıntı:
+> `ABLATION.md` §3 ve `main_methodology.md` §11.5.
+
+Aşağıdaki özgün denetim metni, kayıt olarak değiştirilmeden bırakılmıştır.
+
 **Belgede (satır 790–791):**
 > "Kalibrasyon sonrası düzeltme yapılmamıştır (örn. conformal prediction); CP hedeften
 > **saparsa** bu bir sonraki iyileştirme adayıdır."

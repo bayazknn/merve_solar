@@ -639,6 +639,148 @@ R² 0,887–0,891 — iklimsel ortalama tabanının (106,86 / 0,8565) **%12 alt�
 
 ---
 
+## 3. Tam doğruluk — aynı eğri, $B = 8$
+
+`rize_curve_full_l1`: §2'nin on beş kolunun `ABLATION_FULL` doğruluğunda ($B = 8$, $T = 100$,
+`max_epochs=200`) tekrarı. §2'den yalnızca `{n_bootstrap, max_epochs}` alanlarında ayrılır
+(test sabitler). Tümü `MERVE_DEVICE=mps`, tüm kollarda `hit_max_epochs=0`, kol başına 8 model,
+toplam duvar saati **5,8 saat**.
+
+**Bu, metodolojinin tarif ettiği yöntemin ilk kez çalıştığı koşudur.** §1 ve §2'nin kolları
+$B = 1$ idi, yani $\mathcal{P} = B \cdot T$ havuzunun **bootstrap yarısı hiç üretilmiyordu**.
+Bu yüzden §1–§2'nin aralık metrikleri (CP/PINW/MPIW/CWC) yöntemin aralık başarımı olarak
+alıntılanamaz; **bu bölümünkiler alıntılanabilir.**
+
+### 3.1 Eğri (Rize satırı, gündüz, her kolda 109.043 eleman)
+
+| kol | il | RMSE ort ± s.s. | tohumlar | MAE | CP |
+| --- | --- | --- | --- | --- | --- |
+| `solo` | 1 | 108,32 ± 1,76 | 107,31 / 110,34 / 107,29 | 77,28 | 0,9529 |
+| `plus_ankara` | 2 | 106,41 ± 0,42 | 105,96 / 106,47 / 106,79 | 75,04 | 0,9476 |
+| `plus_antalya` | 2 | 107,73 ± 1,61 | 106,98 / 109,57 / 106,63 | 76,40 | 0,9505 |
+| `minus_antalya` | 4 | **104,93 ± 0,37** | 104,52 / 105,23 / 105,05 | **74,58** | 0,9528 |
+| `all5` | 5 | 106,27 ± 0,81 | 105,33 / 106,70 / 106,78 | 75,70 | 0,9521 |
+| *taban:* iklimsel ortalama | — | 130,68 | — | 95,72 | — |
+
+### 3.2 H1 zayıfladı — ve nedeni bulgunun kendisi
+
+`solo` → `all5`: **−2,05 W/m², 3/3 tohumda aynı yönde, $t = -2{,}26$, $p = 0{,}152$.**
+§2'de aynı karşılaştırma −5,11 ve $p = 0{,}037$ idi. Etki **yarıdan fazla küçüldü** ve
+anlamlılığı kaybetti.
+
+Neden, kolların $B{=}1 \to B{=}8$ geçişinden ne kazandığına bakılınca görülüyor:
+
+| kol | eğitim penceresi | $B{=}1$ | $B{=}8$ | kazanç |
+| --- | --- | --- | --- | --- |
+| `solo` | 43.749 | 112,38 | 108,32 | **−4,07** |
+| `plus_antalya` | 87.498 | 110,38 | 107,73 | −2,65 |
+| `plus_ankara` | 87.498 | 108,71 | 106,41 | −2,30 |
+| `minus_antalya` | 174.996 | 106,04 | 104,93 | −1,11 |
+| `all5` | 218.745 | 107,27 | 106,27 | **−1,00** |
+
+Kazanç, eğitim verisi hacmiyle **tekdüze ters orantılı**. Mekanizma açık: bootstrap topluluğu
+bir varyans azaltma aracıdır ve az veriyle eğitilmiş bir modelin varyansı daha büyüktür,
+dolayısıyla topluluktan daha çok kazanır.
+
+**Bulgu şudur: veri havuzlamak ile model topluluğu kurmak kısmen birbirinin yerine geçen
+varyans azaltma mekanizmalarıdır.** §2'de havuzlamanın faydası olarak ölçtüğümüz −5,11'in bir
+bölümü, aslında havuzlanmış kolun tek-il kolundan daha düşük varyanslı olmasıydı; topluluk
+kurulduğunda tek-il kolu bu açığın çoğunu kendi başına kapatıyor. Makale bu ikisini ayrı ayrı
+sunmalıdır: havuzlamanın *kalan* katkısı −2,05 W/m²'dir.
+
+### 3.3 Çoklu test düzeltmesi — hiçbir kontrast eşiği geçmiyor
+
+Dört birincil kontrast, Benjamini–Hochberg, $\alpha = 0{,}05$:
+
+| kontrast | fark | tohum tutarlılığı | $p$ | BH eşiği | sonuç |
+| --- | --- | --- | --- | --- | --- |
+| `minus_antalya` vs `all5` | −1,34 | 3/3 | 0,039 | 0,0125 | geçmez |
+| `plus_antalya` vs `solo` | −0,59 | 3/3 | 0,046 | 0,0250 | geçmez |
+| `all5` vs `solo` (H1) | −2,05 | 3/3 | 0,152 | 0,0375 | geçmez |
+| `plus_ankara` vs `plus_antalya` (H2) | −1,32 | 2/3 | 0,300 | 0,0500 | geçmez |
+
+**Dürüst ifade: $n = 3$ tohumla hiçbir kontrast çoklu test düzeltmesinden sağ çıkmıyor.**
+Düzeltmesiz bakıldığında ilk ikisi $p < 0{,}05$'tir, ama dört kontrast arasından seçilmiş
+$p = 0{,}039$ kanıt değildir. Kısıt istatistiksel güçtür: eşleştirilmiş $t$ testi $n = 3$ ile
+2 serbestlik derecesine sahiptir. Üç kontrastın **3/3 tohumda** aynı yönde olması, etkilerin
+gerçek ama küçük olduğuna işaret eder; gösterilmesi için daha çok tohum gerekir.
+
+### 3.4 §1'in "negatif transfer" bulgusu tersine döndü
+
+§1, `plus_antalya`'nın `solo`'dan kötü olduğunu (119,66 vs 113,21, tek tohum, MSE) raporlamıştı.
+Tam doğrulukta işaret terstir ve tutarlıdır: **`plus_antalya` − `solo` = −0,59, 3/3 tohum,
+$p = 0{,}046$** (düzeltmesiz). Antalya eklemek Rize'ye zarar vermiyor, az da olsa yarıyor.
+
+Buna karşılık `minus_antalya` beş kolun **en iyisidir** (104,93 ± 0,37, hem de en dar tohum
+saçılımıyla) ve `all5`'i 3/3 tohumda geçer (−1,34, $p = 0{,}039$ düzeltmesiz). İkisi çelişmez;
+birlikte okunduğunda söyledikleri şudur: **bir ilin marjinal katkısı, havuzda hâlihazırda ne
+olduğuna bağlıdır.** Antalya, yalnız bir Rize modeline bilgi ekler; Ankara+Konya+Van'ın yanında
+ise fazlalıktır ve seyreltir. Bu, "daha çok veri her zaman daha iyi değildir" biçiminde
+ifade edilebilir ama **düzeltme sonrası anlamlı değildir**; hipotez üreten bir gözlem olarak
+sunulmalıdır.
+
+### 3.5 Kalibrasyon — §1 ve §2'nin teşhisini geçersiz kılar
+
+`all5` kolu, üç tohum, gündüz:
+
+| il | CP | MPIW | 
+| --- | --- | --- |
+| **Rize** | **0,9521 ± 0,0009** | 371,66 |
+| Konya | 0,9813 ± 0,0019 | 457,80 |
+| Van | 0,9829 ± 0,0014 | 463,20 |
+| Antalya | 0,9837 ± 0,0011 | 459,70 |
+| Ankara | 0,9842 ± 0,0006 | 440,46 |
+| `Aggregate` | 0,977 ± 0,001 | 438,58 |
+
+Bootstrap bileşeni **tam da eksik kapsanan ili düzeltti**: Rize $B{=}1$'de CP 0,910 /
+Reliability 0,040 / CWC 2,855 iken, $B{=}8$'de 0,9521 / 0,001 / 0,376 — nominal %95'e pratikte
+tam oturma ve projedeki en büyük tek metrik iyileşmesi (CWC −%87).
+
+`METHODOLOGY_REVIEW.md` K3, alt-kapsamanın **yapısal** olduğunu ve aleatorik bir terim
+eklenmesinin **ön koşul** olduğunu söylüyordu. Yanlıştı: sorun eksik aleatorik terim değil,
+**eksik doğruluktu**. Üstelik o eklenti yapılsaydı diğer dört ili (0,981–0,984) daha da fazla
+kapsatırdı. Kalan iş **daraltmadır**, genişletme değil.
+
+Fazla kapsamanın "aralığı şişirip kapsama satın almak" olmadığının kanıtı: $B{=}1 \to B{=}8$
+geçişinde **CRPS her ilde iyileşiyor** (−%1,8 … −%3,3). CRPS uygun (proper) bir skordur ve hem
+kalibrasyonu hem keskinliği cezalandırır; iyileşmesi dağılımın bir bütün olarak daha iyi
+olduğunu gösterir.
+
+### 3.6 Toplulaştırılmış başarım (beş il, `all5`, üç tohum, gündüz)
+
+RMSE **92,445 ± 0,451** · MAE 67,955 ± 0,530 · R² 0,893 ± 0,001 · CRPS 49,514 ± 0,113 ·
+CP 0,977. İklimsel ortalama tabanı 106,86 / 73,38 / 0,8565 — **RMSE'de %13,5 iyileşme.**
+
+### 3.7 Makale için önerilen çerçeve
+
+H1'i bir anlamlılık testi olarak sunmak bu güçle savunulamaz. Savunulabilir ve aslında daha
+güçlü olan çerçeve **aşağı-değil-mi (non-inferiority) + tutumluluk**tur:
+
+> Beş ili tek bir modelde havuzlamak, her il için ayrı model eğitmeye kıyasla Rize'de üç
+> tohumun üçünde de daha düşük hata verir (−2,05 W/m²) ve bunu **beşte bir parametre ve tek
+> bir eğitim koşusuyla** yapar. İddia "havuzlama anlamlı biçimde daha iyidir" değil,
+> "havuzlama en az o kadar iyidir ve beş kat ucuzdur" biçiminde kurulmalıdır.
+
+Bu çerçeve mevcut kanıtla tam uyumludur, çoklu test düzeltmesine ihtiyaç duymaz ve makalenin
+§1'deki özgün gerekçesiyle (veri verimliliği) birebir örtüşür.
+
+### 3.8 Geçerlilik tehditleri
+
+- **T-13 (açık, artık birincil kısıt).** $n = 3$. Üç kontrast 3/3 tutarlı ama BH'yi geçmiyor.
+  En ucuz çare tohum eklemektir: `solo` + `all5` + `minus_antalya` için üçer tohum daha
+  ≈4,2 saat (ölçülen kol maliyetleri: `solo` ~9 dk, `minus_antalya` ~33 dk, `all5` ~42 dk).
+- **T-12 (açık).** Bu 15 kol MPS'te, §1'in kolları CPU'da. Nokta metrikleri etkilenmez (%0,25),
+  aralık metrikleri etkilenir (%4,49) — §1.11. §3'ün aralık sayıları kendi içinde tutarlıdır.
+- **T-14 (yeni).** Erken durdurma çok geç duruyor: `best_epoch` 3–9 arasında, koşulan epok
+  19–25. `early_stop_patience=15` yüzünden sürenin ~%60-70'i optimumdan sonra harcanıyor.
+  Sonuçları etkilemez (en iyi ağırlıklar geri yükleniyor) ama mimari taramasında sabrın
+  düşürülmesi duvar saatini üçte bir kısaltır. Ayrıca 3–9 epokta yakınsama, mevcut mimarinin
+  kapasitesinin sınırlayıcı olmadığına dair bir işarettir.
+- **T-15 (yeni).** Dört il fazla kapsıyor (0,981–0,984). Aralık tablosu yayımlanacaksa il
+  bazlı verilmelidir; `Aggregate` 0,977 iki karşıt hatanın ortalamasıdır.
+
+---
+
 ## A. Bu belge bir şablondur — yeni bir ablasyon nasıl eklenir
 
 §1, sonraki ablasyonlar için kalıptır. Yeni bir eksen geldiğinde **§1 düzenlenmez**; `## 2.`,
