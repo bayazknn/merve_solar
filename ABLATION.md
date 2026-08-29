@@ -662,11 +662,29 @@ alıntılanamaz; **bu bölümünkiler alıntılanabilir.**
 | `all5` | 5 | 106,27 ± 0,81 | 105,33 / 106,70 / 106,78 | 75,70 | 0,9521 |
 | *taban:* iklimsel ortalama | — | 130,68 | — | 95,72 | — |
 
-### 3.2 H1 zayıfladı — ve nedeni bulgunun kendisi
+### 3.2 H1 — altı tohumla desteklendi, ve etkinin küçülmesinin nedeni bulgunun kendisi
 
-`solo` → `all5`: **−2,05 W/m², 3/3 tohumda aynı yönde, $t = -2{,}26$, $p = 0{,}152$.**
-§2'de aynı karşılaştırma −5,11 ve $p = 0{,}037$ idi. Etki **yarıdan fazla küçüldü** ve
-anlamlılığı kaybetti.
+**Sonuç (birincil sonlanım noktası, $n = 6$, tohum 42–47):**
+
+| | ortalama ± s.s. | tohumlar |
+| --- | --- | --- |
+| `solo` | 108,01 ± 1,31 | 107,31 / 110,34 / 107,29 / 106,84 / 107,53 / 108,73 |
+| `all5` | **105,31 ± 1,33** | 105,33 / 106,70 / 106,78 / 104,90 / 104,95 / 103,20 |
+
+Eşleştirilmiş fark **−2,70 W/m²**, tohum başına
+$[-1{,}98,\; -3{,}65,\; -0{,}51,\; -1{,}95,\; -2{,}57,\; -5{,}54]$, **6/6 tohumda
+havuzlama kazanıyor**, $t = -3{,}84$, $p = 0{,}0122$. Dağılımdan bağımsız çapraz kontrol
+(Wilcoxon işaretli sıra) $p = 0{,}0312$. MAE'de daha da güçlü: −1,99 W/m², 6/6,
+$p = 0{,}0050$.
+
+$p = 0{,}0122$, §3.3'ün dört kontrastlı Benjamini–Hochberg eşiğini (sıra 1 için 0,0125) da
+kıl payı geçmektedir. Yani H1'in birincil sonlanım noktası olarak önceden belirlenmiş olması
+sonucu taşımak zorunda değildir; **kontrast seçimi düzeltilse bile ayakta kalır.**
+
+İlk üç tohumda fark −2,05 ve $p = 0{,}152$ idi; üç tohum daha eklenince hem etki büyüdü
+(−2,70) hem de güç arttı. Kısıt gerçekten güçtü, etkinin yokluğu değil.
+
+**Ama §2'ye göre etki hâlâ küçüldü** (−5,11 → −2,70) ve nedeni ayrı bir bulgudur.
 
 Neden, kolların $B{=}1 \to B{=}8$ geçişinden ne kazandığına bakılınca görülüyor:
 
@@ -699,11 +717,15 @@ Dört birincil kontrast, Benjamini–Hochberg, $\alpha = 0{,}05$:
 | `all5` vs `solo` (H1) | −2,05 | 3/3 | 0,152 | 0,0375 | geçmez |
 | `plus_ankara` vs `plus_antalya` (H2) | −1,32 | 2/3 | 0,300 | 0,0500 | geçmez |
 
-**Dürüst ifade: $n = 3$ tohumla hiçbir kontrast çoklu test düzeltmesinden sağ çıkmıyor.**
-Düzeltmesiz bakıldığında ilk ikisi $p < 0{,}05$'tir, ama dört kontrast arasından seçilmiş
-$p = 0{,}039$ kanıt değildir. Kısıt istatistiksel güçtür: eşleştirilmiş $t$ testi $n = 3$ ile
-2 serbestlik derecesine sahiptir. Üç kontrastın **3/3 tohumda** aynı yönde olması, etkilerin
-gerçek ama küçük olduğuna işaret eder; gösterilmesi için daha çok tohum gerekir.
+**Yukarıdaki tablo $n = 3$ dönemine aittir ve H1 satırı artık geçerli değildir:** altı
+tohumla H1 $p = 0{,}0122$'ye iner ve BH sıra-1 eşiğini (0,0125) geçer (§3.2). Diğer üç
+kontrast hâlâ $n = 3$'tedir ve **hiçbiri düzeltmeden sağ çıkmaz.**
+
+Bu asimetri bilinçlidir. H1 makalenin iddiasıdır ve birincil sonlanım noktası olarak
+tohumlandırılmıştır; diğer üçü eğriye bakarken ortaya çıkmış gözlemlerdir ve **keşifsel**
+olarak, anlamlılık iddiası olmadan raporlanmalıdır. Onları da eş-birincil saymak, hem BH'yi
+gereksiz cezalandırıcı kılar hem de nasıl doğduklarını yanlış tarif eder. Tohum eklenirse
+(`rize_curve_full_seeds` grubunda kolları hazırdır) durumları yeniden değerlendirilebilir.
 
 ### 3.4 §1'in "negatif transfer" bulgusu tersine döndü
 
