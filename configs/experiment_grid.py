@@ -192,6 +192,16 @@ def _rize_curve_configs(fidelity: dict = ABLATION_FULL, suffix: str = "",
                         include_stage1: bool = True, **extra) -> list:
     """The transfer curve, plus a loss-selection stage that must run first.
 
+    SUPERSEDED AS A GROUP TO RUN. Called with no arguments -- which is what the `rize_curve`
+    group does -- this builds twelve arms at B=8 under the ExperimentConfig default loss, i.e.
+    MSE. Stage 1 has since measured MSE to be the worst of the three criteria, and section 2 of
+    ABLATION.md shows the criterion changes the curve's conclusion, not just its level. Running
+    `--group rize_curve` would therefore spend ~15 h reproducing a curve we already know is
+    measured with the wrong instrument. Use `rize_curve_full_l1` instead. The group is kept
+    because its ids appear in the plan and in ABLATION.md's threat list, and because deleting a
+    declared group silently changes what `build_experiment_grid(None)` returns.
+
+
     Stage 1 fixes pooling at all five provinces and varies the loss, so the headline criterion is
     chosen once on a comparison where nothing else moves. Stage 2 fixes that criterion and varies
     pooling. Running the full cross product would multiply cost for no extra claim.
@@ -274,6 +284,48 @@ def _rize_curve_l1_configs() -> list:
     )
 
 
+def _rize_curve_full_l1_configs() -> list:
+    """The curve at full fidelity (B=8, T=100) under L1. The run the paper's table comes from.
+
+    Everything measured so far is B=1, which is the sanctioned fast path but removes the
+    bootstrap component of the UQ layer entirely: those arms' CP/PINW/MPIW/CWC are MC-Dropout
+    only. This group is the first time the interval metrics are produced by the method the
+    methodology actually describes -- Bootstrap Ensemble x MC-Dropout, |P| = B*T = 800 -- so
+    it is the first run whose interval numbers may be quoted.
+
+    It also strengthens H1. The B=1 curve puts the solo-vs-all5 gap at -5.11 W/m2, p = 0.037 on
+    three seeds; a claim resting on three single-replica runs is thinner than the compute now
+    available justifies.
+
+    Cost, from the unit costs in ABLATION_B1's comment and the 18-39 epochs early stopping
+    actually used (so ~25 epochs), at B=8 both training and the 800 MC passes scale:
+
+        arm             per arm      x3 seeds
+        solo             ~22 min      ~66 min
+        plus_ankara      ~43 min     ~129 min
+        plus_antalya     ~43 min     ~129 min
+        minus_antalya    ~88 min     ~264 min
+        all5            ~110 min     ~330 min
+                                    ~15.3 h   on the CPU host; ~7 h at the 2.17x MPS speedup
+                                              measured in ABLATION.md 1.11
+
+    MEMORY IS THE REAL RISK, not time. At B=8 x T=100 the pooled prediction array for a
+    five-province arm is 800 x 44,155 x 24 float32 = 3.4 GB, and this is precisely what killed
+    `config_002_default_full` before metrics.py was chunked. Peak is ~4 GB now, but on a 16 GB
+    Mac that pool shares unified memory with the MPS backend. Run ONE all5 arm first: it is the
+    largest and the only one that can fail this way, so it is the correct canary even though it
+    is not the cheapest. `--skip-existing` means a successful canary is not repeated work.
+
+    Not repeated at this fidelity: stage 1. The criterion is settled (10.1.1) and re-running it
+    at B=8 would cost 5.5 h to re-answer a question already answered on a clean one-axis
+    comparison.
+    """
+    return _rize_curve_configs(
+        ABLATION_FULL, suffix="_full", loss="mae",
+        seeds_override=ABLATION_SEEDS, include_stage1=False,
+    )
+
+
 def _sens_scaler_l1_configs() -> list:
     """The control for the confound most likely to be producing H1's null result.
 
@@ -347,6 +399,7 @@ EXPERIMENT_GROUPS = {
     "rize_curve": _rize_curve_configs,
     "rize_curve_b1": _rize_curve_b1_configs,
     "rize_curve_l1": _rize_curve_l1_configs,
+    "rize_curve_full_l1": _rize_curve_full_l1_configs,
     "sens_scaler_l1": _sens_scaler_l1_configs,
     "device_parity": _device_parity_configs,
     "rize_curve_smoke": _rize_curve_smoke_configs,

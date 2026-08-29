@@ -121,3 +121,28 @@ def test_the_new_groups_do_not_collide_with_the_runs_already_in_the_ledger():
     new = {c.experiment_id for c in build_experiment_grid(
         ["rize_curve_l1", "sens_scaler_l1", "device_parity"])}
     assert not (existing & new)
+
+
+def test_the_full_fidelity_curve_is_the_declared_method_under_the_selected_criterion():
+    """This is the group the paper's interval table comes from, so both halves matter.
+
+    B=8 x T=100 is what the methodology describes (|P| = 800); every arm run so far is B=1 and
+    its interval metrics are MC-Dropout only. And the criterion must be the one stage 1 chose --
+    repeating the _b1 curve's mistake at eight times the cost would be the expensive version of
+    the same bug.
+    """
+    configs = build_experiment_grid(["rize_curve_full_l1"])
+    assert len(configs) == 15
+    for c in configs:
+        assert c.n_bootstrap == 8 and c.mc_dropout_passes == 100, c.experiment_id
+        assert c.loss_function == "mae", c.experiment_id
+
+
+def test_the_full_curve_differs_from_the_b1_curve_only_in_fidelity():
+    """Same study, more compute -- not a different study that happens to share a name."""
+    full = {c.experiment_id: c for c in build_experiment_grid(["rize_curve_full_l1"])}
+    b1 = {c.experiment_id: c for c in build_experiment_grid(["rize_curve_l1"])}
+    for arm in ("solo", "plus_ankara", "plus_antalya", "minus_antalya", "all5"):
+        a, b = full[f"abl_rize_{arm}_s42_full"], b1[f"abl_rize_{arm}_s42_l1"]
+        differing = {k for k in vars(a) if vars(a)[k] != vars(b)[k]}
+        assert differing == {"experiment_id", "n_bootstrap", "max_epochs"}, (arm, differing)
