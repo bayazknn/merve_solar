@@ -505,3 +505,303 @@ geçilmemelidir.** İkisi tek bir karardır, iki ayrı karar değil.
   gerekçesi doğrudur ve §2.5 onu güçlendirir: sabır düşürülürse kollar farklı sayıda LR rejimi
   görür ve karşılaştırma bozulur. Kazanan seçildikten *sonra* kendi tek-eksen değişimi olarak
   düşürülmeli — duvar saatinin ~%60'ını geri verir.
+
+---
+
+## 6. Alıntılanabilir bulgular — güç sırasına göre
+
+Sıralama, "bir hakemi ikna eder mi" ölçütüne göredir: kanıt gücü × yeni olma × makalenin
+argümanına katkı. Her madde için nereye ait olduğu ve **nasıl kurulması gerektiği** yazılıdır.
+
+`ABLATION.md` §1–§3'ün prozasında bildirilen sayıların tamamı CSV'lerle yeniden hesaplanmış ve
+**birebir doğrulanmıştır** (H1'in altı tohumu, §3.5'in il tablosu, §3.6, §3.2'nin $B{=}1 \to B{=}8$
+tablosu, §1.10'un determinizm kontrolü). Tek istisna §3.5'te Rize için verilen Reliability
+"0,001"dir; üç tohumun ortalaması **0,0021**, tohum 42 tek başına 0,0013'tür. Kozmetik, ama tablo
+makaleye taşınırken düzeltilsin.
+
+---
+
+**B-1 — Havuzlama Rize'yi iyileştiriyor: −2,70 W/m², 6/6 tohum, $p = 0{,}0122$.** *(doğrulandı)*
+
+`abl_rize_{solo,all5}_s{42..47}_full`, gündüz Rize satırı, 109.043 eleman. Yeniden hesaplandı:
+`solo` 108,01 ± 1,31, `all5` 105,31 ± 1,33, eşleştirilmiş fark −2,6998, $t = -3{,}838$,
+$p = 0{,}0122$, Wilcoxon $p = 0{,}0312$, MAE'de −1,9895 / $t = -4{,}781$ / $p = 0{,}0050$ — tohum
+farklarının altısı da negatif. `ABLATION.md` §3.2'deki her rakam CSV'lerle uyuşuyor.
+
+**Yeri:** Sonuçlar, birincil sonlanım noktası. **Kuruluşu:** §3.7'nin
+*aşağı-değil-mi + tutumluluk* çerçevesi doğru seçimdir, ama **maliyet cümlesi düzeltilmelidir**
+(§7, O-5). Birincil sonlanım noktası olarak **önceden** belirlendiği ve BH sıra-1 eşiğini
+(0,0125) geçtiği açıkça yazılsın; bu, tek başına "$p < 0{,}05$" demekten çok daha ikna edicidir.
+
+---
+
+**B-2 — Veri havuzlamak ile topluluk kurmak kısmen birbirinin yerine geçen varyans-azaltma
+mekanizmalarıdır.** *(doğrulandı; taramanın en yayımlanabilir yeni sonucu)*
+
+$B{=}1 \to B{=}8$ geçişinin Rize gündüz RMSE'sine kazancı, kolun eğitim hacmiyle **tekdüze ters
+orantılıdır** (yeniden hesaplandı, üç tohum ortalaması):
+
+| kol | eğitim penceresi | $B{=}1$ | $B{=}8$ | kazanç |
+| --- | --- | --- | --- | --- |
+| `solo` | 43.749 | 112,38 | 108,32 | **−4,07** |
+| `plus_antalya` | 87.498 | 110,38 | 107,73 | −2,65 |
+| `plus_ankara` | 87.498 | 108,71 | 106,41 | −2,30 |
+| `minus_antalya` | 174.996 | 106,04 | 104,93 | −1,11 |
+| `all5` | 218.745 | 107,27 | 106,27 | **−1,00** |
+
+Beş noktanın hepsi sırada; iki eşit hacimli kol (87.498) neredeyse aynı kazancı alıyor. Bu, hacim
+etkisini partner kimliğinden ayıran bir iç kontroldür.
+
+**Neden güçlü:** bu, bu veri kümesine özgü bir gözlem değil, **iki varyans-azaltma
+mekanizmasının kısmi ikâmesi** hakkında genel bir ifadedir ve topluluk temelli belirsizlik
+literatürüne doğrudan konuşur. Ayrıca §3.2'nin dürüst muhasebesini mümkün kılar: havuzlamanın
+$B{=}8$'de **kalan** katkısı −2,05 W/m²'dir ve makale iki mekanizmayı ayrı ayrı sunmalıdır.
+
+**Yeri:** Tartışma, kendi başına bir alt bölüm. **Kuruluşu:** "havuzlamanın etkisi neden küçüldü"
+diye savunmacı değil, "topluluk ve havuzlama aynı varyansı avlıyor" diye **bulgu olarak**
+kurulmalı.
+
+---
+
+**B-3 — Ek kapasite yalnızca otokorelasyonun iki tepesinde harcanıyor.** *(bu incelemede yeni)*
+
+§2.2. `[128,64]` eksi `[64,32]`, gündüz RMSE, ufuk adımı başına: $h{=}1$'de −15,07 W/m²,
+$h{=}15$'te −0,57, $h{=}24$'te −6,39 — U biçimli. Bu iki uç, EDA'nın kısmi otokorelasyon
+tablosundaki iki tepeye (saatlik gecikme 1: PACF 0,93–0,97; günlük gecikme 1 = saatlik gecikme 24:
+PACF 0,41–0,56) birebir denk gelir; aradaki gecikmelerde kısmi korelasyon 0,10'un altındadır ve
+kapasite de orada hiçbir şey yapmaz.
+
+**Neden değerli:** bir mimari sonucunu **fiziksel bir gerekçeye** bağlar. "Daha geniş model daha
+iyidir" cümlesi hiçbir hakemi etkilemez; "ek kapasite, veride ölçülmüş iki bilgi kaynağını
+sömürüyor ve üçüncü bir kaynak olmadığı için aradaki ufuklarda hiçbir şey kazanmıyor" cümlesi
+etkiler. Aynı zamanda ölçek yasasının **nerede bittiğini** öngörür.
+
+**Yeri:** Sonuçlar, mimari alt bölümü; şekil olarak ufka göre kazanç eğrisi + EDA'nın PACF'i
+yan yana. **Ön koşul:** EDA'nın PACF tablosu zaten `outputs/eda/tables/autocorrelation_clearness.csv`
+içinde üretilmiştir, ek koşu gerekmez.
+
+---
+
+**B-4 — Kapasite tavanı il-özgüdür ve öngörülebilirlikle belirlenir, parametreyle değil.**
+*(bu incelemede yeni)*
+
+§2.1. `[64,32]` → `[128,64]` dört Anadolu ilinde −3,49…−6,34 W/m², Rize'de **−0,40** W/m²
+($p = 0{,}88$). Aynı asimetri CRPS'te ve `dropout 0,2` kolunda da vardır. Karşılığı EDA'da yazılı:
+iklimsel ortalama tabanı Rize'nin gündüz varyansının %71,8'ini, diğerlerinin %86,8–89,6'sını
+açıklar; ama Rize'nin günlük $k_t$ PACF'i 0,405, diğerlerinin 0,534–0,563. Rize'de artık büyük ama
+öngörülemez.
+
+**Neden değerli — ve başlık iddiasını koruduğu için:** havuzlama kazancının (B-1) mimari
+büyütülerek elde edilemeyeceğini gösterir, yani o kazanç bir kapasite artefaktı değildir. Aynı
+zamanda "neden daha büyük bir model denemediniz" sorusunu **ölçümle** kapatır.
+
+**Yeri:** Sonuçlar, mimari alt bölümü; ve Tartışma'da B-1'in yanında bir cümle.
+
+---
+
+**B-5 — Bu tasarımda kapsama yalnızca genişlikle satın alınabilir; hiçbir mimari seçim
+doğruluk–kapsama sınırını kaydırmaz.** *(bu incelemede yeni)*
+
+§3.1. Yedi tek-eksen müdahalesi il başına tek bir $\mathrm{CP} = a + b\ln(\mathrm{MPIW})$ eğrisine
+oturuyor (R² 0,927–0,963; en büyük artık 0,014). Genişlik, derinlik, geriye bakış ve dropout,
+hepsi aynı gizli değişkeni oynatıyor.
+
+**Neden değerli:** MC-Dropout tabanlı belirsizlik katmanlarının bilinen ama nadiren **ölçülen**
+bir sınırıdır. Makale, "dropout hem düzenleyici hem belirsizlik kaynağıdır" cümlesini bir uyarı
+olarak değil, **nicel bir sonuç** olarak yazabilir.
+
+**Yeri:** Yöntem'in sınırları bölümü + Tartışma. **Uyarı:** iddia (MPIW, CP) düzlemi içindir;
+(RMSE, MPIW) düzleminde `[128,64]` diğer tüm $B{=}1$ kollarını Pareto-domine eder, dolayısıyla
+"hiçbir şey bir şeyi iyileştirmez" biçiminde genelleştirilmemelidir.
+
+---
+
+**B-6 — Model, bulutlu rejimde kazanıyor; açık rejimde basit bir taban onu MAE'de geçiyor.**
+*(bu incelemede yeni — ve en açık hakem itirazını önden karşılıyor)*
+
+Gündüz `Aggregate`: model ($B{=}8$, üç tohum) RMSE **92,45** / MAE **67,96**; akıllı kalıcılık
+RMSE 109,04 / MAE **60,19**; iklimsel ortalama 106,86 / 73,38. **Model, akıllı kalıcılığı RMSE'de
+%15,2 geçiyor ama MAE'de %12,9 kaybediyor.** İl bazlı MAE farkı (model − akıllı kalıcılık):
+
+| | Rize | Van | Ankara | Konya | Antalya |
+| --- | --- | --- | --- | --- | --- |
+| günlük $k_t$ | **0,697** | 0,827 | 0,806 | 0,816 | 0,840 |
+| MAE farkı | **−9,52** | +8,08 | +10,65 | +13,97 | +15,65 |
+| RMSE farkı | **−30,39** | −17,21 | −12,51 | −11,28 | −7,77 |
+
+**Modelin MAE'de kazandığı tek il, beş ilin en bulutlusudur.** Ve RMSE avantajı da orada en
+büyüktür (−30,4 W/m²; diğerlerinde −7,8…−17,2).
+
+**Mekanizma:** akıllı kalıcılık (dünkü berraklık × bugünkü açık-hava ışınımı) açık günlerde
+neredeyse hatasızdır ve EDA'ya göre yazın saatlerin %93–98'i açıktır — yani medyan hatası çok
+düşük, ama bulutlu günlerde çöker, dolayısıyla RMSE'si yüksektir. LSTM koşullu medyana doğru
+düzleştirir: RMSE kazanır, MAE kaybeder.
+
+**Neden bunu yazmak gerekir:** bir hakem taban tablosuna bakar ve MAE sütununu görür. Sessiz
+kalmak "gizlenmiş" görünür; yazmak ise **tezi güçlendirir** — modelin katkısı tam olarak tabanın
+başarısız olduğu rejimde yoğunlaşmıştır, ki bir tahmin modelinin var olma nedeni de budur.
+
+**Yeri:** Sonuçlar, taban karşılaştırma tablosunun hemen altında bir paragraf. **Kuruluşu:**
+"modelimiz tüm tabanları geçer" cümlesi **yazılamaz**; yazılabilecek olan "model RMSE ve R²'de
+her tabanı geçer, MAE'de akıllı kalıcılığın altında kalır, ve bu fark açık-gökyüzü rejiminin
+payıyla açıklanır"dır.
+
+---
+
+**B-7 — Ölçüm aleti eğriyi taşıdı: MSE, havuzlama etkisini olduğundan küçük gösteriyordu.**
+*(doğrulandı)*
+
+`ABLATION.md` §2.2. Kriter MSE → L1 değişimi kolları eşit etkilemedi: `solo` −2,83, havuzlanmış
+kollar −5,62…−9,28. Açıklama, ölçekleyici üzerinden mekanistiktir: havuzlanmış kollarda hedef
+ölçekleyicisi beş ilin üzerinde fit edilir, Rize beş ilin **en düşük varyanslısıdır**
+($\sigma = 231{,}5$ havuz ~280) ve MSE karesel hatayı toplayınca yüksek varyanslı iller kaybı
+domine eder. L1 bu baskınlığı sıkıştırır.
+
+**Neden değerli:** "kayıp fonksiyonu seçimi, çok-bölgeli havuzlanmış modellerde bir ölçüm aleti
+seçimidir" ifadesi, tek il-çok il karşılaştırması yapan her çalışmaya konuşur. Ayrıca §1.5'in
+ikinci bulgusuyla birlikte gider: L1, `config.py::LOSS_FUNCTIONS`'ta beklenen ödünleşimi
+üretmemiş, MAE **ve** RMSE **ve** R²'de MSE'yi geçmiştir.
+
+**Yeri:** Yöntem (kriter seçimi) + Tartışma'da bir paragraf. `config.py`'deki gerçekleşmemiş
+beklenti cümlesi hâlâ düzeltilmeyi bekliyor (`ABLATION.md` §1.5).
+
+---
+
+**B-8 — Tekrarlanabilirlik ve cihaz eşdeğerliği.** *(doğrulandı)*
+
+İki ayrı süreçte saatler arayla koşan `abl_loss_mse_s42_b1` ve `abl_rize_all5_s42_b1`, `Aggregate`
+gündüz RMSE 96,991531 / MAE 73,833252 / R² 0,881773 / CP 0,825412 — **altı ondalık basamağa kadar
+aynı** (yeniden okundu). Buna karşılık `abl_parity_{cpu,mps}_s42` gösteriyor ki nokta metrikleri
+arka uçlar arasında %0,25 kayarken **aralık metrikleri %4,49 kayıyor** — tohum s.s.'sının ~5 katı.
+
+**Yeri:** Yöntem, tekrarlanabilirlik notu; iki-üç cümle. **Kuruluşu:** "aynı tohum + aynı arka uç
+= bit düzeyinde aynı sonuç; farklı arka uç = nokta metrikleri taşınır, aralık metrikleri taşınmaz"
+biçiminde tek bir pratik kural olarak. Ledger'ın `device` sütunu bunun denetlenebilirliğidir.
+
+---
+
+**B-9 — Doğrulama kaybı üzerinden mimari seçimi bu problemde işleyen bir seçicidir.**
+*(bu incelemede yeni; kısa)*
+
+Yirmi bir mimari koşuda `best_val_loss` ↔ gündüz test RMSE Spearman **0,935**
+($p = 5{,}3\times10^{-10}$), Pearson 0,975; konfigürasyon içinde tohum düzeyinde bile pozitif.
+
+**Yeri:** Yöntem, bir cümle. Küçük bir bulgudur ama **test kümesinin model seçimine
+karıştırılmadığını** kanıtlayan ve bunu bir maliyet olmadan yaptığını gösteren cümledir.
+
+---
+
+## 7. Fazla iddia edilenler ve makaleden çıkarılması gerekenler
+
+**O-1 — "Havuzlamanın etkisi iklimsel yakınlıkla yönetilir." ÇIKARILSIN.**
+`ABLATION.md` §2.4 bunu zaten geri çekmiştir ve gerekçesi doğrudur, ama cümle §1.8'de hâlâ
+duruyor ve makaleye oradan sızabilir. Durum: H2 (`plus_ankara` vs `plus_antalya`)
+$B{=}1$/L1'de −1,67 ve $p = 0{,}062$, tam doğrulukta −1,32 / 2-3 tohum / $p = 0{,}300$ — BH'yi
+geçmiyor. §1'in 9,86 W/m²'lik farkı tek tohum şansıydı. **Yön EDA'yla uyumlu olduğu için**
+cazip, ama hakem $n = 3$ görür.
+
+**O-2 — "Bir ilin marjinal katkısı havuzda hâlihazırda ne olduğuna bağlıdır" (§3.4). PARAGRAF
+YAPILMASIN.** `minus_antalya` beş kolun en iyisi (104,93 ± 0,37) ve `all5`'i 3/3 tohumda geçiyor,
+ama −1,34 / $p = 0{,}039$ BH sıra-1 eşiğini (0,0125) geçmiyor. `ABLATION.md` bunu keşifsel olarak
+işaretliyor ve doğru yapıyor. **Asıl risk istatistiksel değil, retoriktir:** bu gözlem
+yazıldığı anda hakem "öyleyse beş illi modeliniz en iyi modeliniz değil" der ve buna verilecek
+yanıt yoktur. Tabloda satır olarak kalsın, üzerine cümle kurulmasın.
+
+**O-3 — "Kalibrasyon büyük ölçüde çözüldü" / "nominal %95'e pratikte tam oturma" (§2.6, §3.5).
+NİTELENDİRİLSİN.** Nominal %95'e oturan **yalnızca Rize**'dir (0,9521). Diğer dört il 0,981–0,984
+ile hedefi aşar; ufuk boyunca CP 0,9948'den ($h{=}1$) 0,9530'a ($h{=}24$) iner; ve `Aggregate`
+0,977 bu iki karşıt hatanın ortalamasıdır (§3.2, §3.3 — ayrıca EDA'ya göre mevsim ekseninde de
+aynı sorun var: göreli yayılım il × mevsim × saat ızgarasında ~8,5 kat değişiyor). **Doğru
+ifade:** "bootstrap bileşeni eksik kapsanan ili düzeltmiştir; kalan iş, aralığın il ve gecikmeye
+göre yeniden ölçeklenmesidir." Yayımlanacak aralık tablosu **il × ufuk** kırılımlı olmalıdır,
+`Aggregate` satırı tek başına yayımlanmamalıdır (`ABLATION.md` T-15'in genişletilmiş hâli).
+
+**O-4 — $B{=}1$ aralık metrikleri hiçbir yerde alıntılanmasın.** K-4 bunu söylüyor ve §3'ün girişi
+tekrarlıyor; buna §2.6'nın "kalibrasyon çözüldü" başlığı da dâhildir — o bölüm $B{=}1$'dir.
+Bu incelemenin §3.1–§3.2'sindeki $B{=}1$ CP/MPIW sayıları da **yalnızca kollar arası
+karşılaştırma** içindir, mutlak kalibrasyon iddiası taşımaz.
+
+**O-5 — "Beşte bir parametre ve tek bir eğitim koşusu" (§3.7). YARISI YANLIŞ.**
+Parametre tarafı doğrudur: `[64,32]` için 58.444 parametre, il başına ayrı model 5 × 58.444.
+**Eğitim maliyeti tarafı yanlıştır.** Ölçülen (`training_time_sec`, $B{=}8$, üç tohum ortalaması):
+`all5` **2.505 s**, tek illi `solo` **547 s** — beş ilin tamamı için beş ayrı koşu 5 × 547 =
+**2.735 s**, yani havuzlanmış model eğitimde yalnızca **%8 ucuzdur**, beş kat değil. Havuzlanmış
+model beş kat daha fazla veri gördüğü için epok başına maliyeti de beş kattır. **Doğru ifade:**
+"beşte bir parametre ve tek bir model ile dağıtılabilir; eğitim maliyeti kabaca eşittir." Tutumluluk
+argümanı **dağıtım ve bakım** üzerinden kurulmalıdır, eğitim süresi üzerinden değil.
+
+**O-6 — "24 saat ileri tahmin" çerçevesi. YENİDEN ADLANDIRILSIN.**
+`horizon_hours=24` ve `window_stride=1` ile $h = 1$ adımı gerçek bir **1 saat ileri** tahmindir ve
+toplulaştırılmış RMSE'nin önemli bir bölümünü o kolay adımlar üretir ($B{=}8$ tabanında $h{=}1$
+RMSE 66,6; $h{=}24$ RMSE 103,4). Doğru tanım **"1–24 saatlik profil tahmini"**dir. `h = 24`
+satırı ayrıca raporlanmalı, ve §2.2'nin ufuk eğrisi zaten bu şeffaflığı sağlayan şekildir.
+
+**O-7 — §1'in "negatif transfer" bulgusu HİÇBİR YERDE geçmesin.** §2.4 ve §3.4 onu iki kez
+çürüttü (işaret tersine döndü: `plus_antalya` − `solo` = −0,59, 3/3 tohum). §1 kayıt olarak
+duruyor; makaleye taşınmamalıdır. Ayrıca §1'in tüm eğrisi seçilmemiş kriterle (MSE) koştuğu için
+**hiçbir §1 sayısı** makaleye girmemelidir — §1'in makaleye ait tek katkısı, kriter seçiminin
+sonucu ne kadar taşıdığının kanıtı olmasıdır (B-7).
+
+**O-8 — Mimari taramasının tek-tohum sütunu yayımlanmasın** (§1). Yedi konfigürasyonun tamamında
+tek tohum ile üç tohum ortalaması arasında 0,5–2,6 W/m² fark var ve bir sıralama tersine dönüyor.
+
+---
+
+## 8. Koşulması planlanmayan, en değerli tek deney
+
+**Transfer eğrisinin diğer dört ucu:
+`abl_percity_{ankara,antalya,konya,van}_solo_s{42,43,44}_full`.**
+
+Makalenin iddiası (`main_methodology.md` satır 56–59) **"her il için"** kurulmuştur: havuzlama,
+her ilin tahminini o il için ayrı eğitilmiş modele kıyasla iyileştirmelidir. Bugüne kadar bu, **tek
+bir ilde** sınanmıştır — ve sınandığı il, havuzlamanın yardım etmesinin **en muhtemel** olduğu
+ildir: en az veriye sahip olmayan ama en az öğrenilebilir sinyale sahip olan, iklimsel aykırı olan
+Rize. Diğer dört il için `solo` kolu **hiç koşulmamıştır**; ledger'da yoktur.
+
+**Neden bu, ve neden şimdi.** §2.1 bu boşluğu bir riske çeviriyor: öğrenilebilir sinyalin
+tamamına yakını dört Anadolu ilindedir (kapasiteyi iki katına çıkarmak orada 3,5–6,3 W/m²
+kazandırıyor, Rize'de 0,40). Tek bir küresel model bu kapasiteyi beş il arasında paylaştırıyor.
+Yani havuzlamanın **Ankara veya Konya'yı kötüleştirmesi** fiziksel olarak makul bir sonuçtur ve
+hiç ölçülmemiştir. Bir hakemin bu makaleye soracağı ilk soru budur ve bugün yanıtı yoktur.
+
+**Maliyet: ≈ 1,8 saat.** Ölçülmüş `solo` tam doğruluk kol maliyeti 547 s (`training_time_sec`
+ortalaması, `abl_rize_solo_s{42,43,44}_full`); dört il × üç tohum × 547 s ≈ 6.560 s. Bu, önerilen
+mimari işinin (§5.2, ≈ 2,3–4,3 sa) yarısı kadardır ve makalenin **başlık iddiasının dış
+geçerliliğini** hedefler; mimari işi ise ikinci ondalık basamağı hedefler.
+
+**Her iki sonuç da yayımlanabilir — ve biri diğerinden daha ilginç:**
+
+- Havuzlama dört ili de iyileştirirse, iddia koşulsuz biçimde yazılabilir hâle gelir ve makale
+  beş bağımsız (ama ilişkili) tekrar kazanır.
+- Havuzlama dört ili kötüleştirirse — ki §2.1 bunu makul kılıyor — çıkan iddia **daha iyidir**:
+  *küresel model doğruluğu veri-fakiri rejime doğru yeniden dağıtır; en zor ili, en kolayların
+  küçük bir bedeliyle iyileştirir.* Bu, ölçülmüş bir ödünleşimdir, koşulsuz bir üstünlük
+  iddiasından hem daha savunulabilir hem literatürde daha ilginçtir. B-2 (havuzlama ve topluluk
+  aynı varyansı avlıyor) ve B-4 (kapasite tavanı il-özgü) ile birlikte tek bir tutarlı anlatı
+  oluşturur.
+
+**Uygulama notu.** `_rize_curve_configs()` kalıbı doğrudan kullanılabilir: `training_scope`
+`per_city`, `excluded_cities` diğer dördü, `per_city_scaler` varsayılan (`True`). Ölçekleyici
+karıştırıcısı §2.5'te (`ABLATION.md`) zaten elenmişti (+0,19 W/m², $p = 0{,}826$), dolayısıyla ek
+kontrol kolu gerekmez. Karşılaştırma karşı-tarafı **zaten mevcuttur**:
+`abl_rize_all5_s{42,43,44}_full` beş ilin hepsini skorlar, dolayısıyla yalnızca `solo` uçları
+eksiktir. Ve K-1 gereği her karşılaştırma o ilin kendi satırından okunmalıdır.
+
+---
+
+## Kaynaklar
+
+| Ne | Nerede |
+| --- | --- |
+| Mimari kolları | `outputs/experiments/abl_arch_*/` (21 koşu), tanımları `configs/experiment_grid.py::ARCH_SWEEP_AXES` |
+| Mimari tabanı | `outputs/experiments/abl_rize_all5_s{42,43,44}_l1/` |
+| Tam doğruluk referansı | `outputs/experiments/abl_rize_all5_s{42..47}_full/`, `abl_rize_solo_s{42..47}_full/` |
+| İl bazlı metrikler | `<id>/metrics/results_summary.csv` (`subset == "daylight"`) |
+| Ufuk bazlı metrikler | `<id>/metrics/results_by_horizon.csv` |
+| `best_epoch`, cihaz, bölme tarihleri | `<id>/log.txt` |
+| Konfigürasyon eksenleri, `best_val_loss`, süre | `outputs/experiments_ledger.csv` |
+| Tabanlar | `outputs/experiments/baseline_{climatology,persistence,smart_persistence}/` |
+| Otokorelasyon / PACF | `outputs/eda/tables/autocorrelation_clearness.csv` |
+| Berraklık, il karşılaştırması | `outputs/eda/tables/{clearness_index_by_city,daily_clearness_by_city,persistence_baseline,descriptive_stats_by_city_daylight}.csv` |
+| Model yapısı | `src/merve_solar/model.py`, `train.py`, `experiment.py` |
+| Önceki hükümler | `ABLATION.md` §1–§3, `METHODOLOGY_REVIEW.md` K3 |
