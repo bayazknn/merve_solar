@@ -88,6 +88,20 @@ MODEL_FAMILIES = ("lstm", "climatology", "persistence", "smart_persistence")
 # the finding, which is why this is a recorded axis rather than a silent default change.
 LOSS_FUNCTIONS = ("mse", "mae", "huber")
 
+# What the network is asked to regress. "raw" is the irradiance itself, in W/m^2.
+# "clearsky_index" regresses kt = ALLSKY / CLRSKY instead and multiplies the prediction back by
+# the target hour's clear-sky value, so the network learns only the atmospheric attenuation and
+# is handed the solar geometry -- which is the same information the naive baselines get for free
+# (smart persistence multiplies kt forward by CLRSKY at the target hour; the climatology cell
+# memorises the same envelope). CLRSKY is pure astronomy with no weather term and is computable
+# from latitude, longitude and time, so admitting it is NOT leakage; it stays out of
+# NUMERIC_FEATURE_COLUMNS either way, entering only through this transform.
+# Measured on the base frame before implementing: daylight CLRSKY has a floor of 2.40 W/m^2, so
+# the division never blows up; kt has median 0.885, p99 = 1.000, 138 of 151,643 daylight hours
+# above 1.0 and exactly one above 1.5 (the documented Van 1215.88 back-fill artefact). No
+# clipping or threshold is applied, and none is needed.
+TARGET_TRANSFORMS = ("raw", "clearsky_index")
+
 NUMERIC_FEATURE_COLUMNS = [
     "ALLSKY_SFC_SW_DWN",  # own-lag, autoregressive
     "T2M",
@@ -208,6 +222,10 @@ class ExperimentConfig:
     # Training criterion; see LOSS_FUNCTIONS above.
     loss_function: str = "mse"
 
+    # What the network regresses; see TARGET_TRANSFORMS above. Default "raw" is the behaviour
+    # every existing ledger row was produced under.
+    target_transform: str = "raw"
+
     def __post_init__(self) -> None:
         # Validate here rather than at use: from_json() runs this too, so a typo'd
         # "per-city" fails at load instead of three hours into a sweep.
@@ -217,6 +235,8 @@ class ExperimentConfig:
             raise ValueError(f"model_family must be one of {MODEL_FAMILIES}, got {self.model_family!r}")
         if self.loss_function not in LOSS_FUNCTIONS:
             raise ValueError(f"loss_function must be one of {LOSS_FUNCTIONS}, got {self.loss_function!r}")
+        if self.target_transform not in TARGET_TRANSFORMS:
+            raise ValueError(f"target_transform must be one of {TARGET_TRANSFORMS}, got {self.target_transform!r}")
         if not 0.0 < self.dropout_rate < 1.0:
             raise ValueError("dropout_rate must be in (0, 1): it is the only source of MC-Dropout randomness")
 

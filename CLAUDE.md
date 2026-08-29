@@ -107,7 +107,8 @@ builder there, and `build_experiment_grid(groups)` assembles them and rejects du
 Besides the windowing/architecture/UQ knobs, `ExperimentConfig` now carries the **arm-selection
 and criterion axes**: `training_scope` (`global` | `per_city`), `model_family`,
 `excluded_cities`, `loss_function` (`mse` | `mae` | `huber`) + `huber_delta`,
-`loss_daylight_only`, `per_city_scaler` and `clamp_night_to_zero`. All of them are validated in
+`target_transform` (`raw` | `clearsky_index`), `loss_daylight_only`, `per_city_scaler` and
+`clamp_night_to_zero`. All of them are validated in
 `__post_init__` (so a typo fails at config load, not three hours into a sweep) and all of them
 are ledger columns. `README.md` has the per-field table.
 
@@ -200,7 +201,8 @@ The ledger is only useful if rows are comparable, and the paper's tables come st
   `bootstrap_block_length`, `mc_dropout_passes`, the optimizer knobs (`batch_size`,
   `learning_rate`, `lr_reduce_factor`, `lr_reduce_patience`), `max_epochs`,
   `early_stop_patience`, `loss_function`, `huber_delta`, `nonneg_penalty_weight`,
-  `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`, `seed` and `device`. A run
+  `target_transform`, `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`, `seed`
+  and `device`. A run
   that changed something *not* in those columns is indistinguishable in the table. If a new axis
   matters, add it to `LEDGER_COLUMNS` and the row dict first — `assert_ledger_schema_ok()` then
   fails loudly in milliseconds instead of misaligning every column of the appended row, and

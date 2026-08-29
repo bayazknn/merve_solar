@@ -309,6 +309,51 @@ yakın konumlanması); one-hot temsilde tüm iller birbirine eşit uzaklıktadı
 
 ---
 
+### 5.4 Hedef dönüşümü — ışınım mı, berraklık indeksi mi?
+
+`target_transform` ekseni ağın neyi regrese ettiğini seçer:
+
+$$
+\text{raw:}\quad \hat{y}(t{+}h) \;\;\text{doğrudan W/m}^2
+\qquad\qquad
+\text{clearsky\_index:}\quad \hat{y}(t{+}h) = \hat{k}_t(t{+}h) \times \text{CLRSKY}(t{+}h)
+$$
+
+burada $k_t = \text{ALLSKY}/\text{CLRSKY}$, gece ($\text{CLRSKY} = 0$) tanım gereği 0.
+
+**Neden bir eksen.** Naif taban kuralları hedef saatin berrak-gökyüzü zarfını **ücretsiz**
+alır: akıllı kalıcılık taşıdığı $k_t$'yi $\text{CLRSKY}(t{+}h)$ ile çarpar, iklimsel ortalamanın
+(il, ay, saat) hücresi aynı geometriyi ezberler. `raw` model ise zarfı `hour_sin/cos` ve
+gün-içi kodlamasından çıkarmak zorundadır. Ölçülen sonuç bu farkın imzasını taşır
+(`ABLATION.md` §3.6): model gündüz RMSE'sini beş ilde de kazanır, gündüz MAE'sini dördünde
+**kaybeder**. Bu dönüşüm, `CLRSKY`'yi öznitelik yapmadan aynı bilgiyi modele verir.
+
+**Sızıntı değildir.** `CLRSKY_SFC_SW_DWN` saf güneş geometrisidir, hava terimi içermez ve
+enlem/boylam/zamandan hesaplanabilir — gerçekleşen hedefi hiçbir noktada okumaz. Zaten aynı
+gerekçeyle gündüz maskesinin (§12) ve `clamp_night_to_zero`'nun (§11.3) aracıdır.
+`NUMERIC_FEATURE_COLUMNS`'a **girmez**; modele yalnızca bu dönüşüm üzerinden ulaşır.
+
+**Uygulama sırası.** Dönüşüm ölçekleyiciden **önce**, çerçeve düzeyinde uygulanır: hedef sütunu
+$k_t$ ile değiştirilir, ardından ölçekleyici, pencereler, kayıp ve erken durdurma kararlarının
+tamamı $k_t$ uzayında gerçekleşir. Ters ölçeklemeden sonra tahmin, `extra_target_columns` ile
+hedef saatlerde toplanmış `CLRSKY` ile çarpılır. **Kanonik gerçek değer (`y_true`) hiçbir zaman
+dönüştürülmez** — düzen (layout) geçişi ham çerçeveyi okur, dolayısıyla iki kol byte-birebir
+aynı hedefe karşı puanlanır.
+
+**Sayısal davranış.** Uygulamadan önce ölçüldü: gündüz `CLRSKY`'nin tabanı 2,40 W/m² olduğundan
+bölme hiçbir yerde patlamaz; $k_t$'nin medyanı 0,885, p99'u 1,000, 151.643 gündüz saatinin
+138'i 1,0'ı ve **yalnızca biri** 1,5'i aşar (belgelenmiş Van 1215,88 geri-çatım artefaktı,
+$k_t = 3{,}28$). Kırpma veya eşik **uygulanmaz** ve gerekmez.
+
+**Yan etki.** Gece çıktısı $\text{CLRSKY} = 0$ ile çarpıldığı için **inşa gereği tam sıfırdır**;
+`clamp_night_to_zero` bu kolda bir düzeltme değil, etkisiz bir işlem hâline gelir. Bu, gece
+kısıtının daha güçlü bir biçimidir.
+
+**Ayrılamayan karıştırıcı.** Eksen aynı anda **kaybın ağırlıklandırmasını** da değiştirir:
+$k_t$ uzayında bulutlu bir öğle saati ile açık bir sabah saati benzer ağırlık taşır, oysa
+W/m² uzayında yüksek ışınımlı saatler baskındır. İkisi tek bir değişikliktir; kol bunlardan
+birini yalıtmaz ve makalede öyle sunulmamalıdır.
+
 ## 6. Kronolojik veri bölme
 
 **Uygulama:** `compute_split_boundaries()`, `src/merve_solar/windows.py`.
@@ -1006,6 +1051,7 @@ yüklenirken düşer, saatler sonra eğitim ortasında değil.
 | `training_scope`      | `"global"`     | Havuzlanmış tek model (`global`, manşet konfigürasyon) mi, il başına bağımsız model seti (`per_city`, transfer ablasyon kolu) mi           |
 | `model_family`        | `"lstm"`       | Ledger satırının model ailesi. `run_experiment` **yalnızca** `lstm` eğitir; `climatology`/`persistence`/`smart_persistence` satırları eğitimsiz olarak `scripts/03_run_naive_baselines.py` tarafından üretilir |
 | `loss_function`       | `"mse"`        | Eğitim ölçütü: `mse` / `mae` / `huber` (§10.1)                                                                                             |
+| `target_transform`    | `"raw"`        | Ağın neyi regrese ettiği: `raw` ışınımın kendisi (W/m²), `clearsky_index` berraklık indeksi $k_t$ — ters ölçeklemeden sonra hedef saatin berrak-gökyüzü değeriyle geri çarpılır (§5.4)                     |
 | `huber_delta`         | 1,0            | Yalnızca `loss_function="huber"` iken; geçiş noktası, **ölçeklenmiş** hedef uzayında                                                        |
 | `loss_daylight_only`  | `False`        | Kayıp yalnız gündüz adımları üzerinden hesaplansın mı (raporlama değil, modelleme değişikliği)                                              |
 | `per_city_scaler`     | `True`         | Yalnızca `training_scope="per_city"` iken; her il kendi ölçekleyicisini alır (§7'deki belgelenmiş istisna). `False` havuzlanmış ölçekleyiciyi paylaştırır |
@@ -1310,7 +1356,9 @@ seçilir (grup verilmezse **hepsi** seçilir).
 | §8 Torch veri yükleyici   | `src/merve_solar/datasets.py`   | `WindowDataset`, `make_dataloader`                         |
 | §11.4, §12 Metrikler      | `src/merve_solar/metrics.py`    | `summarize_predictive_distribution`, `compute_metric_subsets` |
 | §12 Naif referans zemini  | `src/merve_solar/baselines.py`  | `add_baseline_columns`, `build_baseline_predictions`       |
+| §5.4 Hedef dönüşümü       | `src/merve_solar/experiment.py` | `apply_target_transform`, `invert_target_transform`         |
 | §13 Orkestrasyon          | `src/merve_solar/experiment.py` | `run_experiment`, `LEDGER_COLUMNS`, `SCOPE_RUNNERS`        |
+| §12.3 Koşu sonrası analiz | `src/merve_solar/postprocess.py`| `city_horizon_table`, `check_against_pipeline_csvs`         |
 | §13.5 Tarama              | `configs/experiment_grid.py`    | `build_experiment_grid`, `EXPERIMENT_GROUPS`               |
 | §13.2 Şekiller            | `src/merve_solar/utils.py`      | `plot_forecast_with_ci`, `plot_metric_vs_horizon`          |
 | §3 Betimleyici analiz     | `src/merve_solar/eda.py`        | `descriptive_table`, `correlation_tables`, `persistence_baseline_table` |
@@ -1325,6 +1373,7 @@ Betikler (hepsi `src/`'ı `sys.path`'e ekler; `PROJECT_ROOT` dışında yol arg�
 | `scripts/03_run_naive_baselines.py`| Naif referansları aynı pencere/bölme/metrik yolundan ledger'a yazar    |
 | `scripts/run_experiment.py`        | Tek `ExperimentConfig` koşusu (§13.1)                                  |
 | `scripts/run_all_experiments.py`   | Seçilen tarama grupları (§13.5)                                        |
+| `scripts/06_city_horizon_metrics.py` | Bitmiş koşulardan il × ufuk metrik tablosu (§12.3); yeniden eğitim yok |
 
 Sınama (`uv run python -m pytest tests/ -q`) — her dosyanın koruduğu değişmez:
 
@@ -1342,6 +1391,8 @@ Sınama (`uv run python -m pytest tests/ -q`) — her dosyanın koruduğu deği�
 | `tests/test_model_family.py` | `run_experiment`'ın LSTM dışı bir `model_family`'yi eğitmeyi reddetmesi; naif referans satır tarifçisinin kurulmaya devam etmesi |
 | `tests/test_cli_overrides.py`| Eksen geçersiz kılmalarının `--experiment-id` olmadan reddi                     |
 | `tests/test_grid.py`         | §13.5 gruplarında yinelenen `experiment_id` olmaması; ablasyon çiftlerinin tek eksende ayrılması |
+| `tests/test_target_transform.py` | §5.4 `raw` yolunun dokunulmamışlığı, $k_t$ gidiş-dönüşünün tamlığı, gecenin inşa gereği sıfır olması |
+| `tests/test_postprocess.py`  | §12.3 özet üzerinden puanlamanın örnek üzerinden puanlamaya eşitliği; transpozisyonun yakalanması |
 | `tests/test_eda.py`          | §3 betimleyici katman: gündüz maskesinin geometrik olması, ACF/PACF doğruluğu    |
 
 **Çalıştırma:**

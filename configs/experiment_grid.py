@@ -13,6 +13,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from dataclasses import fields
+
 from merve_solar.config import CITIES, ExperimentConfig
 
 # The ablation pair's shared settings. Both arms are constructed from this one dict so the pair
@@ -557,6 +559,55 @@ def _percity_endpoints_configs() -> list:
     ]
 
 
+def _target_transform_configs() -> list:
+    """Regress the clearness index instead of the irradiance. 3 arms, ~2.0 h.
+
+    ABLATION.md 3.6 measured the gap this asks about: the LSTM wins daylight RMSE in all five
+    provinces and LOSES daylight MAE in four of them, to smart persistence. The mechanism is
+    that the naive rules are handed the target hour's clear-sky envelope for free -- smart
+    persistence multiplies the carried-forward kt by CLRSKY(t+h), the climatology cell memorises
+    the same geometry -- while the model has to infer the geometry from hour_sin/cos and the
+    day-of-year encoding. This arm hands the model the same thing without making CLRSKY a
+    feature: it regresses kt = ALLSKY / CLRSKY and the transform multiplies the envelope back.
+
+    CLRSKY is pure astronomy with no weather term, computable from latitude, longitude and time,
+    so admitting it through the transform is not leakage. Measured before implementing: daylight
+    CLRSKY has a floor of 2.40 W/m^2 so the division never blows up, and kt has median 0.885 and
+    p99 = 1.000 with exactly one value above 1.5 (the documented Van back-fill artefact). No
+    clipping is applied.
+
+    THE MATCHED RAW ARM ALREADY EXISTS and is not rebuilt here: abl_rize_all5_s{42,43,44}_full
+    is this same dict with target_transform="raw", which was the only behaviour available when
+    it ran. The assertion below proves the pair differs in that one field and nothing else,
+    which is what the comparability rules actually require -- rerunning an identical config
+    under a new id to satisfy the letter of "build both from one dict" would cost two hours and
+    add a duplicate row.
+
+    Two effects travel together on this axis and cannot be separated by adding an arm, because
+    they are the same change: the target definition, and the loss weighting it implies (in kt
+    space a cloudy noon hour and a clear morning hour carry comparable weight, where in W/m^2
+    the high-irradiance hours dominate). State it; do not pretend the arm isolates one of them.
+    """
+    base = {**ABLATION_FULL, "loss_function": "mae"}
+    configs = [
+        ExperimentConfig(
+            experiment_id=f"abl_target_kt_s{seed}_full",
+            target_transform="clearsky_index",
+            seed=seed,
+            **base,
+        )
+        for seed in ABLATION_SEEDS
+    ]
+    for cfg, seed in zip(configs, ABLATION_SEEDS):
+        raw = ExperimentConfig(experiment_id=f"abl_rize_all5_s{seed}_full", seed=seed, **base)
+        differing = {
+            f.name for f in fields(ExperimentConfig)
+            if f.name != "experiment_id" and getattr(cfg, f.name) != getattr(raw, f.name)
+        }
+        assert differing == {"target_transform"}, differing
+    return configs
+
+
 def _sens_scaler_l1_configs() -> list:
     """The control for the confound most likely to be producing H1's null result.
 
@@ -636,6 +687,7 @@ EXPERIMENT_GROUPS = {
     "arch_sweep_x": _arch_sweep_x_configs,
     "arch_frontier": _arch_frontier_configs,
     "percity_endpoints": _percity_endpoints_configs,
+    "target_transform": _target_transform_configs,
     "sens_scaler_l1": _sens_scaler_l1_configs,
     "device_parity": _device_parity_configs,
     "rize_curve_smoke": _rize_curve_smoke_configs,

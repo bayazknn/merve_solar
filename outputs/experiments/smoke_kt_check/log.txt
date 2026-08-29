@@ -1,0 +1,13 @@
+device=cpu
+training_scope=global model_family=lstm
+loss_function=mae
+active_cities=['Ankara', 'Antalya', 'Konya', 'Rize', 'Van'] excluded=[]
+train_end=2024-06-27 19:00:00 val_end=2025-03-26 01:00:00
+test daylight elements: 546130 of 1059720
+train: 218745 windows
+val: 32315 windows
+test: 44155 windows
+replica 0: best_val_loss=0.2832 best_epoch=4 last_val_loss=0.2832 epochs=5  WARNING: hit max_epochs
+target_transform=clearsky_index
+clamped 513590 night elements to zero
+total_training_time_sec=167.2
