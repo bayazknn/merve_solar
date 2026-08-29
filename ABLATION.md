@@ -525,6 +525,120 @@ belirsizlik katmanı hakkında bir tablo yayımlanacaksa yapılması önerilir.
 
 ---
 
+## 2. Aynı eğri, doğru kriterle — L1 altında transfer eğrisi
+
+§1'in eğrisi MSE ile koştu; §1.5 ise kriteri **L1 olarak seçti**. Bu bir tasarım hatasıydı
+(§1.9, T-1): Aşama 2, kaybını `ExperimentConfig` varsayılanından alıyordu, Aşama 1'in
+kazananından değil. Bu bölüm eğriyi seçilen kriterle ve **her kolda üç tohumla** yeniden koşar.
+`rize_curve_l1` (15 kol) + `sens_scaler_l1` (3 kol), tümü `MERVE_DEVICE=mps`, `ABLATION_B1`
+doğruluğu, tüm kollarda `hit_max_epochs=0`.
+
+**Bu bölüm §1'in iki hükmünü geçersiz kılar.** Hangileri olduğu §2.4'te açıkça yazılıdır.
+§1 silinmemiştir: kriterin eğriyi ne kadar taşıdığının tek ölçümü odur.
+
+### 2.1 Sonuçlar (Rize satırı, gündüz, her kolda 109.043 eleman)
+
+| kol | il | RMSE ort ± s.s. | tohumlar | MAE ort ± s.s. | CP |
+| --- | --- | --- | --- | --- | --- |
+| `solo` | 1 | 112,38 ± 0,58 | 112,47 / 111,76 / 112,92 | 79,23 ± 0,13 | 0,8869 |
+| `plus_ankara` | 2 | 108,71 ± 1,92 | 110,71 / 108,54 / 106,88 | 75,68 ± 0,59 | 0,8959 |
+| `plus_antalya` | 2 | 110,38 ± 2,64 | 113,24 / 109,84 / 108,05 | 77,25 ± 1,34 | 0,8967 |
+| `minus_antalya` | 4 | **106,04 ± 0,38** | 106,48 / 105,78 / 105,86 | 75,26 ± 0,82 | 0,9044 |
+| `all5` | 5 | 107,27 ± 2,32 | 107,30 / 104,93 / 109,57 | 75,52 ± 1,21 | **0,9134** |
+| *kontrol:* `solo` + havuz ölçekleyici | 1 | 112,57 ± 0,91 | 111,59 / 113,38 / 112,73 | 79,17 ± 1,10 | — |
+| *taban:* iklimsel ortalama | — | 130,68 | — | 95,72 | — |
+| *taban:* akıllı kalıcılık | — | 136,66 | — | 85,23 | — |
+
+### 2.2 H1 — havuzlama Rize'yi iyileştiriyor mu? **Evet.**
+
+`solo` → `all5`: eşleştirilmiş fark **−5,11 W/m²**, tohum farkları `[−5,17, −6,83, −3,34]`,
+**3/3 tohumda** havuzlama kazanıyor, eşleştirilmiş $t = -5{,}08$, $p = 0{,}037$.
+
+§1'de aynı karşılaştırma −1,53 W/m² ve $p = 0{,}250$ ile "saptanamadı" idi. Etki **3,3 katına**
+çıktı ve tespit edilebilir hâle geldi.
+
+**Neden döndü — ve bu bulgunun kendisi.** Kriter değişimi kolları eşit etkilemedi:
+
+| kol | MSE (s42) | L1 (3 tohum ort.) | değişim |
+| --- | --- | --- | --- |
+| `solo` | 115,21 | 112,38 | −2,83 |
+| `plus_ankara` | 109,80 | 108,71 | −1,10 |
+| `all5` | 112,88 | 107,27 | **−5,62** |
+| `minus_antalya` | 111,77 | 106,04 | **−5,73** |
+| `plus_antalya` | 119,66 | 110,38 | **−9,28** |
+
+Havuzlanmış kollar L1'den `solo`'nun iki katı kazanıyor. Mekanizma ölçülmedi ama tutarlı bir
+açıklaması var: havuzlanmış kollarda hedef ölçekleyicisi beş ilin üzerinde fit edilir ve MSE
+karesel hatayı topladığı için yüksek varyanslı iller kaybı domine eder — Rize beş ilin **en
+düşük varyanslısıdır** ($\sigma = 231{,}5$, havuz $\approx 280$). L1 hatayı mutlak değerle
+tarttığından bu baskınlığı sıkıştırır. Yani MSE eğrisi transferi **olduğundan az gösteriyordu**;
+küresel model iddiası zayıf değildi, ölçüm aleti zayıftı.
+
+### 2.3 H2 — hangi ilin eklendiği önemli mi? **Yön evet, büyüklük hayır.**
+
+`plus_ankara` 108,71 ± 1,92 vs `plus_antalya` 110,38 ± 2,64, eşit eğitim hacminde (87.498
+pencere). Ankara **3/3 tohumda** daha iyi, eşleştirilmiş fark −1,67, $t = -3{,}83$,
+$p = 0{,}062$. Ama eşleştirmesiz Welch $p = 0{,}43$: kolların kendi tohum saçılımı farktan
+büyük.
+
+**§1'in 9,86 W/m²'lik farkı büyük ölçüde tek-tohum şansıymış.** Üç tohumla fark 1,67'ye
+iniyor — altıda bire. Yön korunuyor ve EDA'nın öngördüğü yönde (Ankara $k_t = 0{,}806$ Rize'nin
+0,697'sine en yakın), ama "iklimsel yakınlık transferi yönetir" iddiası bu kanıtla
+**zayıf-düşündürücü** seviyesindedir, kanıtlanmış değil.
+
+### 2.4 §1'in geçersiz kılınan iki hükmü
+
+**(i) "Negatif transfer" replike olmadı.** §1.7 `plus_antalya`'nın (119,66) `solo`'dan (113,21)
+*kötü* olduğunu, yani yanlış partnerin zarar verdiğini raporluyordu. L1 ve üç tohumla
+`plus_antalya` 110,38, `solo` 112,38 — Antalya eklemek **iyileştiriyor** (2/3 tohum,
+$p = 0{,}344$). Tek tohumlu bir kola dayanan bulgu çoğaltılınca ayakta kalmadı.
+
+**(ii) "Antalya'yı çıkarmak beş ili havuzlamaktan iyidir" gösterilemedi.** `minus_antalya`
+ortalaması `all5`'ten düşük (106,04 vs 107,27) ama fark −1,23, 2/3 tohum, $p = 0{,}454$.
+§1'de de tek tohumla −1,11 idi; iki koşuda da tespit eşiğinin altında.
+
+Bu iki madde §1'in "havuzlamanın işareti iklimsel yakınlıkla belirlenir" cümlesini taşıyan
+ayaktı. **O cümle bu kanıtla yazılamaz.** Ayakta kalan iddia daha basit ve makalenin asıl
+istediği şey: *beş ili havuzlamak Rize'yi iyileştirir.*
+
+### 2.5 Ölçekleyici karıştırıcısı elendi (T-9 kapandı)
+
+`solo` kendi ölçekleyicisini kullanır, havuzlanmış kollar ortak ölçekleyiciyi. Bunun `solo`
+lehine çalıştığından ve H1'in null'ını üretiyor olabileceğinden şüphelenilmişti. Kontrol kolu
+(`solo`, `per_city_scaler=False`) farkı ölçtü: **+0,19 W/m², 2/3 tohum, $p = 0{,}826$.**
+
+`solo` kendi ölçekleyicisinden hiçbir avantaj elde etmiyor. Karıştırıcı yok; H1'in §1'deki
+null'ı ölçekleyici artefaktı değildi, kriter artefaktıydı (§2.2).
+
+### 2.6 Yan bulgu — kalibrasyon büyük ölçüde çözüldü
+
+Gündüz CP havuzlama arttıkça **tekdüze yükseliyor**: `solo` 0,8869 → `plus_*` 0,896 →
+`minus_antalya` 0,9044 → `all5` 0,9134. Ve `all5` kolunun **`Aggregate`** gündüz CP'si üç
+tohumda 0,9535 / 0,9570 / 0,9534 — yani hedefin üzerinde değil, **hedefte**.
+
+Bu, `METHODOLOGY_REVIEW.md` K3'ün "aleatorik terim eklenmediği için %95 kapsamaya ilkesel
+olarak ulaşılamayabilir" uyarısını önemli ölçüde yumuşatır: MSE altında CP 0,80–0,83 iken L1 ve
+havuzlama ile 0,95'e ulaşılıyor. Alt-kapsamanın tamamı yapısal değilmiş. Rezidüel-varyans
+eklentisi hâlâ değerli olabilir ama artık bir **ön koşul** değil.
+
+`Aggregate` gündüz nokta başarımı da aynı kollarda RMSE 94,89 / 93,19 / 94,18 ve
+R² 0,887–0,891 — iklimsel ortalama tabanının (106,86 / 0,8565) **%12 altında**.
+
+### 2.7 Geçerlilik tehditleri
+
+- **T-1 (kapandı).** Eğri artık Aşama 1'in seçtiği kriterle koşuyor.
+- **T-9 (kapandı).** §2.5.
+- **T-12 (yeni).** Bu 18 kol MPS'te, §1'in 12 kolu CPU'da koştu. §1.11'in ölçümüne göre nokta
+  metrikleri arka uçtan bağımsızdır (%0,25) ama **aralık metrikleri değildir** (%4,49). §2.2–2.5
+  yalnızca nokta metriklerine dayanır ve etkilenmez; §2.6'nın CP sayıları **arka uç içinde**
+  karşılaştırılabilir, §1'in CP'leriyle yan yana konmamalıdır.
+- **T-13 (yeni).** $n = 3$ tohum. H1 $p = 0{,}037$ ile eşiği geçiyor ama üç gözlemle; H2
+  ($p = 0{,}062$) geçmiyor. Tam doğruluk (B=8) ve daha fazla tohum ikisini de sağlamlaştırır.
+- **Devam eden:** tüm kollar `n_bootstrap=1`, dolayısıyla aralık metrikleri MC-Dropout'a
+  dayanır, bootstrap bileşeni yoktur (§1.4).
+
+---
+
 ## A. Bu belge bir şablondur — yeni bir ablasyon nasıl eklenir
 
 §1, sonraki ablasyonlar için kalıptır. Yeni bir eksen geldiğinde **§1 düzenlenmez**; `## 2.`,

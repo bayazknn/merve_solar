@@ -58,6 +58,25 @@ birleştirilir ve il kimliği yalnızca öğrenilen bir gömme vektörü olarak 
 makalenin iddialarından biridir: farklı iklim rejimleri arasında bilgi transferi sağlanır ve
 her il için ayrı ayrı eğitilmiş modellere kıyasla veri verimliliği artar.
 
+> **Bu iddia artık ölçülmüştür, varsayılmamaktadır** (`ABLATION.md` §2). Aynı boru hattında,
+> yalnızca hangi illerin havuzlandığı değiştirilerek: Rize'yi tek başına eğitmek gündüz RMSE
+> 112,38 ± 0,58 W/m² verirken beş ili havuzlamak 107,27 ± 2,32 verir — eşleştirilmiş fark
+> **−5,11 W/m², üç tohumun üçünde de aynı yönde**, $t = -5{,}08$, $p = 0{,}037$. Kapsama da
+> havuzlama arttıkça yükselir (CP 0,887 → 0,913).
+>
+> İki sınır makalede birlikte verilmelidir. **(i)** Kanıt Rize üzerinedir; Rize, iller arasında
+> en düşük açıklık indeksine sahip olan ve havuzlamadan en çok fayda beklenen ildir, dolayısıyla
+> her il için aynı kazanç gösterilmiş değildir. **(ii)** Etkinin büyüklüğü eğitim kriterine
+> duyarlıdır: aynı karşılaştırma MSE ile −1,53 W/m² ($p = 0{,}250$) verir, L1 ile −5,11
+> ($p = 0{,}037$). Havuzlanmış kollar L1'den tek-il kolunun iki katı kazanır, çünkü ortak hedef
+> ölçekleyicisi altında karesel kayıp yüksek varyanslı illere ağırlık verir ve Rize beş ilin en
+> düşük varyanslısıdır. Kriter seçimi bu nedenle §10.1'de gerekçelendirilmelidir.
+>
+> Ayrıca sınanan ama **desteklenmeyen** bir alt-iddia: hangi ilin eklendiğinin önemli olduğu
+> yönü üç tohumda da korunur ancak $p = 0{,}062$'de kalır, ve tek tohumla gözlenen "yanlış
+> partner zarar verir" (negatif transfer) bulgusu çoğaltılınca ayakta kalmamıştır. Makale
+> havuzlamanın *işaretinin* iklimsel yakınlıkla belirlendiğini iddia edemez.
+
 ---
 
 ## 2. Kaynak makaleden uyarlama
