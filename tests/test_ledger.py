@@ -104,3 +104,41 @@ def test_the_new_axes_survive_a_round_trip_through_the_csv(ledger_path):
     written = pd.read_csv(ledger_path, keep_default_na=False)
     assert list(written["excluded_cities"]) == ["", "Rize"]
     assert list(written["loss_function"]) == ["mse", "mae"]
+
+
+# Fields of ExperimentConfig that legitimately do not belong in the ledger, with the reason.
+# Anything NOT listed here and NOT in LEDGER_COLUMNS is an axis the paper's tables cannot see.
+LEDGER_EXEMPT_CONFIG_FIELDS = {
+    "experiment_id",  # it IS the key column, under its own name
+    "notes",          # free text, not an axis
+}
+
+
+def test_every_config_field_that_changes_a_result_is_a_ledger_column():
+    """The 'indistinguishable row' guard, generalised.
+
+    abl_arch_lr3e4_* varied `learning_rate` while the ledger had no column for it, so those rows
+    were byte-identical to abl_arch_base_* in every field the paper's tables read. The failure is
+    silent by construction: nothing errors, the comparison is just wrong. A config field is
+    either a ledger column or explicitly exempted here with a reason.
+    """
+    from dataclasses import fields
+
+    declared = {f.name for f in fields(ExperimentConfig)}
+    invisible = declared - set(LEDGER_COLUMNS) - LEDGER_EXEMPT_CONFIG_FIELDS
+    assert not invisible, (
+        f"config fields the ledger cannot see: {sorted(invisible)}. Add them to LEDGER_COLUMNS "
+        "and _ledger_row (and migrate the ledger on disk), or exempt them with a reason."
+    )
+
+
+def test_the_optimizer_knobs_carry_their_configured_values(ledger_path):
+    row = _ledger_row(
+        ExperimentConfig(experiment_id="x", learning_rate=3e-4, batch_size=64,
+                         bootstrap_block_length=24, lr_reduce_patience=3),
+        _fake_subsets(), {"hit_max_epochs": 0, "n_models": 1, "best_val_losses": [0.1]}, 1.0,
+    )
+    assert row["learning_rate"] == 3e-4
+    assert row["batch_size"] == 64
+    assert row["bootstrap_block_length"] == 24
+    assert row["lr_reduce_patience"] == 3
