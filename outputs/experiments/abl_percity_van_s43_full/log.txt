@@ -1,0 +1,19 @@
+device=mps
+training_scope=per_city model_family=lstm
+loss_function=mae
+active_cities=['Van'] excluded=['Ankara', 'Antalya', 'Konya', 'Rize']
+train_end=2024-06-27 19:00:00 val_end=2025-03-26 01:00:00
+test daylight elements: 109499 of 211944
+Van/train: 43749 windows
+Van/val: 6463 windows
+Van/test: 8831 windows
+Van replica 0: best_val_loss=0.1344 best_epoch=7 last_val_loss=0.1374 epochs=23
+Van replica 1: best_val_loss=0.1394 best_epoch=18 last_val_loss=0.1436 epochs=34
+Van replica 2: best_val_loss=0.1338 best_epoch=15 last_val_loss=0.1502 epochs=31
+Van replica 3: best_val_loss=0.1358 best_epoch=13 last_val_loss=0.1468 epochs=29
+Van replica 4: best_val_loss=0.1309 best_epoch=20 last_val_loss=0.1370 epochs=36
+Van replica 5: best_val_loss=0.1353 best_epoch=8 last_val_loss=0.1391 epochs=24
+Van replica 6: best_val_loss=0.1325 best_epoch=8 last_val_loss=0.1460 epochs=24
+Van replica 7: best_val_loss=0.1358 best_epoch=15 last_val_loss=0.1523 epochs=31
+clamped 102445 night elements to zero
+total_training_time_sec=556.7
