@@ -126,7 +126,7 @@ def _slice_dist(dist: dict, key) -> dict:
 
 
 def compute_metrics_for_subset(
-    pooled_preds: np.ndarray,
+    pooled_preds: np.ndarray | None,
     y_true: np.ndarray,
     element_mask: np.ndarray | None = None,
     dist: dict | None = None,
@@ -141,17 +141,27 @@ def compute_metrics_for_subset(
     `element_mask` is (N, horizon) and selects individual (window, horizon-step) pairs. Under
     a mask everything flattens: all the scalar metrics reduce over every axis anyway, and
     empirical_crps reshapes to (S, -1).
+
+    `pooled_preds=None` (with `dist` supplied) scores from the distribution SUMMARY alone and
+    returns CRPS as NaN. Every other metric here reads only mean/lower/upper, so this is exact
+    for them -- it is CRPS that genuinely needs the S samples. That is the mode postprocess.py
+    runs in: the (S, N, horizon) sample is ~3.4 GB and is never persisted, while
+    test_predictions.npz keeps mean/lower/upper, so a finished run can be re-sliced (per city
+    per horizon, conformal rescaling, paired tests) without retraining anything.
     """
+    if pooled_preds is None and dist is None:
+        raise ValueError("compute_metrics_for_subset needs either pooled_preds or dist")
     dist = summarize_predictive_distribution(pooled_preds) if dist is None else dist
 
     if element_mask is None:
         y, mean = y_true, dist["mean"]
-        lower, upper, preds = dist["lower"], dist["upper"], pooled_preds
+        lower, upper = dist["lower"], dist["upper"]
+        preds = pooled_preds
         n_samples = int(y_true.shape[0])
     else:
         y, mean = y_true[element_mask], dist["mean"][element_mask]
         lower, upper = dist["lower"][element_mask], dist["upper"][element_mask]
-        preds = pooled_preds[:, element_mask]
+        preds = None if pooled_preds is None else pooled_preds[:, element_mask]
         n_samples = int(element_mask.any(axis=1).sum())
 
     if y.size == 0:
@@ -170,7 +180,7 @@ def compute_metrics_for_subset(
         "MPIW": mean_prediction_interval_width(lower, upper),
         "Reliability": reliability(cp),
         "CWC": coverage_width_criterion(pinw, cp),
-        "CRPS": empirical_crps(preds, y),
+        "CRPS": float("nan") if preds is None else empirical_crps(preds, y),
         "n_samples": n_samples,
         "n_elements": int(y.size),
     }
