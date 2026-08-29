@@ -500,6 +500,23 @@ def _arch_frontier_configs() -> list:
     Run AFTER arch_sweep_x. If the rate turns out not to matter, only the `h256x128` arm is
     needed and `h256x128_lr3e4` is redundant; if it does matter, the reverse. Both are declared
     so the choice is a `--only` away rather than an edit.
+
+    ANSWERED, 2026-08-29 (ABLATION.md 4.5, B-3): the rate does not matter. 1e-3 -> 3e-4 moves
+    best_epoch 4.3 -> 14.0 at [128,64] -- so the mechanism is real, the model genuinely trains
+    past the point the default rate stopped at -- and lands in the same place (val_loss
+    -0.0016, p = 0.175; test RMSE +0.62, p = 0.338). At [64,32] likewise (p = 0.33 / 0.81).
+    The "the ladder only looks monotone because no arm reached its refinement stage" confound
+    is therefore measured and dead, and [256,128] can be read at the default rate.
+
+    So run six of the nine, and hold the other three:
+
+        --group arch_frontier --only \
+            abl_arch_h256x128_s42 abl_arch_h256x128_s43 abl_arch_h256x128_s44 \
+            abl_arch_h128x64_do04_s42 abl_arch_h128x64_do04_s43 abl_arch_h128x64_do04_s44
+
+    Run `h256x128_lr3e4` only if `h256x128` LOSES to `[128,64]` on best_val_loss. A win needs
+    no explanation; a loss is the one result the optimizer could still be faking, because
+    [256,128] is another doubling past the capacity where best_epoch was already 4.
     """
     return _arch_configs(ARCH_FRONTIER_AXES)
 
@@ -509,6 +526,10 @@ def _arch_frontier_configs() -> list:
 # ABLATION_REVIEW.md makes the risk concrete: the [64,32] -> [128,64] capacity gain is
 # -3.5 to -6.3 W/m2 in the four Anatolian provinces and -0.40 (p = 0.88) in Rize, so nearly all
 # the learnable signal lives in the four, and pooling may well cost them what it buys Rize.
+#
+# RUN, 2026-08-29 (ABLATION.md 5): it does not cost them. Pooling wins in all five provinces
+# and in 15 of 15 seed-arms; the redistribution scenario below did not happen. Kept as the
+# definition of record -- the arms are what the paper's "every province" sentence rests on.
 PERCITY_ENDPOINT_CITIES = [c for c in CITIES if c != RIZE]
 
 
