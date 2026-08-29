@@ -833,6 +833,7 @@ havuzlanmış (`all5`), üç tohum (42/43/44), MPS. Ortak taban: `[64, 32]`, `dr
 | --- | --- | --- |
 | `arch_sweep` | `h32x16`, `h128x64`, `h64x64x32`, `lookback48`, `lookback72`, `dropout02`, `dropout04` | tek eksen |
 | `arch_sweep_x` | `base`, `lr3e4`, `h128x64_lr3e4` | referans ölçümü + öğrenme oranı |
+| `arch_frontier` | `h256x128`, `h128x64_do04` | merdivenin bir üst basamağı + **bilinçli iki eksenli kol** |
 
 `base` kolunun kendisi bir koşudur, `abl_rize_all5_s*_l1`'in yeniden etiketlenmesi **değildir**:
 seçim kriteri `best_val_loss` ve o sütun eski satırlarda boştur (§4.7). Bir referansı olmayan
@@ -853,9 +854,11 @@ sınırdadır; bu iki kolun sıralaması bu nedenle test RMSE'siyle çapraz kont
 
 | konfigürasyon | parametre | `best_val_loss` ± s.s. | test RMSE | test MAE | CP | MPIW | `best_epoch` |
 | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |
-| `[128,64]`, lr 3e-4 | 219.244 | **0,12476 ± 0,00124** | 90,91 | 61,30 | 0,896 | 160,2 | 14,0 |
-| `[128,64]` | 219.244 | 0,12630 ± 0,00056 | **90,29** | **61,13** | 0,895 | 159,7 | 4,3 |
+| **`[256,128]`** | 848.044 | **0,12000 ± 0,00244** | **88,58** | **57,41** | 0,844 | 124,8 | 2,7 |
+| `[128,64]`, lr 3e-4 | 219.244 | 0,12476 ± 0,00124 | 90,91 | 61,30 | 0,896 | 160,2 | 14,0 |
+| `[128,64]` | 219.244 | 0,12630 ± 0,00056 | 90,29 | 61,13 | 0,895 | 159,7 | 4,3 |
 | `dropout 0,2` | 58.444 | 0,12951 ± 0,00113 | 91,21 | 62,92 | 0,912 | 166,2 | 10,3 |
+| `[128,64]` × `dropout 0,4` | 219.244 | 0,13370 ± 0,00390 | 91,71 | 64,22 | 0,926 | 193,0 | 4,0 |
 | `lookback 48` | 58.444 | 0,13894 ± 0,00338 | 94,87 | 67,74 | 0,950 | 211,0 | 14,7 |
 | `lookback 72` | 58.444 | 0,14007 ± 0,00139 | 94,42 | 68,36 | 0,948 | 211,5 | 7,7 |
 | `[64,64,32]` | 95.884 | 0,14165 ± 0,00215 | 97,85 | 72,06 | 0,964 | 215,0 | 13,0 |
@@ -863,6 +866,8 @@ sınırdadır; bu iki kolun sıralaması bu nedenle test RMSE'siyle çapraz kont
 | **`[64,32]` referans** | 58.444 | 0,14355 ± 0,00062 | 94,57 | 69,23 | 0,954 | 209,1 | 10,7 |
 | `dropout 0,4` | 58.444 | 0,15785 ± 0,00158 | 101,69 | 77,32 | 0,974 | 251,6 | 14,3 |
 | `[32,16]` | 16.444 | 0,17933 ± 0,00420 | 112,43 | 87,65 | 0,979 | 266,0 | 8,0 |
+
+(MPIW sütunu ledger'ın tüm-saat değeridir; §4.8'in gündüz MPIW'i ~2× büyüktür.)
 
 Doğrulama kaybı ile test RMSE'si arasındaki sıra korelasyonu **Spearman $\rho = 0,84$
 ($p = 0,002$)** — kriter işini görüyor ama kusursuz değil: `[64,64,32]` doğrulamada referansı
@@ -928,16 +933,111 @@ Rize gürültü-sınırlı: hatası modelin kapasitesinden değil, bulutluluğun
 (§2.5 il profili, günlük $k_t$ 0,697). Bu, "havuzlama kazancınız aslında yetersiz kapasitenin
 telafisiydi" itirazını kapatır — daha büyük model Rize'de kazanç üretmiyor, havuzlama üretiyor.
 
+### 4.8 Cephe koşusu — merdiven dönmedi, **ama kalibrasyon çöktü**
+
+`arch_sweep_x`'in lr sonucu (B-3) `[256,128]`'i varsayılan oranda okumayı serbest bıraktı. Kol
+koşuldu; `abl_arch_h256x128_lr3e4_*` **koşulmadı**, çünkü önceden yazılmış kural buydu:
+`h256x128` doğrulama kaybında kazanırsa lr varyantına gerek yok, kazanç açıklama gerektirmez.
+
+**B-6. Merdiven 848.044 parametrede hâlâ dönmedi.** `[128,64]` → `[256,128]`, eşleştirilmiş:
+
+| metrik | `[128,64]` | `[256,128]` | Δ | tohum başına | $p$ |
+| --- | ---: | ---: | ---: | --- | ---: |
+| `best_val_loss` | 0,12630 | **0,12000** | −0,0063 | −0,0075 / −0,0039 / −0,0075 | **0,034** |
+| test RMSE (gündüz) | 90,29 | 88,58 | −1,71 | +0,13 / −4,68 / −0,59 | 0,371 |
+| test MAE (gündüz) | 61,13 | 57,41 | −3,72 | 3/3 | **0,021** |
+| CRPS (gündüz) | 46,47 | 44,10 | −2,37 | 3/3 | **0,045** |
+| **CP (gündüz)** | 0,895 | **0,844** | **−0,051** | 3/3 | **0,005** |
+
+Kazanç azalıyor: `[64,32]` → `[128,64]` dört Anadolu ilinde ortalama −5,4 W/m², `[128,64]` →
+`[256,128]` −2,0 — 3,87 kat parametre için kazancın üçte biri. Ama **işaret hâlâ aynı ve
+doğrulama kaybı hâlâ anlamlı**, yani "merdiven döndü" denemez.
+
+**B-7. Rize'nin kapasiteye duyarsızlığı 14,5 kat parametrede de sürüyor.** `[64,32]` →
+`[256,128]`, gündüz RMSE, il satırı, üç tohum eşleştirilmiş:
+
+| il | `[64,32]` | `[128,64]` | `[256,128]` | Δ (256 vs 64) | $p$ | `[256,128]` CP |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Antalya | 87,25 | 81,06 | 79,22 | −8,03 | **0,014** | 0,8951 |
+| Konya | 92,73 | 86,27 | 83,54 | −9,18 | **0,000** | 0,8619 |
+| Ankara | 91,93 | 86,48 | 84,45 | −7,48 | **0,005** | 0,8459 |
+| Van | 92,25 | 88,57 | 87,01 | −5,25 | **0,047** | 0,8689 |
+| **Rize** | **107,43** | **106,86** | **106,15** | **−1,28** | **0,462** | **0,7466** |
+
+Kapasiteyi 14,5 katına çıkarmak dört ili 5–9 W/m² iyileştiriyor, Rize'yi hâlâ iyileştirmiyor.
+§4.5'in B-5 bulgusu böylece merdivenin iki basamağı boyunca doğrulanmış oluyor: **Rize'nin
+hatası modelin kapasitesinden değil, bulutluluğun kendisinden geliyor**, ve havuzlama kazancı
+(§5) bir kapasite artefaktı değil.
+
+**B-8. Aralık genişliği epistemik yayılımı izliyor, hatayı değil — ve bu kalibrasyon
+teşhisini rafine ediyor.** Gündüz `Aggregate`, on iki kol, kalite sırasına göre:
+
+| kol | RMSE | MPIW | CP | **MPIW/RMSE** | CRPS |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `[32,16]` | 112,43 | 516,2 | 0,9791 | 4,59 | 61,18 |
+| `dropout 0,4` | 101,69 | 488,1 | 0,9744 | 4,80 | 56,49 |
+| `[64,64,32]` | 97,85 | 417,1 | 0,9640 | 4,26 | 51,90 |
+| `lookback 48` | 94,87 | 409,5 | 0,9495 | 4,32 | 50,86 |
+| `[64,32]` lr3e-4 | 94,75 | 405,2 | 0,9541 | 4,28 | 50,77 |
+| **`[64,32]` referans** | 94,57 | 405,8 | **0,9540** | **4,29** | 50,63 |
+| `lookback 72` | 94,42 | 410,3 | 0,9475 | 4,35 | 50,98 |
+| `[128,64]` × `do 0,4` | 91,71 | 374,5 | 0,9260 | 4,08 | 48,88 |
+| `dropout 0,2` | 91,21 | 322,4 | 0,9120 | 3,53 | 46,73 |
+| `[128,64]` lr3e-4 | 90,91 | 310,8 | 0,8958 | 3,42 | 46,55 |
+| `[128,64]` | 90,29 | 309,9 | 0,8949 | 3,43 | 46,47 |
+| `[256,128]` | **88,58** | 242,1 | **0,8436** | **2,73** | **44,10** |
+
+MPIW/RMSE oranı model kalitesiyle **tekdüze** düşüyor (4,59 → 2,73) ve CP tam olarak onu
+izliyor. Gauss varsayımı altında nominal %95 için gereken oran $2 \times 1{,}96 = 3{,}92$'dir:
+oranın 3,92'nin üstünde olduğu her kol fazla kapsıyor, altında olduğu her kol eksik kapsıyor,
+istisnasız.
+
+Aynı şey regresyonla da görülür. Tek-eksenli on kol üzerinde CP ile $\log(\text{MPIW})$
+arasında $R^2 = 0{,}95$'lik bir cephe var; `[256,128]` bu cephenin **2,19 s.s. altında**.
+$\text{RMSE} \sim \log(\text{MPIW})$ cephesinde ise `[256,128]`'in gözlenen RMSE'si 88,58,
+cephenin o genişlik için öngördüğü 80,50'nin **2,31 s.s. üstünde** — yani aralık, hatanın
+düştüğünden **daha hızlı** daralıyor.
+
+> **Mekanizma ve makale için sonucu.** Aralık, havuzlanmış $B \times T$ örneğinin yüzdelikleri;
+> o örnek yalnızca **epistemik** yayılımı taşır (`main_methodology.md` §11.5), aleatorik terim
+> yok. Model iyileştikçe epistemik yayılım daralır, ama gerçek artık hata aynı hızda daralmaz —
+> bu yüzden kapasite arttıkça kapsama çöker. Referans `[64,32]`'nin CP 0,954'ü **kalibrasyonun
+> başarısı değil, bir işletme noktasının tesadüfüdür**: oranı 4,29 ile 3,92'nin hemen üstünde
+> kalmıştır.
+>
+> Bu, `METHODOLOGY_REVIEW.md` K3'ü ne doğruluyor ne yanlışlıyor; **rafine ediyor.** §3.5,
+> $B = 1 \to B = 8$ geçişinin kapsamayı yükselttiğini gösterdi, yani sorun "yalnızca eksik
+> aleatorik terim" değildi. §4.8 bunun tersini gösteriyor: doğruluk sabit tutulduğunda
+> **kapasite kapsamayı bozuyor**. İkisi birlikte doğru teşhisi veriyor — aralık, epistemik
+> yayılımın ne kadar büyük olduğuna göre değişiyor, oysa kapsaması gereken şey artık hatadır.
+> **Aralıklar hiçbir zaman inşa gereği kalibre değildi; tek bir işletme noktasında tesadüfen
+> doğruydular.**
+
+**B-9. İki eksenli kol cepheyi kaydırmıyor.** `[128,64] × dropout 0,4`, tek eksenli kolların
+CP–$\log$(MPIW) cephesinin **1,07 s.s. içinde** — yani düzenlileştirmeyi artırarak kapasiteyi
+büyütmek, "aynı genişlikte daha doğru model" vermiyor, yalnızca aynı eğri üzerinde geriye
+kaydırıyor: `[128,64]`'e göre CP +0,031 ama RMSE +1,42 ($p = 0,047$), MAE +3,10, CRPS +1,24
+($p = 0,010$), doğrulama kaybı +0,0074 ($p = 0,081$). **Kalibrasyon dropout ile satın
+alınamaz.** Bu, conformal katmanı bir alternatif değil, tek yol hâline getirir.
+
 ### 4.6 Hüküm
 
-- **Referans `[64,32]` kapasitesinin altında.** `[128,64]` doğrulama kaybını %12 düşürüyor,
-  test RMSE'sini 94,57 → 90,29 (−%4,5) getiriyor. Merdiven henüz dönmedi.
-- **Ancak `[128,64]` bu haliyle benimsenemez** (B-4): kalibrasyon kaybediliyor. Karar,
-  conformal katmanla birlikte verilecek ve **tam doğrulukta** ($B = 8$) tekrarlanacaktır.
-- **Öğrenme oranı, geriye bakış ve derinlik eksenleri kapandı** (B-2, B-3, B-1): hiçbiri
+- **Referans `[64,32]` kapasitesinin belirgin biçimde altında.** `[64,32]` → `[128,64]` →
+  `[256,128]` doğrulama kaybını 0,1436 → 0,1263 → 0,1200, gündüz RMSE'yi 94,57 → 90,29 → 88,58
+  getiriyor. **Merdiven 848.044 parametrede hâlâ dönmemiş durumda**, ama kazanç azalıyor.
+- **Nokta doğruluğunun kazananı `[256,128]`; ama hiçbir mimari kararı tek başına verilemez**
+  (B-4, B-8). Kapasite ile kapsama ters yönlüdür ve bu bir ayar sorunu değil, aralığın **neyi
+  ölçtüğüyle** ilgili yapısal bir sorundur.
+- **Kalibrasyon dropout ile satın alınamaz** (B-9): iki eksenli kol cepheyi kaydırmıyor.
+  Kapasite yükseltmesi **il × ufuk conformal ölçekleme ile aynı karar** olarak ele alınmalı;
+  ikisi ayrı ayrı benimsenirse ya doğruluk ya kapsama feda edilir.
+- **Öğrenme oranı, geriye bakış ve derinlik eksenleri kapandı** (B-1, B-2, B-3): hiçbiri
   referansı iyileştirmiyor.
-- **§1–§3'ün tamamı `[64,32]` altında geçerliliğini koruyor**, çünkü B-5 en büyük etkinin
-  ölçüldüğü ilde (Rize) kapasitenin etkisiz olduğunu gösteriyor.
+- **§1–§3 ve §5'in tamamı `[64,32]` altında geçerliliğini koruyor**, çünkü B-5 ve B-7 en büyük
+  etkinin ölçüldüğü ilde (Rize) kapasitenin merdivenin **iki basamağı boyunca** etkisiz
+  olduğunu gösteriyor.
+- **Sıradaki tek karar noktası:** kazanan mimariyi $B = 8$'de + conformal katmanla ölçmek.
+  $B = 1$'de seçip $B = 8$'de raporlamak §3.2–§3.4'ün gösterdiği gibi güvenli değil.
 
 ### 4.7 Geçerlilik tehditleri
 
@@ -953,9 +1053,17 @@ telafisiydi" itirazını kapatır — daha büyük model Rize'de kazanç üretmi
 - **T-4.3 — parametre sayısı ile karşılaştırma.** `[128,64]` 219.244 parametre, referansın
   3,75 katı. Makale tutumluluk iddiası kuruyorsa (§5 ve §3.7) bu sayının hangi mimariye ait
   olduğu her yerde belirtilmelidir.
-- **T-4.4 — tek eksen kuralının bilinçli istisnası yok.** Bu bölümdeki her kol referanstan tam
-  bir alanda ayrılır. `arch_frontier`'ın `h128x64_do04` kolu ilk iki eksenli kol olacaktır ve
-  gerekçesi orada yazılmalıdır.
+- **T-4.4 — tek eksen kuralının tek bilinçli istisnası `h128x64_do04`.** Diğer her kol
+  referanstan tam bir alanda ayrılır. İki eksenli kol, cephenin kaydırılıp kaydırılamayacağını
+  sormanın tek yolu olduğu için koşuldu (B-9) ve sonucu tam da bu soruya cevap veriyor;
+  başka hiçbir kolla tek-eksen karşılaştırması yapılamaz.
+- **T-4.6 — `[256,128]`'in test RMSE farkı anlamlı değil** ($p = 0,371$), çünkü tohum 42 ters
+  yönde. Doğrulama kaybı ($p = 0,034$), MAE ($p = 0,021$) ve CRPS ($p = 0,045$) anlamlı ve
+  il bazında dördü de anlamlı; ama **"`[256,128]` RMSE'de anlamlı olarak daha iyi" cümlesi
+  bu koşulardan çıkmaz.** Üç tohum yetersiz.
+- **T-4.7 — B-8'in oran analizi $B = 1$ kollarıdır.** MPIW/RMSE oranı $B$ ile de değişir
+  (§3.5: $B=1 \to B=8$ MPIW'i %7,4 genişletir). Mekanizma argümanı doğruluk sabit tutulduğu
+  için geçerlidir; **mutlak oran eşiği (3,92) $B = 8$'e taşınamaz.**
 - **T-4.5 — çekişme.** `arch_sweep_x` ve `percity_endpoints` aynı makinede eşzamanlı koştu;
   `training_time_sec` değerleri %10–20 şişkin olabilir. Metrikler etkilenmez, **maliyet
   projeksiyonu bu satırlardan yapılmamalıdır**.
