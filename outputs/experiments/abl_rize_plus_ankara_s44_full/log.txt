@@ -1,0 +1,19 @@
+device=mps
+training_scope=global model_family=lstm
+loss_function=mae
+active_cities=['Ankara', 'Rize'] excluded=['Antalya', 'Konya', 'Van']
+train_end=2024-06-27 19:00:00 val_end=2025-03-26 01:00:00
+test daylight elements: 218687 of 423888
+train: 87498 windows
+val: 12926 windows
+test: 17662 windows
+replica 0: best_val_loss=0.1585 best_epoch=8 last_val_loss=0.1667 epochs=24
+replica 1: best_val_loss=0.1623 best_epoch=7 last_val_loss=0.1747 epochs=23
+replica 2: best_val_loss=0.1615 best_epoch=8 last_val_loss=0.1707 epochs=24
+replica 3: best_val_loss=0.1573 best_epoch=9 last_val_loss=0.1714 epochs=25
+replica 4: best_val_loss=0.1573 best_epoch=14 last_val_loss=0.1671 epochs=30
+replica 5: best_val_loss=0.1642 best_epoch=14 last_val_loss=0.1772 epochs=30
+replica 6: best_val_loss=0.1630 best_epoch=4 last_val_loss=0.1707 epochs=20
+replica 7: best_val_loss=0.1565 best_epoch=5 last_val_loss=0.1594 epochs=21
+clamped 205201 night elements to zero
+total_training_time_sec=990.4
