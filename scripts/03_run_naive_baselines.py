@@ -73,9 +73,11 @@ def main() -> None:
         _append_ledger_row(
             # device="n/a": these are numpy lookups, no torch backend is selected at all, so
             # "cpu" would misdescribe them as a backend choice that could have gone otherwise.
+            # best_val_losses=[]: no model is fitted, so there is no validation loss to have --
+            # which _ledger_row records as "n/a", distinct from "unknown" (failed to record one).
             _ledger_row(
                 row_config, subsets,
-                {"hit_max_epochs": 0, "n_models": 0, "device": "n/a"},
+                {"hit_max_epochs": 0, "n_models": 0, "device": "n/a", "best_val_losses": []},
                 time.time() - start,
             )
         )

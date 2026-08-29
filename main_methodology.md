@@ -542,10 +542,19 @@ gerekçe kalmamıştır.
 
 Doğrulama kaybı da aynı kısıtlı kayıp fonksiyonuyla, `model.eval()` modunda ve `torch.no_grad()`
 altında hesaplanır. Eğitim ve doğrulama kayıpları epok bazında **bellekte** tutulur
-(`history`); deney günlüğüne (`log.txt`) replika başına yalnızca son doğrulama kaybı ve
-çalışılan epok sayısı yazılır (`replica {b}: final val_loss=… epochs=…`). Epok bazlı eğitim
+(`history`); deney günlüğüne (`log.txt`) replika başına
+`replica {b}: best_val_loss=… best_epoch=… last_val_loss=… epochs=…` yazılır. Epok bazlı eğitim
 eğrisi hiçbir dosyaya kaydedilmemektedir; eğri figürü istenirse `history`'nin diske yazılması
 gerekir.
+
+**Hangi doğrulama kaybı?** Geri yüklenen ağırlıklar en iyi epoğunkiler olduğuna göre, koşuyu
+betimleyen sayı da `history` üzerindeki **minimumdur**; son epoğunki, erken durdurma sayacı
+dolana kadar geçen `early_stop_patience` epok boyunca *atılmış* ağırlıkları betimler. Bu
+ayrım 2026-08-29'a kadar gözden kaçmıştı: günlüğe yalnızca son epoğun kaybı yazılıyordu, oysa
+§16 mimari seçimini "`log.txt`'deki `val_loss`" üzerinden tarif ediyordu. Artık günlük ikisini
+de yazar (`best_val_loss` önce, çünkü döndürülen modeli o betimler; `last_val_loss` ise ikisi
+arasındaki farkın eğitimin kendi optimumunu ne kadar aştığını göstermesi için korunur) ve
+ledger'a **yalnızca en iyi** olan taşınır (§13.2, `best_val_loss` sütunu).
 
 ---
 
@@ -930,7 +939,7 @@ yüklenirken düşer, saatler sonra eğitim ortasında değil.
 ```
 outputs/experiments/<experiment_id>/
 ├── config.json                       # koşunun tam konfigürasyonu
-├── log.txt                           # cihaz, bölme tarihleri, replika bazında val loss, süre
+├── log.txt                           # cihaz, bölme tarihleri, replika bazında val loss (en iyi + son), süre
 ├── checkpoints/
 │   ├── bootstrap_model_<b>.pt        # küresel kol: her replikanın ağırlıkları
 │   ├── scaler.joblib                 # küresel kol (ve per_city_scaler=False) ölçekleyicisi
@@ -971,10 +980,30 @@ dosyaları sürüm kontrolüne alınmaz, tohumlanmış konfigürasyondan yeniden
 - **Metrikler:** tüm-saat toplulaştırması (`RMSE`, `MAE`, `R2`, `CP`, `PINW`, `MPIW`,
   `Reliability`, `CWC`, `CRPS`, `n_samples`, `n_elements`) ve gündüz özeti (`RMSE_daylight`,
   `MAE_daylight`, `R2_daylight`, `CP_daylight`, `n_elements_daylight`).
-- **Koşu bilgisi:** `hit_max_epochs`, `n_models_trained`, `training_time_sec`.
+- **Koşu bilgisi:** `best_val_loss`, `hit_max_epochs`, `n_models_trained`, `training_time_sec`.
   `hit_max_epochs` sıfırdan büyükse eğitimi erken durdurma değil epok tavanı bitirmiştir; iki
   kol farklı miktarda eğitim almışsa karşılaştırılamazlar, dolayısıyla bu sütun her
   kol-karşılaştırmasından önce okunmalıdır.
+
+`best_val_loss` sütunu mimari/hiperparametre seçiminin dayanağıdır (§16) ve üç şeyi bilerek
+okunmalıdır:
+
+- **Hangi sayı:** koşuda eğitilen modellerin (küresel kolda $B$, il bazlı kolda $5B$) her
+  birinin **en iyi epoğundaki** doğrulama kaybının **ortalaması** — son epoğunki değil (§10.2).
+  Ortalama, tek satırlık ledger için tek sayı gerektiğinden ve $B$ değiştiğinde makul
+  davrandığından seçilmiştir. Modeller arası yayılım için ayrı bir sütun **yazılmaz**: planlanan
+  mimari taraması $B = 1$ ile koşacağı için sütun tam da onu gerektiren satırlarda boş kalırdı;
+  model bazındaki değerler `log.txt`'dedir ve $B > 1$ ile bir tarama yapıldığında sütun eklenir.
+- **Nerede tanımlı:** **ölçeklenmiş** hedef uzayında. Dolayısıyla yalnızca (a) aynı kayıp
+  fonksiyonu (`loss_function`, `huber_delta`), (b) aynı havuzlanan il kümesi — çünkü ölçekleyiciyi
+  o belirler — ve (c) aynı `loss_daylight_only` değerini paylaşan koşular arasında
+  karşılaştırılabilir. "Aynı veri, aynı ölçüt, farklı mimari" için doğru araç; başka her şey için
+  yanlış araçtır. İl bazlı kolda `per_city_scaler=True` iken her ilin kaybı kendi ölçeğinde
+  olduğundan ortalama o kolun kendi içinde anlamlıdır, küresel kol satırıyla kıyaslanamaz.
+- **Boş, `n/a` ve `unknown` farklıdır:** boş = satır sütun eklenmeden önce (2026-08-29) yazıldı;
+  o koşuların `log.txt`'si son epoğun kaybını tuttuğu için **geriye dönük doldurulmamıştır** —
+  doldurmak tek sütuna iki farklı büyüklük koymak olurdu. `n/a` = hiç model eğitilmedi (naif
+  referanslar). `unknown` = eğitildi ama kayıp kaydedilmedi, yani hata.
 
 Makaledeki karşılaştırma tabloları doğrudan bu dosyadan üretilir; kaydedilmeyen bir alan
 değiştirilmişse iki satır tabloda ayırt edilemez (§13.4).
@@ -1162,7 +1191,8 @@ seçilir (grup verilmezse **hepsi** seçilir).
   eksenler yalnızca kayıp fonksiyonu, havuzlama kapsamı, ölçekleyici ve tohumdur. Katman/nöron
   sayısı ve geriye bakış penceresi hâlâ *ilk tahmin* durumundadır.
   **Kritik yordam kuralı:** bu tarama yapıldığında kazanan konfigürasyon **doğrulama kaybına
-  göre** seçilmelidir (`log.txt`'deki `val_loss`), test metriğine göre değil. Test skoruna
+  göre** seçilmelidir (ledger'ın `best_val_loss` sütunu; §13.2'deki karşılaştırılabilirlik
+  koşullarıyla birlikte okunmalıdır), test metriğine göre değil. Test skoruna
   bakarak mimari seçmek, test kümesini model seçimine dâhil eder ve raporlanan test başarımını
   iyimser kılar — sızıntının ölçekleyici sızıntısı kadar ciddi ama daha kolay gözden kaçan
   biçimidir. Test kümesi yalnızca seçilmiş tek konfigürasyon için raporlanır.

@@ -47,7 +47,7 @@ LEDGER_COLUMNS: tuple[str, ...] = (
     "RMSE", "MAE", "R2", "CP", "PINW", "MPIW", "Reliability", "CWC", "CRPS",
     "n_samples", "n_elements",
     "RMSE_daylight", "MAE_daylight", "R2_daylight", "CP_daylight", "n_elements_daylight",
-    "hit_max_epochs", "n_models_trained", "training_time_sec",
+    "best_val_loss", "hit_max_epochs", "n_models_trained", "training_time_sec",
 )
 
 
@@ -103,6 +103,41 @@ def _append_ledger_row(row: dict) -> None:
     df_row.to_csv(LEDGER_PATH, mode="a", header=not LEDGER_PATH.exists(), index=False)
 
 
+def _best_val_loss(history: list[dict]) -> float:
+    """The validation loss of the model `train_model` actually RETURNS.
+
+    train_model keeps a deepcopy of the weights from the epoch with the lowest validation loss
+    and restores them before returning (methodology 10.2), so the model that goes on to predict
+    is the argmin over `history` -- NOT the last epoch. With early_stop_patience=15 the last
+    epoch is up to 15 epochs of non-improvement after the best one, so history[-1]["val_loss"]
+    describes weights that were thrown away. Anything that scores or selects a run must use this.
+    """
+    return min(h["val_loss"] for h in history)
+
+
+def _mean_best_val_loss(run_stats: dict):
+    """One number per run for a ledger row that is one line: the MEAN over the run's models.
+
+    A run trains B models in the global scope and 5B in the per-city scope; the mean is the
+    obvious summary and the one that behaves sensibly as B changes. No spread column is written
+    alongside it on purpose: the planned architecture sweep runs at B=1, where a spread is
+    identically zero or undefined, so the column would be empty in exactly the rows that
+    motivated it. The per-model values are in each run's log.txt if the spread is ever wanted,
+    and a spread column can be added when a sweep actually runs B>1.
+
+    "unknown" (not blank) when the caller supplied no losses at all -- that is a bug, and it must
+    be greppable rather than read as a missing float. "n/a" for a caller that trained nothing
+    (the naive baselines pass an empty list): there is no validation loss to have, which is a
+    different fact from having failed to record one.
+    """
+    losses = run_stats.get("best_val_losses")
+    if losses is None:
+        return "unknown"
+    if len(losses) == 0:
+        return "n/a"
+    return float(np.mean(losses))
+
+
 def _ledger_row(config, subsets: dict, run_stats: dict, training_time_sec: float) -> dict:
     """Pure function over a finished run -- unit-testable without training anything."""
     agg = subsets["all_hours"]["aggregate"]
@@ -145,6 +180,12 @@ def _ledger_row(config, subsets: dict, run_stats: dict, training_time_sec: float
         "R2_daylight": day.get("R2"),
         "CP_daylight": day.get("CP"),
         "n_elements_daylight": day.get("n_elements"),
+        # The model-selection criterion, in SCALED target space. Comparable ONLY between runs
+        # that share loss_function/huber_delta, loss_daylight_only, and the same pooled provinces
+        # (which fix the scaler): it is the right instrument for "same data, same criterion,
+        # different architecture" and meaningless across anything else. Never a substitute for
+        # the test metrics next to it -- it exists so architecture can be chosen without them.
+        "best_val_loss": _mean_best_val_loss(run_stats),
         "hit_max_epochs": run_stats.get("hit_max_epochs"),
         "n_models_trained": run_stats.get("n_models"),
         "training_time_sec": training_time_sec,
@@ -198,6 +239,7 @@ def _predict_replicas(splits, config, n_cities, device, exp_dir, checkpoint_stem
     n_test = splits["test"]["y"].shape[0]
     out = np.empty((replicas * passes, n_test, config.horizon_hours), dtype=np.float32)
     hit_cap = 0
+    best_val_losses = []
 
     for b in range(replicas):
         set_seed(seed_base + b)
@@ -216,13 +258,22 @@ def _predict_replicas(splits, config, n_cities, device, exp_dir, checkpoint_stem
         )
         at_cap = len(history) >= config.max_epochs
         hit_cap += int(at_cap)
+        best = _best_val_loss(history)
+        best_val_losses.append(best)
+        # best_val_loss FIRST because it is the one that describes the returned model; last_val_loss
+        # is kept beside it because the gap between the two, together with best_epoch, is how far
+        # training ran past its own optimum -- and because every log written before this change
+        # reported the last one, so old and new logs stay readable against each other.
         log_lines.append(
-            f"{log_prefix}replica {b}: val_loss={history[-1]['val_loss']:.4f} epochs={len(history)}"
+            f"{log_prefix}replica {b}: best_val_loss={best:.4f} "
+            f"best_epoch={min(history, key=lambda h: h['val_loss'])['epoch']} "
+            f"last_val_loss={history[-1]['val_loss']:.4f} epochs={len(history)}"
             + ("  WARNING: hit max_epochs" if at_cap else "")
         )
         del model
 
-    return out, {"hit_max_epochs": hit_cap, "n_models": replicas}
+    return out, {"hit_max_epochs": hit_cap, "n_models": replicas,
+                 "best_val_losses": best_val_losses}
 
 
 def _fit_scale_window(base_df, config, train_end, val_end, cities, scaler_path):
@@ -298,6 +349,7 @@ def _run_per_city_scope(base_df, config, train_end, val_end, layout, device, exp
     pooled = np.full((n_pooled, layout_test["y"].shape[0], config.horizon_hours), np.nan, dtype=np.float32)
     filled = np.zeros(layout_test["y"].shape[0], dtype=bool)
     hit_cap = 0
+    best_val_losses = []
 
     # With per_city_scaler=False the pooled scaler is fitted once and shared, so the arms differ
     # only in what each model was trained on, not in how the target was normalised.
@@ -336,6 +388,10 @@ def _run_per_city_scope(base_df, config, train_end, val_end, layout, device, exp
         pooled[:, slot, :] = inverse_transform_target(city_scaler, scaled_preds)
         filled[slot] = True
         hit_cap += stats["hit_max_epochs"]
+        # Pooled flat across (city, replica): the ledger's best_val_loss is then the mean over all
+        # 5B models. With per_city_scaler=True each city's loss is in its OWN scaled space, so the
+        # mean is a summary of this arm's fit, not a quantity comparable to a global-arm row.
+        best_val_losses.extend(stats["best_val_losses"])
         del scaled_preds
 
     if not filled.all():
@@ -343,7 +399,8 @@ def _run_per_city_scope(base_df, config, train_end, val_end, layout, device, exp
     if np.isnan(pooled).any():
         raise RuntimeError("per_city assembly produced NaN predictions")
     return pooled, {"hit_max_epochs": hit_cap,
-                    "n_models": config.n_bootstrap * len(config.active_cities)}
+                    "n_models": config.n_bootstrap * len(config.active_cities),
+                    "best_val_losses": best_val_losses}
 
 
 SCOPE_RUNNERS = {"global": _run_global_scope, "per_city": _run_per_city_scope}

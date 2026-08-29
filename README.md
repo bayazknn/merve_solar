@@ -349,18 +349,54 @@ misalign against the header. The columns, in order:
 - **UQ / training budget** — `n_bootstrap`, `mc_dropout_passes`, `max_epochs`,
   `early_stop_patience`
 - **criterion / post-processing** — `loss_function`, `huber_delta`,
-  `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`, `seed`
+  `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`, `seed`,
+  `device` (which torch backend actually produced the row — `cpu`/`cuda`/`mps`,
+  overridable with the `MERVE_DEVICE` environment variable; interval metrics
+  are not comparable across backends, so check it before any arm-to-arm claim)
 - **all-hours metrics** — `RMSE`, `MAE`, `R2`, `CP`, `PINW`, `MPIW`,
   `Reliability`, `CWC`, `CRPS`, `n_samples`, `n_elements`
 - **daylight metrics** — `RMSE_daylight`, `MAE_daylight`, `R2_daylight`,
   `CP_daylight`, `n_elements_daylight`
-- **run stats** — `hit_max_epochs` (how many replicas stopped at the epoch cap
-  instead of by early stopping — check this before any arm-to-arm claim),
-  `n_models_trained`, `training_time_sec`
+- **run stats** — `best_val_loss` (see below), `hit_max_epochs` (how many
+  replicas stopped at the epoch cap instead of by early stopping — check this
+  before any arm-to-arm claim), `n_models_trained`, `training_time_sec`
 
 Only the aggregate is in the ledger; the per-city and per-horizon breakdowns
 live in the two CSVs above. Open it in a spreadsheet/pandas to sort/filter
 across runs.
+
+#### `best_val_loss` — the model-selection column
+
+Architecture and hyperparameters must be chosen on **validation** loss, never
+on the test metric: picking the best test score folds the test set into model
+selection and makes the reported test performance optimistic. This column is
+what makes that possible from the ledger alone. Three things to know before
+using it:
+
+- **What the number is.** The mean, over the models trained in the run (`B` in
+  the global scope, `5B` per-city), of each model's loss at its **best** epoch —
+  not its last. `train_model` restores the best epoch's weights before
+  returning, so the last epoch's loss describes weights that were discarded;
+  with `early_stop_patience=15` the two can be far apart. Per-model values and
+  both numbers per replica are in the run's `log.txt`
+  (`best_val_loss=… best_epoch=… last_val_loss=… epochs=…`). There is
+  deliberately no spread column: the planned sweep runs at `n_bootstrap=1`,
+  where a spread is zero or undefined, so it would be empty in exactly the rows
+  that would want it.
+- **When it is comparable.** It is computed in **scaled** target space, so it
+  only compares between runs sharing (a) `loss_function` / `huber_delta`,
+  (b) the same pooled provinces — those fix the scaler — and (c)
+  `loss_daylight_only`. It is the right instrument for *same data, same
+  criterion, different architecture* and the wrong one for anything else. In
+  the per-city scope with `per_city_scaler=True` each city's loss is in its own
+  scaled space, so the mean summarises that arm and does not compare to a
+  global-scope row.
+- **Empty, `n/a` and `unknown` mean different things.** Empty = the row was
+  written before this column existed (2026-08-29). Those runs are **not**
+  backfilled: their `log.txt` recorded the *last* epoch's loss, and filling the
+  cells from it would put two different quantities in one column. `n/a` = no
+  model was trained at all (the naive baselines). `unknown` = a model was
+  trained but its loss was not recorded, i.e. a bug.
 
 ### Metrics explained
 
