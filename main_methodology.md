@@ -709,7 +709,7 @@ rezidüel-varyans eklentisinin bir *ön koşul* olduğu değerlendirilmişti
 > değil, **eksik doğruluktu**. Erken koşuların tamamı $B = 1$ idi, yani havuzun bootstrap
 > yarısı hiç üretilmiyordu; ölçülen CP $\approx 0{,}62$–$0{,}67$ bunun sonucudur. Aynı
 > konfigürasyon tam doğrulukta ($B = 8$, $T = 100$, `ABLATION.md` §3) koşulduğunda Rize'nin
-> gündüz CP'si üç tohumda **0,9521 ± 0,0009** ve Reliability **0,001** çıkmaktadır — nominal
+> gündüz CP'si üç tohumda **0,9521 ± 0,0009** ve Reliability **0,0021** çıkmaktadır — nominal
 > %95'e pratikte tam oturma. Kriter de katkı verir: MSE ile 0,825, L1 ile 0,954 ($B=1$).
 > Dolayısıyla kaynak makalenin PICP $= 0{,}9472$ değeriyle karşılaştırma **artık adildir**.
 >

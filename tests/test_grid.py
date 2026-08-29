@@ -205,9 +205,35 @@ def test_the_sweep_baseline_reruns_the_incumbent_exactly():
 
 
 def test_the_extension_sits_in_the_same_table_as_the_first_sweep():
-    """Ten configurations, one comparison -- so everything but the swept axis must match."""
+    """One comparison across every architecture config, so all but the swept axis must match."""
     first = build_experiment_grid(["arch_sweep"])[0]
-    for config in build_experiment_grid(["arch_sweep_x"]):
+    for config in build_experiment_grid(["arch_sweep_x", "arch_frontier"]):
         for field in ("loss_function", "n_bootstrap", "mc_dropout_passes",
                       "early_stop_patience", "training_scope"):
             assert getattr(config, field) == getattr(first, field), (config.experiment_id, field)
+
+
+def test_the_learning_rate_arms_isolate_the_capacity_confound():
+    """best_epoch falls with capacity (12 -> 10 -> 3) while lr_reduce_patience is 7, so the
+    winner never refined. Extending the ladder without settling this would measure how far a
+    model gets before overfitting at 1e-3, not capacity."""
+    x = {c.experiment_id: c for c in build_experiment_grid(["arch_sweep_x"])}
+    base, lr_only = x["abl_arch_base_s42"], x["abl_arch_lr3e4_s42"]
+    assert {k for k in vars(base) if vars(base)[k] != vars(lr_only)[k]} == {
+        "experiment_id", "learning_rate"}
+    # The interaction cell is deliberately two axes from the incumbent -- that IS the question.
+    both = x["abl_arch_h128x64_lr3e4_s42"]
+    assert {k for k in vars(base) if vars(base)[k] != vars(both)[k]} == {
+        "experiment_id", "learning_rate", "hidden_sizes"}
+
+
+def test_each_percity_endpoint_trains_one_province_alone():
+    """The same contrast H1 uses for Rize, for the four provinces it was never tested on."""
+    configs = build_experiment_grid(["percity_endpoints"])
+    assert len(configs) == 12
+    for config in configs:
+        assert config.training_scope == "per_city"
+        assert len(config.active_cities) == 1
+        assert config.active_cities[0].lower() in config.experiment_id
+        assert config.active_cities[0] != "Rize", "Rize already has abl_rize_solo_*_full"
+        assert config.n_bootstrap == 8 and config.loss_function == "mae"

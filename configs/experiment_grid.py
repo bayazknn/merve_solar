@@ -432,40 +432,108 @@ def _arch_sweep_configs() -> list:
     return configs
 
 
-# Completing the sweep. Two gaps showed up only once the first 21 arms were scored.
+# Completing the sweep. Restructured after ABLATION_REVIEW.md, which found that the capacity
+# ladder is confounded with the learning-rate schedule.
+#
+# THE CONFOUND. `best_epoch` falls monotonically as capacity rises: [32,16] -> 12,
+# [64,64,32] -> 10, dropout0.2 -> 8, [128,64] -> 3. With `lr_reduce_patience=7`, the learning
+# rate never dropped before the winner reached its own optimum -- so no arm on the ladder ever
+# entered a refinement phase, and [256,128] at lr=1e-3 would very likely peak at epoch 1-2.
+# Run that way, the ladder measures "which model gets furthest before overfitting at 1e-3",
+# not capacity. A [256,128] arm at the default lr could therefore come back WORSE and we would
+# wrongly conclude the ladder had turned over.
+#
+# So the extension is staged: settle whether the learning rate matters first, cheaply, then
+# extend the ladder at whichever rate wins.
 ARCH_SWEEP_X_AXES = [
-    # The incumbent, re-run under its own id. abl_rize_all5_s*_l1 IS this configuration, but
-    # those rows predate the best_val_loss column and their logs recorded the LAST epoch's loss
-    # rather than the best -- so the baseline the whole sweep is measured against has no
-    # comparable number. Re-running is ~16 min for three seeds and is the only way to get one.
-    # It doubles as a free determinism check: same config, same backend, different id, so its
-    # test metrics must reproduce the _l1 arms'.
-    ("base",             {}),
-    # 32 -> 64 -> 128 improved validation loss monotonically (0.17933, ~0.14, 0.12630), so the
-    # ladder has not turned over yet and stopping at 128 would be stopping at the edge of the
-    # grid rather than at an optimum.
-    ("h256x128",         {"hidden_sizes": [256, 128]}),
+    # The incumbent, re-run under its own id. abl_rize_all5_s*_l1 IS this configuration and is
+    # already comparable on the TEST metrics -- all thirteen config fields match -- but those
+    # rows predate the best_val_loss column and their logs recorded the last epoch's loss
+    # rather than the best. This buys the missing selection statistic, nothing else. It doubles
+    # as a determinism check: its test metrics must reproduce the _l1 arms'.
+    ("base",            {}),
+    # One axis from the incumbent: does a lower rate help at all, given nothing ever refined?
+    ("lr3e4",           {"learning_rate": 3e-4}),
+    # Deliberately TWO axes from the incumbent, and not part of the one-axis screen: the
+    # question is an interaction. Testing the rate only at [64,32] cannot say whether the
+    # ladder's leader improves when it is allowed to refine, and that is what decides how the
+    # ladder is extended.
+    ("h128x64_lr3e4",   {"hidden_sizes": [128, 64], "learning_rate": 3e-4}),
+]
+
+# Conditional on the stage above; declared now so the ids are fixed and reviewable.
+ARCH_FRONTIER_AXES = [
+    ("h256x128",        {"hidden_sizes": [256, 128]}),
+    ("h256x128_lr3e4",  {"hidden_sizes": [256, 128], "learning_rate": 3e-4}),
+    # The accuracy-vs-coverage frontier probe. Every one-axis departure so far lands on a single
+    # CP-vs-log(MPIW) curve per province: coverage is a pure function of interval width, and
+    # nothing has moved the frontier itself. This cell asks whether the extra capacity plus more
+    # dropout can buy back the coverage that capacity alone gives up -- i.e. whether the frontier
+    # moves at all, or whether only the bootstrap component can move it.
+    ("h128x64_do04",    {"hidden_sizes": [128, 64], "dropout_rate": 0.4}),
 ]
 
 
-def _arch_sweep_x_configs() -> list:
-    """The baseline the sweep lacked, and one more rung of the capacity ladder.
+def _arch_configs(axes: list) -> list:
+    """Shared builder: same fidelity, criterion, province set and patience as `arch_sweep`, so
+    every configuration lands in one comparable table. Selection is on `best_val_loss`."""
+    return [
+        ExperimentConfig(
+            experiment_id=f"abl_arch_{fragment}_s{seed}",
+            loss_function="mae",
+            seed=seed,
+            **{**ABLATION_B1, **overrides},
+        )
+        for fragment, overrides in axes
+        for seed in ABLATION_SEEDS
+    ]
 
-    Same fidelity, criterion, province set and patience as `arch_sweep`, so all ten
-    configurations sit in one comparable table. Selection is still on `best_val_loss`.
+
+def _arch_sweep_x_configs() -> list:
+    """Stage 1 of the extension: the missing baseline plus the learning-rate question. ~55 min."""
+    return _arch_configs(ARCH_SWEEP_X_AXES)
+
+
+def _arch_frontier_configs() -> list:
+    """Stage 2: extend the ladder at the winning rate, and probe the coverage frontier. ~85 min.
+
+    Run AFTER arch_sweep_x. If the rate turns out not to matter, only the `h256x128` arm is
+    needed and `h256x128_lr3e4` is redundant; if it does matter, the reverse. Both are declared
+    so the choice is a `--only` away rather than an edit.
     """
-    configs = []
-    for fragment, overrides in ARCH_SWEEP_X_AXES:
-        for seed in ABLATION_SEEDS:
-            configs.append(
-                ExperimentConfig(
-                    experiment_id=f"abl_arch_{fragment}_s{seed}",
-                    loss_function="mae",
-                    seed=seed,
-                    **{**ABLATION_B1, **overrides},
-                )
-            )
-    return configs
+    return _arch_configs(ARCH_FRONTIER_AXES)
+
+
+# The transfer curve has one endpoint. The paper claims pooling helps every province and has
+# tested the one where it was most likely to work -- Rize, the cloudiest and least predictable.
+# ABLATION_REVIEW.md makes the risk concrete: the [64,32] -> [128,64] capacity gain is
+# -3.5 to -6.3 W/m2 in the four Anatolian provinces and -0.40 (p = 0.88) in Rize, so nearly all
+# the learnable signal lives in the four, and pooling may well cost them what it buys Rize.
+PERCITY_ENDPOINT_CITIES = [c for c in CITIES if c != RIZE]
+
+
+def _percity_endpoints_configs() -> list:
+    """A `solo` arm for each of the other four provinces, at full fidelity. ~1.8 h.
+
+    Each is that province trained alone, scored on its own test windows, against the same
+    province's row in the existing all5 arms -- the identical contrast H1 uses for Rize. Both
+    outcomes are publishable and the negative one is the more interesting paper: if the four
+    lose what Rize gains, the finding is that the global model REDISTRIBUTES accuracy toward
+    the data-poor regime rather than improving everything, which is a sharper claim than
+    "pooling helps" and one the referee cannot get to first.
+    """
+    return [
+        ExperimentConfig(
+            experiment_id=f"abl_percity_{city.lower()}_s{seed}_full",
+            training_scope="per_city",
+            excluded_cities=[c for c in CITIES if c != city],
+            loss_function="mae",
+            seed=seed,
+            **ABLATION_FULL,
+        )
+        for city in PERCITY_ENDPOINT_CITIES
+        for seed in ABLATION_SEEDS
+    ]
 
 
 def _sens_scaler_l1_configs() -> list:
@@ -545,6 +613,8 @@ EXPERIMENT_GROUPS = {
     "rize_curve_full_seeds": _rize_curve_full_seeds_configs,
     "arch_sweep": _arch_sweep_configs,
     "arch_sweep_x": _arch_sweep_x_configs,
+    "arch_frontier": _arch_frontier_configs,
+    "percity_endpoints": _percity_endpoints_configs,
     "sens_scaler_l1": _sens_scaler_l1_configs,
     "device_parity": _device_parity_configs,
     "rize_curve_smoke": _rize_curve_smoke_configs,

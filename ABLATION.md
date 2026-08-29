@@ -775,16 +775,20 @@ CP 0,977. İklimsel ortalama tabanı 106,86 / 73,38 / 0,8565 — **RMSE'de %13,5
 
 ### 3.7 Makale için önerilen çerçeve
 
-H1'i bir anlamlılık testi olarak sunmak bu güçle savunulamaz. Savunulabilir ve aslında daha
-güçlü olan çerçeve **aşağı-değil-mi (non-inferiority) + tutumluluk**tur:
+Altı tohumla H1 doğrudan sunulabilir hâle gelmiştir (§3.2): −2,70 W/m², 6/6 tohum,
+$p = 0{,}0122$. Buna **tutumluluk** argümanı eklenmelidir — ama doğru biçimde.
 
-> Beş ili tek bir modelde havuzlamak, her il için ayrı model eğitmeye kıyasla Rize'de üç
-> tohumun üçünde de daha düşük hata verir (−2,05 W/m²) ve bunu **beşte bir parametre ve tek
-> bir eğitim koşusuyla** yapar. İddia "havuzlama anlamlı biçimde daha iyidir" değil,
-> "havuzlama en az o kadar iyidir ve beş kat ucuzdur" biçiminde kurulmalıdır.
+> Beş ili tek bir modelde havuzlamak, Rize'de her il için ayrı model eğitmeye kıyasla altı
+> tohumun altısında da daha düşük hata verir (−2,70 W/m², $p = 0{,}0122$) ve bunu **beş yerine
+> tek bir modelle, beşte bir parametreyle** yapar.
 
-Bu çerçeve mevcut kanıtla tam uyumludur, çoklu test düzeltmesine ihtiyaç duymaz ve makalenin
-§1'deki özgün gerekçesiyle (veri verimliliği) birebir örtüşür.
+> **Düzeltme — "beş kat ucuz" DEĞİLDİR.** Bu belgenin daha önceki bir sürümü tutumluluğu
+> eğitim maliyeti üzerinden kuruyordu. Ölçüm bunu çürütür: havuzlanmış kol 2337 s, beş il
+> bazlı kol toplamı 2571 s — havuzlanmış olan yalnızca **%9 ucuzdur**. Beklenen sonuçtur:
+> epok başına gradyan işi toplamda aynıdır, yalnızca tek bir koşuda toplanmıştır. Tutumluluk
+> iddiası **eğitim süresi üzerinden kurulmamalıdır**; parametre sayısı (58.444'e karşı
+> 5 × 58.428 = 292.140), tek bir yapıt olarak dağıtım/bakım, ve yeni bir il eklendiğinde
+> yeniden eğitim gerektirmemesi üzerinden kurulmalıdır.
 
 ### 3.8 Geçerlilik tehditleri
 
