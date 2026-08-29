@@ -453,7 +453,7 @@ girdi tarafında `StandardScaler` ile karşılanmıştır.
 
 **Uygulama:** `train_model()`, `src/merve_solar/train.py`.
 
-### 10.1 Kayıp fonksiyonu — fiziksel kısıtlı MSE
+### 10.1 Kayıp fonksiyonu — fiziksel kısıtlı uyum terimi
 
 $$
 \mathcal{L}(\hat{\mathbf{y}}, \mathbf{y}) \;=\;
@@ -474,6 +474,59 @@ kısıtının ışınımda karşılığı olmadığından uygulanmamıştır.
 > (regularizer) olarak çalışmaktadır; kesin fiziksel yorum için cezanın ters ölçekleme sonrası
 > uygulanması gerekir. Makalede bu terim "yumuşak negatiflik düzenlileştiricisi" olarak
 > tanımlanmalıdır.
+
+#### 10.1.1 Uyum terimi seçilebilir bir eksendir — ve MSE seçilmemiştir
+
+Yukarıdaki karesel uyum terimi `loss_function` ekseninin **varsayılanıdır**, tercih edileni
+değil. `train.py::LOSS_CRITERIA` üç kriter sunar; ceza terimi üçünde de değişmez ve her zaman
+karesel kalır (fizik kısıtı, uyum kriterinden bağımsızdır):
+
+| `loss_function` | uyum terimi $\ell(\hat{y}, y)$ | tahmin ettiği büyüklük |
+| --- | --- | --- |
+| `mse` (varsayılan) | $(\hat{y}-y)^2$ | koşullu **ortalama** |
+| `mae` | $\lvert \hat{y}-y \rvert$ | koşullu **medyan** |
+| `huber` | $\delta$ altında karesel, üstünde doğrusal (`huber_delta`, ölçeklenmiş uzayda) | ikisinin arası |
+
+**Ölçüm (`ABLATION.md` §1.5).** Beş il havuzlanmış, yalnızca kriter değiştirilmiş, gündüz
+`Aggregate`:
+
+| kriter | RMSE | MAE | R² | CP |
+| --- | --- | --- | --- | --- |
+| MSE | 96,99 | 73,83 | 0,8818 | 0,825 |
+| **MAE (L1)** | **93,93** | **66,84** | **0,8891** | **0,945** |
+| Huber | 94,49 | 72,86 | 0,8878 | 0,800 |
+
+**L1 dört metrikte de kazanır — RMSE dâhil.** Beklenen sonuç bu değildi: RMSE'yi doğrudan
+optimize eden kriter MSE'dir, dolayısıyla bir ödünleşim (L1 MAE'yi iyileştirir, RMSE'yi
+kötüleştirir) bekleniyordu. Ödünleşim yoktur. İki mekanizma bunu açıklayabilir ve ikisi de
+ışınım verisine özgüdür:
+
+1. **Gündüz artıkları ağır kuyrukludur.** Bulut geçişleri, saatlik ışınımda nadir ama çok
+   büyük hatalar üretir. Karesel kayıp bu birkaç saati kovalar ve dağılımın gövdesindeki uyumu
+   bozar; L1 aykırı değerlere doyduğu için gövdeyi korur. Ağır kuyruklu bir hata dağılımında
+   L1'in RMSE'de de kazanması çelişki değil, beklenen davranıştır.
+2. **Ortak ölçekleyici + karesel kayıp, yüksek varyanslı illeri öne çıkarır.** Havuzlanmış
+   modelde hedef ölçekleyicisi beş ilin üzerinde fit edilir; karesel kayıp altında düşük
+   varyanslı iller kayba az katkı verir. Bu, en düşük varyanslı il olan Rize'de ölçülmüştür:
+   kritere geçiş `solo` kolunu 2,83 W/m², havuzlanmış kolları 5,6–9,3 W/m² iyileştirir
+   (`ABLATION.md` §2.2). Yani kriter seçimi, **havuzlamanın ölçülen faydasını da** belirler.
+
+**Sonuç ve makale için tavsiye: `loss_function="mae"`.** Varsayılan `"mse"` olarak
+bırakılmıştır çünkü mevcut ledger satırlarının bir bölümü onun altında üretilmiştir ve bir
+varsayılanı değiştirmek onları yetim bırakır (§13.4); nihai koşular kriteri **açıkça**
+belirtmelidir.
+
+**Sınır:** bu karşılaştırma tek bir mimaride ($[64, 32]$, `lookback=24`, `dropout=0.3`) ve
+$B = 1$ doğrulukta yapılmıştır. Kriter sıralamasının kapasiteyle etkileşmesi beklenmez ama
+gösterilmemiştir.
+
+**Gündüz maskeli kayıp.** `loss_daylight_only` bayrağı uyum terimini yalnızca
+$\text{CLRSKY} > 0$ elemanları üzerinden ortalar (`train.py::fit_loss`; doğrulama kaybı da
+aynı maskeyle hesaplanır, aksi hâlde erken durdurma başka bir amaç fonksiyonuna göre seçim
+yapardı). **Varsayılanı kapalıdır ve öyle kalmalıdır:** maskeleme gece çıktısını denetimsiz
+bırakır, ölçülen gece medyan tahmini 319,9 W/m²'ye çıkar ve tüm-saat R² 0,92'den 0,15'e düşer.
+Gece kırpması (§11.3) bu sorunu kayba dokunmadan çözdüğü için maskeli kayıp için pratik bir
+gerekçe kalmamıştır.
 
 ### 10.2 Optimizasyon ayarları
 
@@ -794,6 +847,33 @@ yanına `RMSE_daylight`, `MAE_daylight`, `R2_daylight`, `CP_daylight` ve
 > işini yapması gereken yer tam olarak orasıdır. Bu satır, iller arası transferin katkısını
 > manşet sayıda görünür kılar.
 
+#### 12.3.1 Ölçülen il profili — ve toplulaştırılmış CP'nin neyi gizlediği
+
+Şu anki en iyi kurulumla (beş il havuzlanmış, L1, `ABLATION_B1`, üç tohum ortalaması; gündüz):
+
+| il | RMSE | MAE | R² | CP | günlük $k_t$ |
+| --- | --- | --- | --- | --- | --- |
+| Antalya | 87,40 | 64,69 | 0,9068 | 0,9690 | 0,840 |
+| Ankara | 90,56 | 67,22 | 0,8990 | 0,9627 | 0,806 |
+| Konya | 91,85 | 68,91 | 0,8997 | 0,9608 | 0,832 |
+| Van | 92,06 | 67,38 | 0,8959 | 0,9674 | 0,821 |
+| **Rize** | **107,27** | **75,52** | **0,8101** | **0,9134** | **0,697** |
+| `Aggregate` | 94,09 | 68,75 | 0,8887 | 0,9547 | — |
+| `Aggregate_excl_Rize` | 90,50 | 67,05 | 0,9004 | 0,9649 | — |
+
+İki şey okunmalıdır.
+
+**(i) Başarım açıklık indeksini takip eder.** Dört il 87–92 W/m² ve R² 0,896–0,907 aralığında
+dar bir bantta; Rize tek başına 107,27 ve R² 0,810. Sıralama günlük $k_t$ sıralamasıyla
+neredeyse birebir örtüşür. Model beş ilde farklı derecede iyi değildir — **bulutluluk kadar
+iyidir**, ve iyileştirme başlığı için tek adres Rize'dir.
+
+**(ii) Toplulaştırılmış CP bir ortalamadır, bir uyum değil.** `Aggregate` gündüz CP'si 0,9547
+ile hedefin üzerinde görünür, ama bu **dört ilin aşırı kapsaması (0,961–0,969) ile Rize'nin
+eksik kapsamasının (0,913) ortalamasıdır**. Nominal %95'e gerçekten yakın olan tek bir il
+yoktur. Makalede tek bir CP sayısı verilecekse il bazlı dağılımı da verilmelidir; aksi hâlde
+"kalibre" görünen bir aralık, aslında iki karşıt yönde hatalı aralığın toplamıdır.
+
 ### 12.4 Metriklerin birlikte yorumlanması
 
 Metrikler **tek başına** yorumlanmamalıdır:
@@ -1068,6 +1148,24 @@ seçilir (grup verilmezse **hepsi** seçilir).
   ($F = 18$) yeni satırlarla karşılaştırılamaz; tarama yeni kimliklerle yeniden koşulmalıdır.
 - **R² metriği uygulanmıştır** (`metrics.py::r2`); özet, ufuk bazlı ve ledger çıktılarının
   üçünde de MAE/RMSE ile birlikte, her iki alt küme için raporlanır.
+- **Havuzlama kanıtı yalnızca Rize içindir.** `ABLATION.md` §2 transfer eğrisini Rize üzerinde
+  kurar: `solo` kolu Rize'yi tek başına eğitir ve `all5` ile karşılaştırılır. Diğer dört il için
+  **`solo` kolu yoktur**, dolayısıyla havuzlamanın onlara faydası ölçülmemiştir — Rize'den
+  genellenmiştir. Eksik deney ucuzdur (il başına bir `per_city` kolu × 3 tohum) ve makalenin
+  "her il için ayrı model yerine tek model" iddiasını beş ile yayacak tek kanıttır.
+  Elde bir **ipucu** vardır ama anlamlı değildir: Antalya havuzdan çıkarıldığında Ankara
+  (+0,65), Konya (+0,34) ve Van (+1,26) kötüleşir, Rize (−1,23) iyileşir — yani aynı ilin
+  katkısı, alıcının iklim rejimine göre işaret değiştiriyor olabilir. Üç tohumla hiçbiri
+  eşiği geçmez ($p = 0{,}17$–$0{,}85$).
+- **Mimari hiç taranmamıştır.** Ledger'daki 34 LSTM satırının tamamı $[64, 32]$,
+  `lookback_hours=24`, `dropout_rate=0.3`, `city_embedding_dim=4` ile üretilmiştir; değişen
+  eksenler yalnızca kayıp fonksiyonu, havuzlama kapsamı, ölçekleyici ve tohumdur. Katman/nöron
+  sayısı ve geriye bakış penceresi hâlâ *ilk tahmin* durumundadır.
+  **Kritik yordam kuralı:** bu tarama yapıldığında kazanan konfigürasyon **doğrulama kaybına
+  göre** seçilmelidir (`log.txt`'deki `val_loss`), test metriğine göre değil. Test skoruna
+  bakarak mimari seçmek, test kümesini model seçimine dâhil eder ve raporlanan test başarımını
+  iyimser kılar — sızıntının ölçekleyici sızıntısı kadar ciddi ama daha kolay gözden kaçan
+  biçimidir. Test kümesi yalnızca seçilmiş tek konfigürasyon için raporlanır.
 - Karşılaştırma modelleri (SVM, Prophet, GRU; Prophet uygulanabilir değilse Random Forest veya
   MLP) — §13.4 kurallarına uygun biçimde eklenmelidir.
 - Makale için betimleyici şekiller **harita dışında tamamlanmıştır**
