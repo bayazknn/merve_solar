@@ -768,10 +768,52 @@ geçişinde **CRPS her ilde iyileşiyor** (−%1,8 … −%3,3). CRPS uygun (pro
 kalibrasyonu hem keskinliği cezalandırır; iyileşmesi dağılımın bir bütün olarak daha iyi
 olduğunu gösterir.
 
-### 3.6 Toplulaştırılmış başarım (beş il, `all5`, üç tohum, gündüz)
+### 3.6 Toplulaştırılmış başarım ve taban çizgileri (beş il, `all5`, altı tohum, gündüz)
 
-RMSE **92,445 ± 0,451** · MAE 67,955 ± 0,530 · R² 0,893 ± 0,001 · CRPS 49,514 ± 0,113 ·
-CP 0,977. İklimsel ortalama tabanı 106,86 / 73,38 / 0,8565 — **RMSE'de %13,5 iyileşme.**
+RMSE **91,985 ± 0,624** · MAE 67,515 ± 0,741 · R² 0,894 ± 0,001 · CRPS 49,400 ± 0,163 ·
+CP 0,977 ± 0,001 · MPIW 440,8 ± 3,1.
+
+> **Düzeltme.** Bu bölümün önceki sürümü yalnızca iklimsel ortalamayla karşılaştırıp
+> "RMSE'de %13,5 iyileşme" diyordu. `CLAUDE.md`'nin koyduğu eşik **çifttir** — iklimsel
+> ortalamanın RMSE'si *ve* akıllı kalıcılığın MAE'si — ve ikincisi atlanmıştı. Tam tablo:
+
+| il | LSTM RMSE | iklimsel | akıllı kalıcılık | LSTM MAE | iklimsel | akıllı kalıcılık |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Ankara | **88,69** | 100,28 | 101,77 | 66,11 | 70,28 | **55,99** |
+| Antalya | **84,25** | 95,02 | 92,42 | 62,49 | 61,75 | **47,35** |
+| Konya | **90,23** | 100,55 | 101,76 | 67,97 | 69,72 | **54,30** |
+| Van | **90,05** | 104,05 | 107,30 | 65,96 | 69,42 | **58,08** |
+| **Rize** | **105,31** | 130,68 | 136,66 | **75,03** | 95,72 | 85,23 |
+| `Aggregate` | **91,98** | 106,86 | 109,04 | 67,51 | 73,38 | **60,19** |
+
+**RMSE'de beş ilin hepsinde kazanıyoruz** (%11,5–19,4; Rize %19,4 ile en büyüğü).
+**MAE'de dört ilde kaybediyoruz**, yalnızca Rize'de kazanıyoruz (−%12,0).
+
+Bu bir hata değil, mekanizması açık ve **hikâyeyi zayıflatmıyor, keskinleştiriyor:**
+
+1. **Akıllı kalıcılık, modelin görmediği bir değişkeni kullanıyor.** Kuralı
+   $\hat{y}(t{+}h) = k_t(t{+}h{-}24) \times \text{CLRSKY}(t{+}h)$; yani **hedef saatin tam
+   berrak-gökyüzü zarfını** çarpan olarak alıyor. Model `CLRSKY`'yi asla girdi olarak görmez
+   (`MASK_COLUMNS`), geometriyi `hour_sin/cos` + gün-içi kodlamasından çıkarmak zorundadır.
+   Aynı şey iklimsel ortalama için de geçerlidir: (il, ay, saat) hücre ortalaması aynı
+   geometriyi ezberler.
+2. **MAE ile RMSE'nin ayrışması bu farkın imzasıdır.** Açık ve kararlı günlerde — ki çoğunluk —
+   $k_t$ kalıcılığı neredeyse kusursuzdur ve MAE'yi alır. Bulut geçişlerinde ağır kuyruklu
+   hatalar üretir ve RMSE'yi kaybeder. Model tam tersini yapar.
+3. **Rize istisnası bulgunun kendisidir.** Rize, $k_t$ kalıcılığının çalışmadığı tek ildir
+   (günlük $k_t$ 0,697, bulutlu gün payı %8,0) ve orada MAE'yi de model alır. **Modelin
+   ayırt edici değeri tam olarak kalıcılığın başarısız olduğu yerdedir** — ki bu, §2.1–§3.2'nin
+   havuzlama bulgusunun ölçüldüğü ildir.
+
+Makalede bu, gizlenecek değil **kurulacak** bir argümandır: naif kurallar berrak-gökyüzü
+zarfını ücretsiz alır, model onu öğrenmek zorundadır, ve buna rağmen her ilde RMSE'yi ve
+en zor ilde MAE'yi kazanır.
+
+> **Bundan doğan deney (temel bileşen, mimari değil):** hedef dönüşümü ekseni — `ALLSKY`
+> yerine berraklık indeksi $k_t = \text{ALLSKY}/\text{CLRSKY}$ tahmin edip geri çarpmak, ya da
+> `CLRSKY`'yi öznitelik olarak vermek. `CLRSKY` sızıntı **değildir** (saf güneş geometrisi, hava
+> terimi içermez, enlem/boylam/zamandan hesaplanabilir); tabana verip modele vermemek modeli
+> yanlış eksende cezalandırıyor olabilir. Ölçülmedi.
 
 ### 3.7 Makale için önerilen çerçeve
 
