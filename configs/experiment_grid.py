@@ -432,6 +432,42 @@ def _arch_sweep_configs() -> list:
     return configs
 
 
+# Completing the sweep. Two gaps showed up only once the first 21 arms were scored.
+ARCH_SWEEP_X_AXES = [
+    # The incumbent, re-run under its own id. abl_rize_all5_s*_l1 IS this configuration, but
+    # those rows predate the best_val_loss column and their logs recorded the LAST epoch's loss
+    # rather than the best -- so the baseline the whole sweep is measured against has no
+    # comparable number. Re-running is ~16 min for three seeds and is the only way to get one.
+    # It doubles as a free determinism check: same config, same backend, different id, so its
+    # test metrics must reproduce the _l1 arms'.
+    ("base",             {}),
+    # 32 -> 64 -> 128 improved validation loss monotonically (0.17933, ~0.14, 0.12630), so the
+    # ladder has not turned over yet and stopping at 128 would be stopping at the edge of the
+    # grid rather than at an optimum.
+    ("h256x128",         {"hidden_sizes": [256, 128]}),
+]
+
+
+def _arch_sweep_x_configs() -> list:
+    """The baseline the sweep lacked, and one more rung of the capacity ladder.
+
+    Same fidelity, criterion, province set and patience as `arch_sweep`, so all ten
+    configurations sit in one comparable table. Selection is still on `best_val_loss`.
+    """
+    configs = []
+    for fragment, overrides in ARCH_SWEEP_X_AXES:
+        for seed in ABLATION_SEEDS:
+            configs.append(
+                ExperimentConfig(
+                    experiment_id=f"abl_arch_{fragment}_s{seed}",
+                    loss_function="mae",
+                    seed=seed,
+                    **{**ABLATION_B1, **overrides},
+                )
+            )
+    return configs
+
+
 def _sens_scaler_l1_configs() -> list:
     """The control for the confound most likely to be producing H1's null result.
 
@@ -508,6 +544,7 @@ EXPERIMENT_GROUPS = {
     "rize_curve_full_l1": _rize_curve_full_l1_configs,
     "rize_curve_full_seeds": _rize_curve_full_seeds_configs,
     "arch_sweep": _arch_sweep_configs,
+    "arch_sweep_x": _arch_sweep_x_configs,
     "sens_scaler_l1": _sens_scaler_l1_configs,
     "device_parity": _device_parity_configs,
     "rize_curve_smoke": _rize_curve_smoke_configs,

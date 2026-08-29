@@ -186,3 +186,28 @@ def test_the_sweep_shares_the_incumbents_criterion_scope_and_fidelity():
         assert config.training_scope == "global" and not config.excluded_cities
         assert config.n_bootstrap == 1 and config.mc_dropout_passes == 100
         assert config.early_stop_patience == 15, "lowering patience would break the baseline"
+
+
+def test_the_sweep_baseline_reruns_the_incumbent_exactly():
+    """It exists only to record a best_val_loss the _l1 rows predate.
+
+    If it differed from the incumbent in any field but the id, the whole sweep would be
+    measured against something that is not its baseline.
+    """
+    incumbent = {c.experiment_id: c for c in build_experiment_grid(["rize_curve_l1"])}[
+        "abl_rize_all5_s42_l1"
+    ]
+    base = {c.experiment_id: c for c in build_experiment_grid(["arch_sweep_x"])}[
+        "abl_arch_base_s42"
+    ]
+    differing = {k for k in vars(base) if vars(base)[k] != vars(incumbent)[k]}
+    assert differing == {"experiment_id"}, differing
+
+
+def test_the_extension_sits_in_the_same_table_as_the_first_sweep():
+    """Ten configurations, one comparison -- so everything but the swept axis must match."""
+    first = build_experiment_grid(["arch_sweep"])[0]
+    for config in build_experiment_grid(["arch_sweep_x"]):
+        for field in ("loss_function", "n_bootstrap", "mc_dropout_passes",
+                      "early_stop_patience", "training_scope"):
+            assert getattr(config, field) == getattr(first, field), (config.experiment_id, field)
