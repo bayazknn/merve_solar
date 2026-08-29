@@ -346,9 +346,11 @@ misalign against the header. The columns, in order:
   `n_features`
 - **architecture** — `hidden_sizes`, `dropout_rate`, `city_embedding_dim`
 - **splits** — `train_ratio`, `val_ratio`
-- **UQ / training budget** — `n_bootstrap`, `mc_dropout_passes`, `max_epochs`,
-  `early_stop_patience`
-- **criterion / post-processing** — `loss_function`, `huber_delta`,
+- **UQ / training budget** — `n_bootstrap`, `bootstrap_block_length`,
+  `mc_dropout_passes`, `max_epochs`, `early_stop_patience`
+- **optimizer** — `batch_size`, `learning_rate`, `lr_reduce_factor`,
+  `lr_reduce_patience` (swept by the `abl_arch_lr3e4*` arms)
+- **criterion / post-processing** — `loss_function`, `huber_delta`, `nonneg_penalty_weight`,
   `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`, `seed`,
   `device` (which torch backend actually produced the row — `cpu`/`cuda`/`mps`,
   overridable with the `MERVE_DEVICE` environment variable; interval metrics

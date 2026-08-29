@@ -58,24 +58,50 @@ birleştirilir ve il kimliği yalnızca öğrenilen bir gömme vektörü olarak 
 makalenin iddialarından biridir: farklı iklim rejimleri arasında bilgi transferi sağlanır ve
 her il için ayrı ayrı eğitilmiş modellere kıyasla veri verimliliği artar.
 
-> **Bu iddia artık ölçülmüştür, varsayılmamaktadır** (`ABLATION.md` §2). Aynı boru hattında,
-> yalnızca hangi illerin havuzlandığı değiştirilerek: Rize'yi tek başına eğitmek gündüz RMSE
-> 112,38 ± 0,58 W/m² verirken beş ili havuzlamak 107,27 ± 2,32 verir — eşleştirilmiş fark
-> **−5,11 W/m², üç tohumun üçünde de aynı yönde**, $t = -5{,}08$, $p = 0{,}037$. Kapsama da
-> havuzlama arttıkça yükselir (CP 0,887 → 0,913).
+> **Bu iddia artık ölçülmüştür, varsayılmamaktadır** (`ABLATION.md` §3 ve §5). Aynı boru
+> hattında, yalnızca hangi illerin havuzlandığı değiştirilerek, tam doğrulukta ($B = 8$,
+> $T = 100$), L1 kaybıyla:
 >
-> İki sınır makalede birlikte verilmelidir. **(i)** Kanıt Rize üzerinedir; Rize, iller arasında
-> en düşük açıklık indeksine sahip olan ve havuzlamadan en çok fayda beklenen ildir, dolayısıyla
-> her il için aynı kazanç gösterilmiş değildir. **(ii)** Etkinin büyüklüğü eğitim kriterine
-> duyarlıdır: aynı karşılaştırma MSE ile −1,53 W/m² ($p = 0{,}250$) verir, L1 ile −5,11
-> ($p = 0{,}037$). Havuzlanmış kollar L1'den tek-il kolunun iki katı kazanır, çünkü ortak hedef
-> ölçekleyicisi altında karesel kayıp yüksek varyanslı illere ağırlık verir ve Rize beş ilin en
-> düşük varyanslısıdır. Kriter seçimi bu nedenle §10.1'de gerekçelendirilmelidir.
+> **(a) Birincil sonlanım noktası — Rize, altı tohum (42–47), gündüz.** Rize'yi tek başına
+> eğitmek RMSE 108,01 ± 1,31 W/m² verirken beş ili havuzlamak **105,31 ± 1,33** verir;
+> eşleştirilmiş fark **−2,70 W/m², altı tohumun altısında da aynı yönde**, $t = -3{,}84$,
+> **$p = 0{,}0122$** (Wilcoxon $p = 0{,}0312$; MAE −1,99, $p = 0{,}0050$). Bu değer dörtlü
+> Benjamini–Hochberg sıra-1 eşiğini (0,0125) de geçer.
 >
-> Ayrıca sınanan ama **desteklenmeyen** bir alt-iddia: hangi ilin eklendiğinin önemli olduğu
-> yönü üç tohumda da korunur ancak $p = 0{,}062$'de kalır, ve tek tohumla gözlenen "yanlış
-> partner zarar verir" (negatif transfer) bulgusu çoğaltılınca ayakta kalmamıştır. Makale
-> havuzlamanın *işaretinin* iklimsel yakınlıkla belirlendiğini iddia edemez.
+> **(b) İddianın "her il için" kısmı — beş il, üç tohum, gündüz.** Her il tek başına eğitilip
+> aynı ilin havuzlanmış satırıyla aynı tohumda karşılaştırıldığında havuzlama **beş ilin
+> hepsinde ve on beş tohum-kolun on beşinde** kazanır: Ankara −2,07 · Rize −2,05 · Konya −1,31
+> · Antalya −1,02 · Van −0,43 W/m². Tohum düzeyinde kümelenmiş test (tek bir havuzlanmış model
+> beş ili birden ürettiği için bağımsızlığı doğru ele alan tek test) ortalama **−%1,45**,
+> $t = -8{,}19$, **$p = 0{,}0146$**. İl bazında Benjamini–Hochberg düzeltmesinden Konya
+> ($p = 0{,}016$) ve Ankara ($p = 0{,}019$) sağ çıkar.
+>
+> **(c) Belirsizlik — nokta doğruluğundan daha güçlü sonuç.** Havuzlama ortalama aralık
+> genişliğini (MPIW) **her ilde** %2,4–4,1 daraltır, kapsamayı bozmadan ($|\Delta \text{CP}|
+> \le 0{,}0031$), ve CRPS'yi her ilde %1,7–3,4 iyileştirir. Kazanç bir takas değildir: tahmin
+> dağılımı bir bütün olarak daha iyidir, yani havuzlama epistemik belirsizliği azaltır — tam
+> olarak transfer iddiasının öngördüğü şey.
+>
+> Makalede birlikte verilmesi gereken sınırlar:
+>
+> 1. **Etkinin büyüklüğü eğitim kriterine duyarlıdır.** Aynı karşılaştırma MSE ile −1,53 W/m²
+>    ($p = 0{,}250$) verir. Ortak hedef ölçekleyicisi altında karesel kayıp yüksek varyanslı
+>    illere ağırlık verir ve Rize beş ilin en düşük varyanslısıdır; kriter seçimi bu nedenle
+>    §10.1.1'de gerekçelendirilir.
+> 2. **Etkinin büyüklüğü doğruluğa da duyarlıdır.** $B = 1$'de aynı kontrast −5,11 W/m²'dir.
+>    Havuzlama ile topluluk kurmak kısmen aynı işi (varyans azaltma) yapar; kazanç eğitim verisi
+>    hacmiyle tekdüze ters orantılıdır (solo −4,07 … `all5` −1,00). Makale ikisini **ayrı**
+>    sunmalı ve havuzlamanın topluluk üstüne *kalan* katkısını −2,70 olarak vermelidir.
+> 3. **Kazancın büyüklüğü iklimsel aykırılıkla açıklanmıyor.** Sıralamada Rize ikincidir; kazanç
+>    ne günlük $k_t$ ile ne de solo hata düzeyiyle tekdüze bir ilişki gösterir. Üç tohum iller
+>    arası sıralamayı ayırt etmeye yetmez.
+> 4. **Hangi ilin eklendiğinin önemli olduğu** yönü üç tohumda korunur ancak $p = 0{,}062$'de
+>    kalır, ve tek tohumla gözlenen "yanlış partner zarar verir" (negatif transfer) bulgusu
+>    çoğaltılınca ayakta kalmamıştır. Makale havuzlamanın *işaretinin* iklimsel yakınlıkla
+>    belirlendiğini iddia edemez.
+> 5. **Solo kollar havuzlanmış rejim için ayarlanmış `[64,32]` mimarisini kullanır.** Adil
+>    karşılaştırma her kolda aynı mimaridir ve bu sağlanmıştır; ancak "tek-il modeli en iyi
+>    hâlinde de kaybeder" iddiası bu koşulardan çıkmaz (`ABLATION.md` §5.8, T-5.3).
 
 ---
 
@@ -987,8 +1013,17 @@ dosyaları sürüm kontrolüne alınmaz, tohumlanmış konfigürasyondan yeniden
   `excluded_cities` (sıralı, `|` ile ayrılmış dize; hiçbiri dışlanmamışsa boş),
   `lookback_hours`, `horizon_hours`, `window_stride`, `n_features`, `hidden_sizes`,
   `dropout_rate`, `city_embedding_dim`, `train_ratio`, `val_ratio`, `n_bootstrap`,
-  `mc_dropout_passes`, `max_epochs`, `early_stop_patience`, `loss_function`, `huber_delta`,
-  `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`, `seed`.
+  `bootstrap_block_length`, `mc_dropout_passes`, `batch_size`, `learning_rate`,
+  `lr_reduce_factor`, `lr_reduce_patience`, `max_epochs`, `early_stop_patience`,
+  `loss_function`, `huber_delta`, `nonneg_penalty_weight`, `loss_daylight_only`,
+  `per_city_scaler`, `clamp_night_to_zero`, `seed`, `device`.
+
+  Optimize edici düğmeleri (`batch_size`, `learning_rate`, `lr_reduce_*`,
+  `bootstrap_block_length`, `nonneg_penalty_weight`) 2026-08-29'da eklendi: `learning_rate`
+  bir tarama ekseni hâline gelmişti ve yalnızca o alanda ayrılan iki kol ledger'da ayırt
+  edilemiyordu. Mevcut satırlar kendi `config.json`'larından **kayıpsız** geri dolduruldu.
+  `tests/test_ledger.py`, her `ExperimentConfig` alanının ya bir ledger sütunu ya da gerekçeli
+  muaf olmasını zorunlu kılar; yeni bir eksen artık sessizce taranamaz.
 - **Metrikler:** tüm-saat toplulaştırması (`RMSE`, `MAE`, `R2`, `CP`, `PINW`, `MPIW`,
   `Reliability`, `CWC`, `CRPS`, `n_samples`, `n_elements`) ve gündüz özeti (`RMSE_daylight`,
   `MAE_daylight`, `R2_daylight`, `CP_daylight`, `n_elements_daylight`).

@@ -197,11 +197,17 @@ The ledger is only useful if rows are comparable, and the paper's tables come st
   list is `LEDGER_COLUMNS` in `experiment.py`, currently `model_family`, `training_scope`,
   `excluded_cities`, `lookback_hours`/`horizon_hours`/`window_stride`, `n_features`,
   `hidden_sizes`, `dropout_rate`, `city_embedding_dim`, the ratios, `n_bootstrap`,
-  `mc_dropout_passes`, `max_epochs`, `early_stop_patience`, `loss_function`, `huber_delta`,
-  `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero` and `seed`. A run that changed
-  something *not* in those columns is indistinguishable in the table. If a new axis matters, add
-  it to `LEDGER_COLUMNS` and the row dict first — `assert_ledger_schema_ok()` then fails loudly
-  in milliseconds instead of misaligning every column of the appended row.
+  `bootstrap_block_length`, `mc_dropout_passes`, the optimizer knobs (`batch_size`,
+  `learning_rate`, `lr_reduce_factor`, `lr_reduce_patience`), `max_epochs`,
+  `early_stop_patience`, `loss_function`, `huber_delta`, `nonneg_penalty_weight`,
+  `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`, `seed` and `device`. A run
+  that changed something *not* in those columns is indistinguishable in the table. If a new axis
+  matters, add it to `LEDGER_COLUMNS` and the row dict first — `assert_ledger_schema_ok()` then
+  fails loudly in milliseconds instead of misaligning every column of the appended row, and
+  `tests/test_ledger.py::test_every_config_field_that_changes_a_result_is_a_ledger_column`
+  fails in the test suite until you do. This has already happened once: `abl_arch_lr3e4_*` swept
+  `learning_rate` while the ledger had no column for it, so three rows sat in the file
+  indistinguishable from the arm they were supposed to be contrasted against.
 - **Fidelity is an axis too.** `n_bootstrap` and `mc_dropout_passes` change what the interval
   metrics *are*: a `B=1` row is MC-Dropout-only and its CP/PINW/MPIW/CWC must never be compared
   against a `B=8` row. Smoke-fidelity interval metrics never go in the paper. Likewise check
