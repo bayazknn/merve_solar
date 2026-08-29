@@ -747,6 +747,46 @@ rezidüel-varyans eklentisinin bir *ön koşul* olduğu değerlendirilmişti
 > kanıt: $B{=}1 \to B{=}8$ geçişinde CRPS her ilde iyileşmektedir (%1,8–3,3), yani dağılım
 > bir bütün olarak daha iyidir, yalnızca daha geniş değil.
 
+**1b. Ama aralıklar hiçbir zaman *inşa gereği* kalibre değildi — tek bir işletme noktasında
+tesadüfen doğruydular.** Mimari merdiveni bunu doğrudan ölçmektedir (`ABLATION.md` §4.8, B-8).
+Doğruluk sabit tutulup ($B = 1$, $T = 100$, aynı veri, aynı kayıp) yalnızca mimari
+değiştirildiğinde, gündüz `Aggregate` üzerinde:
+
+| kol | RMSE | MPIW | CP | MPIW/RMSE |
+| --- | ---: | ---: | ---: | ---: |
+| `[32,16]` | 112,43 | 516,2 | 0,9791 | 4,59 |
+| **`[64,32]` (varsayılan)** | 94,57 | 405,8 | **0,9540** | **4,29** |
+| `[128,64]` | 90,29 | 309,9 | 0,8949 | 3,43 |
+| `[256,128]` | 88,58 | 242,1 | **0,8436** | **2,73** |
+
+MPIW/RMSE oranı model kalitesiyle **tekdüze** düşer ve CP tam olarak onu izler: Gauss
+varsayımı altında nominal %95 için gereken oran $2 \times 1{,}96 = 3{,}92$'dir ve on iki kolun
+**istisnasız hepsinde** oran 3,92'nin üstündeyse fazla, altındaysa eksik kapsama görülür.
+Tek-eksenli kollar üzerinde CP ile $\log(\text{MPIW})$ arasındaki cephe $R^2 = 0{,}95$'tir.
+
+**Mekanizma:** aralık, havuzlanan örneğin yüzdelikleridir ve o örnek yalnızca *epistemik*
+yayılımı taşır. Model iyileştikçe epistemik yayılım daralır, ancak indirgenemez artık hata aynı
+hızda daralmaz; `[256,128]`'in gözlenen RMSE'si, kendi aralık genişliğinin cepheye göre
+öngördüğü değerin **2,31 s.s. üstündedir** — aralık, hatanın düştüğünden daha hızlı daralır.
+
+**Bunun §1 ile ilişkisi çelişki değil, tamamlayıcılıktır.** §1 doğruluğun ($B$) kapsamayı
+*yükselttiğini*, §1b kapasitenin kapsamayı *düşürdüğünü* gösterir. İkisi birlikte doğru teşhisi
+verir: **aralık epistemik yayılımın büyüklüğüne göre boyutlanır, oysa kapsaması gereken şey
+artık hatadır.** Varsayılan `[64,32]`'nin CP $= 0{,}954$'ü kalibrasyonun başarısı değil,
+oranının (4,29) eşiğin (3,92) hemen üstünde kalmasıdır.
+
+**Metodolojik sonuçları:**
+
+1. **Kapasite yükseltmesi ile aralık kalibrasyonu tek bir karardır**, iki ayrı iş değil. Daha
+   iyi bir mimari, conformal/ölçekleme katmanı olmadan benimsenirse nokta doğruluğu kazanılıp
+   kapsama kaybedilir.
+2. **Kalibrasyon `dropout_rate` ile satın alınamaz.** İki eksenli `[128,64] × dropout 0,4`
+   kolu, tek eksenli kolların cephesinin 1,07 s.s. içinde kalır (`ABLATION.md` §4.8, B-9):
+   kapsama geri alınır ama onu ödeyen doğruluk kaybedilir. Cephe kaydırılmamıştır.
+3. **Kaynak makaleyle PICP karşılaştırması mimariye bağlıdır.** "Adil karşılaştırma"
+   ifadesi yalnızca `[64,32]` × $B = 8$ işletme noktası için geçerlidir ve her mimari
+   değişikliğinde yeniden kurulmalıdır.
+
 **2. Gece kırpması tüm-saat CP'sini yapısal olarak şişirir.** `clamp_night_to_zero`
 varsayılan olarak açıktır (§11.3): $\text{CLRSKY} = 0$ olan adımlarda havuzun *tamamı* sıfıra
 çekilir. Bu adımlarda aralık $[0,\,0]$ genişliğindedir ve gerçek değer de tam olarak 0
