@@ -146,3 +146,43 @@ def test_the_full_curve_differs_from_the_b1_curve_only_in_fidelity():
         a, b = full[f"abl_rize_{arm}_s42_full"], b1[f"abl_rize_{arm}_s42_l1"]
         differing = {k for k in vars(a) if vars(a)[k] != vars(b)[k]}
         assert differing == {"experiment_id", "n_bootstrap", "max_epochs"}, (arm, differing)
+
+
+def test_the_extra_seeds_pool_with_the_existing_full_fidelity_arms():
+    """They are extra observations of the SAME arm, not a new arm.
+
+    If any field other than the seed differed, pooling the two groups into one n=6 sample
+    would be comparing across a hidden axis change instead of measuring seed variation.
+    """
+    base = {c.experiment_id: c for c in build_experiment_grid(["rize_curve_full_l1"])}
+    extra = {c.experiment_id: c for c in build_experiment_grid(["rize_curve_full_seeds"])}
+    for arm in ("solo", "plus_ankara", "plus_antalya", "minus_antalya", "all5"):
+        a, b = base[f"abl_rize_{arm}_s42_full"], extra[f"abl_rize_{arm}_s45_full"]
+        differing = {k for k in vars(a) if vars(a)[k] != vars(b)[k]}
+        assert differing == {"experiment_id", "seed"}, (arm, differing)
+
+
+def test_the_architecture_sweep_moves_exactly_one_axis_per_config():
+    """A config that moved two fields could not attribute the difference to either."""
+    incumbent = {c.experiment_id: c for c in build_experiment_grid(["rize_curve_l1"])}[
+        "abl_rize_all5_s42_l1"
+    ]
+    for config in build_experiment_grid(["arch_sweep"]):
+        if config.seed != 42:
+            continue
+        differing = {
+            k for k in vars(config)
+            if k not in ("experiment_id",) and vars(config)[k] != vars(incumbent)[k]
+        }
+        assert len(differing) == 1, (config.experiment_id, differing)
+        assert differing < {"hidden_sizes", "lookback_hours", "dropout_rate"}
+
+
+def test_the_sweep_shares_the_incumbents_criterion_scope_and_fidelity():
+    """The incumbent is not re-run; these are compared against arms that already exist, so
+    everything except the swept axis has to match them."""
+    for config in build_experiment_grid(["arch_sweep"]):
+        assert config.loss_function == "mae"
+        assert config.training_scope == "global" and not config.excluded_cities
+        assert config.n_bootstrap == 1 and config.mc_dropout_passes == 100
+        assert config.early_stop_patience == 15, "lowering patience would break the baseline"

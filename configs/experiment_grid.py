@@ -326,6 +326,112 @@ def _rize_curve_full_l1_configs() -> list:
     )
 
 
+# Three more seeds for the full-fidelity curve. Same ids scheme and same `_full` suffix as
+# rize_curve_full_l1, so the two groups' arms pool directly into one n=6 sample.
+EXTRA_SEEDS = (45, 46, 47)
+
+
+def _rize_curve_full_seeds_configs() -> list:
+    """Seeds 45-47 of the full-fidelity curve. Power, not a new question.
+
+    At n = 3 the paired t-test has two degrees of freedom, and that -- not the effect size --
+    is what stops H1. The paired differences are [-1.98, -3.65, -0.51], mean -2.05, sd 1.57:
+
+        n = 3   SE 0.907   t = -2.26   p = 0.153
+        n = 6   SE 0.641   t = -3.19   p = 0.024
+        n = 9   SE 0.524   t = -3.91   p = 0.0045
+
+    So n = 6 is the point where H1 clears 0.05 as a single test, assuming the spread holds.
+
+    It does NOT clear Benjamini-Hochberg over the four contrasts of ABLATION.md 3.3, which
+    would need n = 9. The answer to that is not three times the compute -- it is that those
+    four are not co-primary. H1 is the paper's claim; minus_antalya-vs-all5 and the rest are
+    exploratory observations that came out of looking at the curve. Pre-specifying H1 as the
+    primary endpoint and reporting the others as exploratory, without significance claims, is
+    both standard and the honest description of how they arose. The four-way correction in 3.3
+    was over-conservative for treating them as equals.
+
+    All five arms are declared so the choice of how far to go is operational. Priority order,
+    with measured per-arm costs on the Mac at B=8:
+
+        solo (~9 min) + all5 (~42 min), 3 seeds each   ~2.5 h   <- the H1 contrast, run this
+        minus_antalya (~33 min), 3 seeds               +1.7 h      the strongest exploratory one
+        the two pair arms (~16 min each), 3 seeds      +1.6 h      H2, currently 2/3 and p=0.30
+    """
+    return _rize_curve_configs(
+        ABLATION_FULL, suffix="_full", loss="mae",
+        seeds_override=EXTRA_SEEDS, include_stage1=False,
+    )
+
+
+# --- Architecture sweep -------------------------------------------------------------------
+#
+# Nothing in the ledger has ever varied the architecture: every LSTM row is hidden_sizes=[64,32],
+# lookback_hours=24, dropout_rate=0.3. These are first guesses inherited from the plan, not
+# measurements.
+#
+# One axis at a time from the current default, never a cross product: 3 x 3 x 3 would be 27
+# configs x 3 seeds for a question that does not need interaction terms answered.
+#
+# The incumbent is NOT re-run. abl_rize_all5_s{42,43,44}_l1 already is [64,32] / 24 / 0.3 at this
+# exact fidelity, criterion and province set, so it is the baseline these are compared against --
+# which is also why early_stop_patience stays at 15 despite ABLATION.md T-14 showing that best
+# epochs land at 3-9 and the patience wastes most of the wall clock. Lowering it here would make
+# the sweep incomparable with the baseline it is measured against. Lower it AFTER the winner is
+# chosen, as its own one-axis change.
+ARCH_SWEEP_AXES = [
+    # (id fragment,      overrides)
+    ("h32x16",           {"hidden_sizes": [32, 16]}),
+    ("h128x64",          {"hidden_sizes": [128, 64]}),
+    ("h64x64x32",        {"hidden_sizes": [64, 64, 32]}),
+    ("lookback48",       {"lookback_hours": 48}),
+    ("lookback72",       {"lookback_hours": 72}),
+    ("dropout02",        {"dropout_rate": 0.2}),
+    ("dropout04",        {"dropout_rate": 0.4}),
+]
+
+
+def _arch_sweep_configs() -> list:
+    """Seven one-axis departures from the default, three seeds each, on the all5 arm.
+
+    SELECT ON `best_val_loss`, NOT ON THE TEST METRIC. Choosing an architecture by its test
+    score folds the test set into model selection and makes the reported test performance
+    optimistic -- the same class of error as scaler leakage, and easier to miss because nothing
+    crashes. The ledger carries best_val_loss for exactly this. Test rows for the losing
+    configurations exist but must not be read as results.
+
+    Two axes need reading with care, and neither is a reason not to sweep them:
+
+    `lookback_hours` changes the windows themselves. A 48- or 72-hour lookback needs a longer
+    contiguous span, so more windows straddle a split boundary and are dropped, and the
+    validation set is a slightly smaller subset. best_val_loss is a per-element mean so the
+    comparison is still meaningful, but it is not scored on an identical set the way the other
+    two axes are. Check n_samples alongside it.
+
+    `dropout_rate` is not only a regulariser here: it is the ONLY source of MC-Dropout
+    randomness (a project invariant), so changing it changes the width of every predictive
+    interval. Selecting it on validation loss optimises point accuracy alone. Whatever value
+    wins, its CP must be checked before it is adopted -- ABLATION.md 3.5 has four provinces
+    already over-covering at 0.981-0.984, so a larger dropout would push them further out.
+
+    Cost: 7 configs x 3 seeds at B=1 on the all5 split, ~400 s each on the Mac, ~2.3 h.
+    B=1 rather than B=8 because selection reads best_val_loss, which is per model and needs no
+    ensemble; three seeds give the spread that tells a real difference from init noise.
+    """
+    configs = []
+    for fragment, overrides in ARCH_SWEEP_AXES:
+        for seed in ABLATION_SEEDS:
+            configs.append(
+                ExperimentConfig(
+                    experiment_id=f"abl_arch_{fragment}_s{seed}",
+                    loss_function="mae",
+                    seed=seed,
+                    **{**ABLATION_B1, **overrides},
+                )
+            )
+    return configs
+
+
 def _sens_scaler_l1_configs() -> list:
     """The control for the confound most likely to be producing H1's null result.
 
@@ -400,6 +506,8 @@ EXPERIMENT_GROUPS = {
     "rize_curve_b1": _rize_curve_b1_configs,
     "rize_curve_l1": _rize_curve_l1_configs,
     "rize_curve_full_l1": _rize_curve_full_l1_configs,
+    "rize_curve_full_seeds": _rize_curve_full_seeds_configs,
+    "arch_sweep": _arch_sweep_configs,
     "sens_scaler_l1": _sens_scaler_l1_configs,
     "device_parity": _device_parity_configs,
     "rize_curve_smoke": _rize_curve_smoke_configs,
