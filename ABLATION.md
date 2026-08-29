@@ -807,6 +807,289 @@ $p = 0{,}0122$. Buna **tutumluluk** argümanı eklenmelidir — ama doğru biçi
 
 ---
 
+## 4. Mimari taraması — kapasite, geriye bakış, düzenlileştirme ve öğrenme oranı
+
+### 4.1 Sınanan iddia
+
+`main_methodology.md` bir mimari **iddia etmez**; `TODOs.md` §B "katman sayısı / nöron sayıları
+hâlâ açık" der ve `[64, 32]` referans mimarisi §1–§3'ün tamamının altında yatan seçimdir. Bu
+bölümün sınadığı önerme dolayısıyla metodolojiden değil, **§1'in karıştırıcı tablosundan**
+gelir:
+
+> "Hiperparametreler küresel rejim altında seçildi. `[64,32]` / `dropout=0.3`, havuzlanmış
+> 218.745 pencere için ayarlandı."
+
+Eğer referans mimari kapasitesinin altındaysa, "havuzlama yardımcı oluyor" bulgusu "modeliniz
+zaten küçüktü" itirazına açıktır. §4 bu itirazı doğrudan hedefler.
+
+### 4.2 Kolların konfigürasyonu
+
+Tek eksen sapmaları, hepsi `ABLATION_B1` doğruluğunda ($B = 1$, $T = 100$), L1 kaybı, beş il
+havuzlanmış (`all5`), üç tohum (42/43/44), MPS. Ortak taban: `[64, 32]`, `dropout=0.3`,
+`lookback=24`, `learning_rate=1e-3`, `lr_reduce_patience=7`, `max_epochs=100`,
+`early_stop_patience=15`.
+
+| grup | kollar | değişen |
+| --- | --- | --- |
+| `arch_sweep` | `h32x16`, `h128x64`, `h64x64x32`, `lookback48`, `lookback72`, `dropout02`, `dropout04` | tek eksen |
+| `arch_sweep_x` | `base`, `lr3e4`, `h128x64_lr3e4` | referans ölçümü + öğrenme oranı |
+
+`base` kolunun kendisi bir koşudur, `abl_rize_all5_s*_l1`'in yeniden etiketlenmesi **değildir**:
+seçim kriteri `best_val_loss` ve o sütun eski satırlarda boştur (§4.7). Bir referansı olmayan
+merdiven okunamaz.
+
+### 4.3 Seçim kriteri: `best_val_loss`, test metriği değil
+
+Mimari, doğrulama kaybına göre seçilir. Test RMSE'sine göre seçmek test kümesini model seçimine
+dâhil eder — ölçekleyici sızıntısı kadar ciddi, gözden kaçması daha kolay bir hata. Sütun
+`best_val_loss`'tur, `train_model`'ın **geri yüklediği** epok'un kaybıdır; son epok'unki değil
+(§4.7'deki düzeltme kaydı).
+
+Kriter yalnızca **aynı veri, aynı kayıp, aynı ölçekleyici** altındaki kollar arasında
+karşılaştırılabilir. `lookback48`/`lookback72` kolları pencere sayısını değiştirdiği için
+sınırdadır; bu iki kolun sıralaması bu nedenle test RMSE'siyle çapraz kontrol edilmiştir.
+
+### 4.4 Merdiven (10 kol × 3 tohum, gündüz, `Aggregate`)
+
+| konfigürasyon | parametre | `best_val_loss` ± s.s. | test RMSE | test MAE | CP | MPIW | `best_epoch` |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| `[128,64]`, lr 3e-4 | 219.244 | **0,12476 ± 0,00124** | 90,91 | 61,30 | 0,896 | 160,2 | 14,0 |
+| `[128,64]` | 219.244 | 0,12630 ± 0,00056 | **90,29** | **61,13** | 0,895 | 159,7 | 4,3 |
+| `dropout 0,2` | 58.444 | 0,12951 ± 0,00113 | 91,21 | 62,92 | 0,912 | 166,2 | 10,3 |
+| `lookback 48` | 58.444 | 0,13894 ± 0,00338 | 94,87 | 67,74 | 0,950 | 211,0 | 14,7 |
+| `lookback 72` | 58.444 | 0,14007 ± 0,00139 | 94,42 | 68,36 | 0,948 | 211,5 | 7,7 |
+| `[64,64,32]` | 95.884 | 0,14165 ± 0,00215 | 97,85 | 72,06 | 0,964 | 215,0 | 13,0 |
+| `[64,32]`, lr 3e-4 | 58.444 | 0,14248 ± 0,00179 | 94,75 | 69,76 | 0,954 | 208,8 | 15,3 |
+| **`[64,32]` referans** | 58.444 | 0,14355 ± 0,00062 | 94,57 | 69,23 | 0,954 | 209,1 | 10,7 |
+| `dropout 0,4` | 58.444 | 0,15785 ± 0,00158 | 101,69 | 77,32 | 0,974 | 251,6 | 14,3 |
+| `[32,16]` | 16.444 | 0,17933 ± 0,00420 | 112,43 | 87,65 | 0,979 | 266,0 | 8,0 |
+
+Doğrulama kaybı ile test RMSE'si arasındaki sıra korelasyonu **Spearman $\rho = 0,84$
+($p = 0,002$)** — kriter işini görüyor ama kusursuz değil: `[64,64,32]` doğrulamada referansı
+geçerken testte 3,3 W/m² geride kalıyor. Kriter mimari **elemek** için yeterlidir, iki yakın kol
+arasında hüküm vermek için değildir.
+
+### 4.5 Bulgular
+
+**B-1. Genişlik yardımcı, derinlik değil.** 32 → 64 → 128 doğrulama kaybında tekdüze iyileşiyor.
+Üç LSTM katmanlı `[64,64,32]` ise iki katmanlı referansın **gerisinde**. Uyarı: `hidden_sizes`
+aşırı yüklü — `[64,64,32]` yalnızca bir katman eklemez, stokastik katman sayısını da 3'ten 5'e
+çıkarır, dolayısıyla temiz bir derinlik kolu değildir. "Derinlik yardımcı olmuyor" değil,
+"**bu şekilde eklenen derinlik** yardımcı olmuyor" denmelidir.
+
+**B-2. Daha uzun geriye bakış yardımcı değil.** 48 ve 72 saat, 24 saatlik referansa göre
+doğrulama kaybında **daha kötü** (0,139 / 0,140 vs 0,144 — burada daha iyi, ama test RMSE'sinde
+94,87 / 94,42 vs 94,57, yani ayırt edilemez) ve eğitim süresini iki katına çıkarıyor. EDA'nın
+açıklık indeksi PACF kanıtı (2. günde 0,006–0,12) ile birlikte okununca **24 saatlik geriye
+bakış savunulabilir**; bu kollar onun ampirik doğrulamasıdır.
+
+**B-3. Öğrenme oranı bir sonuç değil — ama mekanizma doğrulandı.** `lr_reduce_patience=7` iken
+`[128,64]`'ün `best_epoch`'u **4,3**'tü; hiçbir kol rafine etme aşamasına girmiyordu, dolayısıyla
+merdivenin bir sonraki basamağında görülecek bir düşüş "kapasite sınırı" değil "optimize edici
+artefaktı" olabilirdi. `lr = 3e-4` bu mekanizmayı **doğruladı**: `best_epoch` 4,3 → 14,0'a,
+toplam epok 20,3 → 30,0'a çıktı, yani model gerçekten daha uzun eğitiliyor.
+
+Ve **aynı yere varıyor**:
+
+| kontrast | Δ`best_val_loss` | tohum başına | $p$ | Δ test RMSE | $p$ |
+| --- | ---: | --- | ---: | ---: | ---: |
+| `[64,32]`, 1e-3 → 3e-4 | −0,00108 | −0,0021 / +0,0006 / −0,0018 | 0,333 | +0,18 | 0,811 |
+| `[128,64]`, 1e-3 → 3e-4 | −0,00155 | −0,0030 / −0,0007 / −0,0009 | 0,175 | +0,62 | 0,338 |
+
+İki kapasitede de etki tohum gürültüsünün içinde. **Hüküm: `learning_rate=1e-3` korunuyor**, ve
+merdivenin bir sonraki basamağı varsayılan oranda koşulabilir — optimize edici artefaktı
+hipotezi ölçüldü ve reddedildi.
+
+**B-4. Kapasite kazancı ile kalibrasyon ters yönlü.** Kapasite arttıkça CP 0,979 → 0,895'e,
+MPIW 266 → 160'a iniyor. `dropout_rate` MC-Dropout'un **tek** rastgelelik kaynağı olduğundan
+aynı anda hem düzenlileştirici hem aralık genişliği ayarıdır; doğrulama kaybına göre seçmek
+yalnızca nokta doğruluğunu optimize eder ve aralığı serbest bırakır. `[128,64]`'ün gündüz CP'si
+0,895, nominal 0,95'in **altında** — yani $B = 1$'de kazanan mimari daha keskin ama
+kalibrasyonsuzdur.
+
+> **Bu yüzden `[128,64]` tek başına benimsenemez.** Benimsenmesi, il × ufuk conformal ölçekleme
+> katmanıyla **tek bir karar** olarak ele alınmalıdır (§6.2, kalan işler). $B = 1$ → $B = 8$
+> geçişinin CP'yi kendiliğinden yükselttiği (§3.5) de hesaba katılmalı: bu tablo $B = 1$'dir ve
+> **aralık metrikleri $B = 8$'e taşınamaz** (§0, kural 3).
+
+**B-5. Kapasite kazancı ile ilin kimliği — manşeti koruyan bulgu.** `[64,32]` → `[128,64]`,
+eşleştirilmiş üç tohum, gündüz, il satırı:
+
+| il | `[64,32]` | `[128,64]` | Δ | % | $p$ |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Konya | 92,73 | 86,27 | −6,45 | −6,96 | 0,105 |
+| Antalya | 87,25 | 81,06 | −6,19 | −7,09 | 0,039 |
+| Ankara | 91,93 | 86,48 | −5,45 | −5,93 | 0,142 |
+| Van | 92,25 | 88,57 | −3,68 | −3,99 | 0,058 |
+| **Rize** | **107,43** | **106,86** | **−0,56** | **−0,52** | **0,845** |
+
+Kapasiteyi 3,75 katına çıkarmak dört ili %4–7 iyileştiriyor, **Rize'yi hiç iyileştirmiyor**.
+Rize gürültü-sınırlı: hatası modelin kapasitesinden değil, bulutluluğun kendisinden geliyor
+(§2.5 il profili, günlük $k_t$ 0,697). Bu, "havuzlama kazancınız aslında yetersiz kapasitenin
+telafisiydi" itirazını kapatır — daha büyük model Rize'de kazanç üretmiyor, havuzlama üretiyor.
+
+### 4.6 Hüküm
+
+- **Referans `[64,32]` kapasitesinin altında.** `[128,64]` doğrulama kaybını %12 düşürüyor,
+  test RMSE'sini 94,57 → 90,29 (−%4,5) getiriyor. Merdiven henüz dönmedi.
+- **Ancak `[128,64]` bu haliyle benimsenemez** (B-4): kalibrasyon kaybediliyor. Karar,
+  conformal katmanla birlikte verilecek ve **tam doğrulukta** ($B = 8$) tekrarlanacaktır.
+- **Öğrenme oranı, geriye bakış ve derinlik eksenleri kapandı** (B-2, B-3, B-1): hiçbiri
+  referansı iyileştirmiyor.
+- **§1–§3'ün tamamı `[64,32]` altında geçerliliğini koruyor**, çünkü B-5 en büyük etkinin
+  ölçüldüğü ilde (Rize) kapasitenin etkisiz olduğunu gösteriyor.
+
+### 4.7 Geçerlilik tehditleri
+
+- **T-4.1 — `learning_rate` koşu anında ledger sütunu değildi.** `ABLATION_REVIEW.md` §4-B bunu
+  koşudan *önce* uyarmıştı ve uyarı uygulanmadı; `abl_arch_lr3e4_*` satırları üç gün boyunca
+  `abl_arch_base_*` ile ledger'da ayırt edilemez durumdaydı. **Kapatıldı:** altı optimize edici
+  düğmesi `LEDGER_COLUMNS`'a eklendi ve 100 satır kendi `config.json`'larından geri dolduruldu
+  (kayıpsız, çünkü her koşunun konfigürasyonu diskte). Yeni bir test her `ExperimentConfig`
+  alanının ya ledger sütunu ya da gerekçeli muaf olmasını zorunlu kılıyor.
+- **T-4.2 — doğruluk.** Tüm kollar $B = 1$. Aralık metrikleri (CP, MPIW, PINW, CWC) $B = 8$
+  satırlarıyla **karşılaştırılamaz**; §0 kural 3. Kazanan mimari tam doğrulukta yeniden
+  ölçülmelidir.
+- **T-4.3 — parametre sayısı ile karşılaştırma.** `[128,64]` 219.244 parametre, referansın
+  3,75 katı. Makale tutumluluk iddiası kuruyorsa (§5 ve §3.7) bu sayının hangi mimariye ait
+  olduğu her yerde belirtilmelidir.
+- **T-4.4 — tek eksen kuralının bilinçli istisnası yok.** Bu bölümdeki her kol referanstan tam
+  bir alanda ayrılır. `arch_frontier`'ın `h128x64_do04` kolu ilk iki eksenli kol olacaktır ve
+  gerekçesi orada yazılmalıdır.
+- **T-4.5 — çekişme.** `arch_sweep_x` ve `percity_endpoints` aynı makinede eşzamanlı koştu;
+  `training_time_sec` değerleri %10–20 şişkin olabilir. Metrikler etkilenmez, **maliyet
+  projeksiyonu bu satırlardan yapılmamalıdır**.
+
+---
+
+## 5. Havuzlama beş ilin **hepsini** iyileştiriyor mu? — uç nokta ablasyonu
+
+### 5.1 Sınanan iddia
+
+`main_methodology.md` §1 (`:54-57`):
+
+> **Küresel (global) model:** İl başına ayrı model eğitilmez. […] Bu, makalenin iddialarından
+> biridir: farklı iklim rejimleri arasında bilgi transferi sağlanır ve **her il için** ayrı ayrı
+> eğitilmiş modellere kıyasla veri verimliliği artar.
+
+§1–§3, bu iddiayı **yalnızca Rize'de** test etti — ve Rize, transferin en çok işe yaraması
+beklenen ildi (en düşük $k_t$, en yüksek hata). Bir ilde ölçülen bir etkiyi "her il için"
+diye yazmak, makalede karşılaşılacak ilk itirazdır.
+
+### 5.2 Hipotez ve iki olası sonuç
+
+**H3: Havuzlama her ilde solo modeli geçer.** Yanlışlanması makaleyi zayıflatmaz, **daha keskin
+bir iddiaya çevirir:** eğer dört kolay il kaybederken Rize kazanıyorsa, bulgu "havuzlama
+yardımcı olur" değil, "**küresel model doğruluğu veri-fakiri rejime yeniden dağıtır**" olur —
+hakemin önce ulaşamayacağı, daha ilginç bir sonuç.
+
+### 5.3 Kolların konfigürasyonu
+
+Her il için, o il **tek başına** eğitilir (`training_scope="per_city"`, diğer dördü
+`excluded_cities`), kendi test pencerelerinde puanlanır ve **aynı ilin** `all5` satırıyla,
+**aynı tohumda** karşılaştırılır. §2'nin `solo` ↔ `all5` kontrastının birebir aynısıdır,
+yalnızca il değişir.
+
+| ne | değer |
+| --- | --- |
+| kollar | `abl_percity_{ankara,antalya,konya,van}_s{42,43,44}_full` + mevcut `abl_rize_solo_s{42,43,44}_full` |
+| karşı kol | `abl_rize_all5_s{42,43,44}_full`, ilgili ilin satırı |
+| doğruluk | `ABLATION_FULL` — $B = 8$, $T = 100$, sapma yok |
+| kayıp | L1 (`mae`), §2.2'nin kriter seçimi |
+| ölçekleyici | `per_city_scaler=True` her iki kolda da (solo kolu tek il olduğu için etkisiz) |
+| eğitim penceresi | solo 43.749 · `all5` 218.745 (tam 5×) |
+| epok | `max_epochs=200`, `early_stop_patience=15`; **`hit_max_epochs=0` her satırda** |
+| süre | kol başına 504–627 s, MPS |
+
+### 5.4 Sonuçlar — nokta doğruluğu (gündüz, il satırı, 3 tohum)
+
+| il | solo RMSE | `all5` RMSE | Δ | % | işaret | $p$ | solo MAE | `all5` MAE | $n_{el}$ |
+| --- | ---: | ---: | ---: | ---: | :-: | ---: | ---: | ---: | ---: |
+| Ankara | 91,34 ± 0,74 | **89,27 ± 0,52** | −2,07 | −2,27 | 3/3 | **0,019** | 68,44 | 66,64 | 109.644 |
+| Rize | 108,32 ± 1,76 | **106,27 ± 0,81** | −2,05 | −1,89 | 3/3 | 0,152 | 77,28 | 75,70 | 109.043 |
+| Konya | 91,79 ± 0,10 | **90,48 ± 0,30** | −1,31 | −1,43 | 3/3 | **0,016** | 69,49 | 68,27 | 109.476 |
+| Antalya | 85,67 ± 1,11 | **84,65 ± 0,76** | −1,02 | −1,19 | 3/3 | 0,113 | 63,24 | 63,00 | 108.468 |
+| Van | 90,51 ± 0,70 | **90,09 ± 0,57** | −0,43 | −0,47 | 3/3 | 0,052 | 66,09 | 66,15 | 109.499 |
+
+**Her ilde, her tohumda: 15/15.** Hiçbir il havuzlamadan zarar görmüyor.
+
+İki tamamlayıcı test:
+
+- **İl bazında, Benjamini–Hochberg ($m = 5$, $\alpha = 0,05$).** Sıralı $p$: 0,016 (Konya),
+  0,019 (Ankara), 0,052 (Van), 0,113 (Antalya), 0,152 (Rize). Adım-yukarı prosedürde
+  $p_{(2)} = 0,019 \le 2/5 \times 0,05 = 0,020$ sağlandığı için **Konya ve Ankara düzeltme
+  sonrası anlamlı**. Rize'nin $p = 0,152$'si §3.2 ile çelişmez: orada altı tohum vardı
+  ($p = 0,0122$), burada üç.
+- **Tohum düzeyinde kümelenmiş test.** Tek bir `all5` modeli beş ilde puanlandığı için beş il
+  farkı bir tohum içinde bağımsız değildir. Tohum başına beş ilin ortalama göreli kazancı:
+  **−1,455 / −1,747 / −1,136 %**, ortalama **−1,45 %**, $t = -8,19$, **$p = 0,0146$**.
+
+### 5.5 Sonuçlar — belirsizlik (gündüz, il satırı, 3 tohum)
+
+| il | solo CP | `all5` CP | solo MPIW | `all5` MPIW | ΔMPIW | solo CRPS | `all5` CRPS | ΔCRPS |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Ankara | 0,9811 | 0,9842 | 452,4 | 440,5 | −%2,63 | 50,10 | 48,41 | −%3,38 |
+| Antalya | 0,9854 | 0,9837 | 471,1 | 459,7 | −%2,42 | 47,87 | 46,92 | −%1,98 |
+| Konya | 0,9816 | 0,9813 | 473,6 | 457,8 | −%3,33 | 51,39 | 49,87 | −%2,97 |
+| Van | 0,9839 | 0,9829 | 477,7 | 463,2 | −%3,03 | 49,93 | 49,06 | −%1,74 |
+| Rize | 0,9529 | 0,9521 | 387,3 | 371,7 | −%4,05 | 54,87 | 53,30 | −%2,85 |
+
+**Bu tablo §5.4'ten daha güçlüdür ve makalede ayrı bir cümleyi hak eder.** Havuzlama:
+
+1. **aralığı her ilde daraltıyor** (−%2,4 … −%4,1),
+2. **kapsamayı bozmadan** (|ΔCP| ≤ 0,0031, hiçbiri anlamlı değil),
+3. **CRPS'yi her ilde iyileştirerek** (−%1,7 … −%3,4).
+
+Yani kazanç, aralığı kısaltıp kapsamayı feda etme takası değildir; dağılım bir bütün olarak
+daha iyidir. Aralık genişliği epistemik belirsizliğin ölçüsü olduğundan bunun yorumu doğrudan:
+**havuzlama model belirsizliğini azaltır**, ve bu tam olarak transfer iddiasının öngördüğü
+şeydir.
+
+### 5.6 Kazancın büyüklüğü iklimsel aykırılığı takip **etmiyor**
+
+Plan, kazancın "iklimsel olarak aykırı ilde en büyük" olmasını bekliyordu. Ölçülen sıralama
+Ankara (−2,07) ≈ Rize (−2,05) > Konya (−1,31) > Antalya (−1,02) > Van (−0,43); göreli olarak
+Ankara −%2,27 > Rize −%1,89 > Konya −%1,43 > Antalya −%1,19 > Van −%0,47.
+
+Rize ikinci sırada. Kazanç ne $k_t$ ile (Ankara 0,806 ve Rize 0,697 en üstte, Konya 0,832 ve
+Antalya 0,840 ortada, Van 0,821 en altta) ne de solo hata düzeyiyle tekdüze bir ilişki
+gösteriyor. **Bu bölüm bir mekanizma önermiyor; ölçülen sıralamayı raporluyor.** Üç tohumla
+iller arası sıralamayı ayırt etmek için yeterli güç yok — §2.3'ün "hangi il eklendiği önemli mi"
+sorusunun burada da açık kaldığı anlamına gelir.
+
+### 5.7 Hüküm
+
+- **H3 desteklendi.** Havuzlama beş ilin **hepsinde** nokta doğruluğunu ve olasılıksal skoru
+  iyileştiriyor, hiçbirinde zarar vermiyor, 15/15 tohum-kol.
+- **"Yeniden dağıtım" senaryosu (§5.2) gerçekleşmedi.** Makale bunu doğrudan
+  yazabilir — "havuzlama Rize'yi diğer illerin pahasına iyileştirmiyor" cümlesi artık ölçüme
+  dayalıdır.
+- **Makalenin §1 iddiası artık "her il için" ifadesini taşıyabilir.** Önceki hâliyle tek il
+  üzerinden genellenmiş bir iddiaydı.
+- **Tutumluluk argümanı güçlendi:** beş yerine tek model, 58.444'e karşı 5 × 58.428 = 292.140
+  parametre, **ve her ilde daha iyi**. (Eğitim süresi üzerinden değil — §3.7.)
+
+### 5.8 Geçerlilik tehditleri
+
+- **T-5.1 — üç tohum.** Rize dışında hiçbir il altı tohuma çıkarılmadı. İl bazında $p$
+  değerleri (Van 0,052, Antalya 0,113) güç sınırında; **birincil sonlanım noktası hâlâ §3.2'nin
+  altı tohumlu Rize kontrastıdır.**
+- **T-5.2 — bağımlılık.** Beş il farkı tohum içinde aynı `all5` modelinden gelir. §5.4'ün
+  kümelenmiş testi ($n = 3$) bunu doğru ele alan tek testtir; 15/15 işaret sayımı **bağımsız
+  15 gözlem değildir** ve öyle sunulmamalıdır.
+- **T-5.3 — solo kolun mimarisi.** Solo kollar `[64,32]` kullanıyor, yani havuzlanmış rejim
+  için ayarlanmış kapasite. §4 B-5 bunun Rize için bağlayıcı olmadığını gösterdi, ama dört
+  kolay il kapasiteye duyarlı: bir solo `[128,64]` kolu Ankara/Konya/Antalya'da farkı
+  kapatabilir. **Ölçülmedi.** Adil karşılaştırma her kolda aynı mimariyi kullanmaktır ve o
+  sağlanmıştır; ama "solo model en iyi hâlinde de kaybeder" iddiası bu koşulardan çıkmaz.
+- **T-5.4 — aşırı kapsama.** Dört ilin CP'si 0,981–0,985, nominal 0,95'in üstünde (§3.5).
+  MPIW karşılaştırması bu nedenle "iki kalibre aralık arasında" değil, "iki fazla-geniş aralık
+  arasında" bir karşılaştırmadır. Yön (daralma) yorumlanabilir, mutlak genişlikler
+  yorumlanamaz.
+- **T-5.5 — çekişme.** §4'teki T-4.5 ile aynı: bu kollar `arch_sweep_x` ile eşzamanlı koştu.
+
+---
+
 ## A. Bu belge bir şablondur — yeni bir ablasyon nasıl eklenir
 
 §1, sonraki ablasyonlar için kalıptır. Yeni bir eksen geldiğinde **§1 düzenlenmez**; `## 2.`,
@@ -856,7 +1139,7 @@ Yeni bir eksen eklerken **koddan** gereken değişiklikler:
 
 | Ne | Nerede |
 | --- | --- |
-| Kol tanımları | `configs/experiment_grid.py` (`ABLATION_FULL`, `ABLATION_B1`, `RIZE_CURVE_ARMS`, `_rize_curve_configs`) |
+| Kol tanımları | `configs/experiment_grid.py` (`ABLATION_FULL`, `ABLATION_B1`, `RIZE_CURVE_ARMS`, `_rize_curve_configs`, `ARCH_SWEEP_AXES`, `_percity_endpoints_configs`) |
 | Kol başına metrikler | `outputs/experiments/<experiment_id>/metrics/results_summary.csv` (il bazlı), `results_by_horizon.csv` (ufuk adımı bazlı) |
 | Kol başına koşu günlüğü | `outputs/experiments/<experiment_id>/log.txt` (cihaz, bölme tarihleri, pencere sayıları, replika başına epok) |
 | Kol başına konfigürasyon | `outputs/experiments/<experiment_id>/config.json` |
