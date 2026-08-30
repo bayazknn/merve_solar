@@ -102,6 +102,24 @@ her il için ayrı ayrı eğitilmiş modellere kıyasla veri verimliliği artar.
 > 5. **Solo kollar havuzlanmış rejim için ayarlanmış `[64,32]` mimarisini kullanır.** Adil
 >    karşılaştırma her kolda aynı mimaridir ve bu sağlanmıştır; ancak "tek-il modeli en iyi
 >    hâlinde de kaybeder" iddiası bu koşulardan çıkmaz (`ABLATION.md` §5.8, T-5.3).
+> 6. **YUKARIDAKİ HER SAYI `target_transform="raw"` KOŞULLUDUR** (§5.4). Berraklık indeksi
+>    formülasyonu altında Rize'de nokta tahmini transfer kazancı −2,05'ten **−0,79**'a düşer
+>    (2/3 tohum, $p = 0{,}35$) ve MAE'de **tamamen kaybolur** (−1,58 → −0,01). Öngörülen
+>    mekanizma doğrulanmıştır: havuzlamanın satın aldığı şeyin büyük kısmı, beş il arasında
+>    paylaşılan güneş-geometrisi zarfıydı; zarf modele doğrudan verildiğinde ondan öğrenilecek
+>    bir şey kalmıyor (`ABLATION.md` §7.3).
+>
+>    **Ancak transfer yok olmuyor, yer değiştiriyor.** `raw` altında havuzlamanın Rize'nin
+>    kapsamasına hiç etkisi yoktu ($p = 0{,}84$); `kt` altında CP 0,8800 → **0,9107**, üç
+>    tohumun üçünde, **$p = 0{,}0001$** — projedeki en anlamlı tek etki — ve aralık aynı anda
+>    daralıyor ($p = 0{,}010$). Bu, §12.3.1 ve `ABLATION.md` §4.8'in B-7'siyle tutarlıdır:
+>    Rize ortalamada gürültü-sınırlıdır, epistemik yayılım ise hâlâ veriyle daralır.
+>
+>    Makale, manşet formülasyon `kt` olacaksa **iddiayı buna göre yeniden yazmalıdır**:
+>    havuzlama ortalamayı değil, tahminin belirsizlik tahminini iyileştirir. Bu, ölçülmemiş
+>    bir "iller arası bilgi transferi" iddiasından daha güçlü bir katkıdır — ama farklı bir
+>    iddiadır. **Bu bir yokluk sonucu değil, bir küçülme sonucudur** (`ABLATION.md` §7.7,
+>    T-7.1); üç tohum "etki yok" demeye yetmez.
 
 ---
 
