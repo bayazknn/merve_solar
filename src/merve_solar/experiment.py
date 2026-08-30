@@ -197,9 +197,11 @@ def _ledger_row(config, subsets: dict, run_stats: dict, training_time_sec: float
         "CP_daylight": day.get("CP"),
         "n_elements_daylight": day.get("n_elements"),
         # The model-selection criterion, in SCALED target space. Comparable ONLY between runs
-        # that share loss_function/huber_delta, loss_daylight_only, and the same pooled provinces
-        # (which fix the scaler): it is the right instrument for "same data, same criterion,
-        # different architecture" and meaningless across anything else. Never a substitute for
+        # that share loss_function/huber_delta, loss_daylight_only, target_transform, and the
+        # same pooled provinces (which fix the scaler): it is the right instrument for "same
+        # data, same criterion, different architecture" and meaningless across anything else.
+        # target_transform matters most of all -- a clearsky_index run's loss is in units of the
+        # clearness index, so its 0.28 and a raw run's 0.14 are not on the same axis at all. Never a substitute for
         # the test metrics next to it -- it exists so architecture can be chosen without them.
         "best_val_loss": _mean_best_val_loss(run_stats),
         "hit_max_epochs": run_stats.get("hit_max_epochs"),

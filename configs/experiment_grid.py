@@ -588,6 +588,15 @@ def _target_transform_configs() -> list:
     space a cloudy noon hour and a clear morning hour carry comparable weight, where in W/m^2
     the high-irradiance hours dominate). State it; do not pretend the arm isolates one of them.
     """
+    return _target_kt_pooled(ABLATION_SEEDS)
+
+
+TARGET_KT_BASE = {**ABLATION_FULL, "loss_function": "mae", "target_transform": "clearsky_index"}
+
+
+def _target_kt_pooled(seeds) -> list:
+    """The pooled (all5) kt arms, at the given seeds. Split out so stage 2 can extend the seed
+    axis under the same ids rather than duplicating the definition."""
     base = {**ABLATION_FULL, "loss_function": "mae"}
     configs = [
         ExperimentConfig(
@@ -596,15 +605,83 @@ def _target_transform_configs() -> list:
             seed=seed,
             **base,
         )
-        for seed in ABLATION_SEEDS
+        for seed in seeds
     ]
-    for cfg, seed in zip(configs, ABLATION_SEEDS):
+    for cfg, seed in zip(configs, seeds):
         raw = ExperimentConfig(experiment_id=f"abl_rize_all5_s{seed}_full", seed=seed, **base)
         differing = {
             f.name for f in fields(ExperimentConfig)
             if f.name != "experiment_id" and getattr(cfg, f.name) != getattr(raw, f.name)
         }
         assert differing == {"target_transform"}, differing
+    return configs
+
+
+def _target_kt_h1_configs() -> list:
+    """Stage 1: does the pooling result survive the target transform? 3 arms, ~0.7 h.
+
+    MEASURED (target_transform group, ABLATION.md 6): regressing kt beats raw at full fidelity
+    in every province, aggregate daylight RMSE -9.2% and MAE -12.9%, p <= 0.008 throughout. That
+    makes it a candidate for the headline configuration -- and the entire transfer result
+    (sections 1-5, H1 and the endpoint ablation) was measured under target_transform="raw".
+
+    It cannot be assumed to carry over, and the direction of the doubt is specific: a large part
+    of what a "raw" model must learn is the solar-geometry envelope, which is the structure most
+    obviously SHARED across the five provinces -- i.e. plausibly the very thing pooling was
+    helping with. Handing that envelope to the model for free could shrink the transfer gain, or
+    remove it. That would be a genuine threat to the paper's headline claim, so it gets measured
+    before anything is rewritten, not after.
+
+    Only the solo arm is built: abl_target_kt_s{42,43,44}_full is already the matched pooled arm
+    at the same seeds. Three seeds is enough to see whether the effect survives; extending to the
+    six the primary endpoint uses is stage 2, and only worth paying for if it does.
+    """
+    return [
+        ExperimentConfig(
+            experiment_id=f"abl_target_kt_solo_s{seed}_full",
+            training_scope="per_city",
+            excluded_cities=[c for c in CITIES if c != RIZE],
+            seed=seed,
+            **TARGET_KT_BASE,
+        )
+        for seed in ABLATION_SEEDS
+    ]
+
+
+def _target_kt_full_configs() -> list:
+    """Stage 2: the whole transfer result re-established under kt. 18 arms, ~6 h.
+
+    Run ONLY if stage 1 shows the pooling gain surviving. Brings H1 to the same six seeds as the
+    raw primary endpoint (sections 3.2) and repeats the five-province endpoint ablation
+    (section 5), so every claim the paper makes about transfer is available under whichever
+    target transform ends up being the headline.
+
+    Costed from the measured stage-0 arms: a pooled kt run took 3508-3945 s against raw's 2337 s,
+    because the kt model early-stops later (best_epoch 21-28 against raw's single digits) rather
+    than because a step is slower. Solo arms are roughly a fifth of that.
+    """
+    configs = _target_kt_pooled(EXTRA_SEEDS)
+    configs += [
+        ExperimentConfig(
+            experiment_id=f"abl_target_kt_solo_s{seed}_full",
+            training_scope="per_city",
+            excluded_cities=[c for c in CITIES if c != RIZE],
+            seed=seed,
+            **TARGET_KT_BASE,
+        )
+        for seed in EXTRA_SEEDS
+    ]
+    configs += [
+        ExperimentConfig(
+            experiment_id=f"abl_target_kt_percity_{city.lower()}_s{seed}_full",
+            training_scope="per_city",
+            excluded_cities=[c for c in CITIES if c != city],
+            seed=seed,
+            **TARGET_KT_BASE,
+        )
+        for city in PERCITY_ENDPOINT_CITIES
+        for seed in ABLATION_SEEDS
+    ]
     return configs
 
 
@@ -688,6 +765,8 @@ EXPERIMENT_GROUPS = {
     "arch_frontier": _arch_frontier_configs,
     "percity_endpoints": _percity_endpoints_configs,
     "target_transform": _target_transform_configs,
+    "target_kt_h1": _target_kt_h1_configs,
+    "target_kt_full": _target_kt_full_configs,
     "sens_scaler_l1": _sens_scaler_l1_configs,
     "device_parity": _device_parity_configs,
     "rize_curve_smoke": _rize_curve_smoke_configs,
