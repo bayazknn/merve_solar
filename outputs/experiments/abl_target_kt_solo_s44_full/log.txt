@@ -1,0 +1,20 @@
+device=mps
+training_scope=per_city model_family=lstm
+loss_function=mae
+active_cities=['Rize'] excluded=['Ankara', 'Antalya', 'Konya', 'Van']
+train_end=2024-06-27 19:00:00 val_end=2025-03-26 01:00:00
+test daylight elements: 109043 of 211944
+Rize/train: 43749 windows
+Rize/val: 6463 windows
+Rize/test: 8831 windows
+Rize replica 0: best_val_loss=0.3453 best_epoch=27 last_val_loss=0.3464 epochs=43
+Rize replica 1: best_val_loss=0.3501 best_epoch=20 last_val_loss=0.3601 epochs=36
+Rize replica 2: best_val_loss=0.3461 best_epoch=19 last_val_loss=0.3525 epochs=35
+Rize replica 3: best_val_loss=0.3497 best_epoch=23 last_val_loss=0.3571 epochs=39
+Rize replica 4: best_val_loss=0.3438 best_epoch=13 last_val_loss=0.3545 epochs=29
+Rize replica 5: best_val_loss=0.3428 best_epoch=23 last_val_loss=0.3510 epochs=39
+Rize replica 6: best_val_loss=0.3467 best_epoch=24 last_val_loss=0.3484 epochs=40
+Rize replica 7: best_val_loss=0.3498 best_epoch=34 last_val_loss=0.3550 epochs=50
+target_transform=clearsky_index
+clamped 102901 night elements to zero
+total_training_time_sec=713.2
