@@ -1403,6 +1403,118 @@ eleman özelliğidir.
 
 ---
 
+## 7. Transfer iddiası formülasyona dayanıklı mı? — hayır, ama kayıp yerine bir şey kazanıyor
+
+### 7.1 Sınanan iddia
+
+§6 `clearsky_index`'i her metrikte kazanan hâle getirdi, ama §1–§5'in **tamamı** `raw` altında
+ölçülmüştü. `ABLATION_REVIEW`den değil, §6.7'nin T-6.1'inden gelen kuşku belirli bir yöne
+işaret ediyordu ve bu bölüm onu koşumdan **önce** yazılmış hâliyle sınıyor:
+
+> `raw` modelin öğrenmek zorunda olduğu şeyin büyük kısmı güneş-geometrisi zarfıdır, ki bu beş
+> il arasında **en açık biçimde paylaşılan** yapıdır — yani havuzlamanın yardımcı olduğu şeyin
+> ta kendisi olabilir. Zarfı bedava vermek transfer kazancını küçültebilir veya yok edebilir.
+
+### 7.2 Kolların konfigürasyonu
+
+`target_kt_h1` grubu: `abl_target_kt_solo_s{42,43,44}_full` (Rize tek başına, `clearsky_index`).
+Eşleşen havuzlanmış kol §6'nın `abl_target_kt_s{42,43,44}_full`'ü. Karşılaştırma **§2.2/§3.2'nin
+`solo` ↔ `all5` kontrastının birebir aynısıdır**, yalnızca `target_transform` değişir.
+$B = 8$, $T = 100$, L1, `[64,32]`, `hit_max_epochs = 0`, kol başına 700–774 s.
+
+### 7.3 Sonuç — nokta tahmininde transfer **kayboluyor**
+
+Rize satırı, gündüz, üç tohum eşleştirilmiş:
+
+| dönüşüm | `solo` RMSE | `all5` RMSE | Δ | % | işaret | $p$ | tohum başına |
+| --- | ---: | ---: | ---: | ---: | :-: | ---: | --- |
+| `raw` | 108,32 ± 1,76 | 106,27 ± 0,81 | **−2,05** | −1,89 | 3/3 | 0,152 | −1,98 / −3,65 / −0,51 |
+| `clearsky_index` | 101,33 ± 1,93 | 100,53 ± 1,25 | **−0,79** | −0,78 | 2/3 | 0,348 | −1,30 / −1,59 / **+0,50** |
+
+MAE'de daha da net: `raw` −1,58 (3/3, $p = 0{,}050$) → `kt` **−0,01** (2/3, $p = 0{,}985$).
+Etki **tamamen** yok oluyor.
+
+**Hipotez doğrulandı.** Havuzlamanın satın aldığı şeyin büyük kısmı gerçekten paylaşılan
+berrak-gökyüzü zarfıydı. Zarf modele doğrudan verildiğinde, ondan öğrenilecek bir şey kalmıyor.
+
+> **Bu, "havuzlama işe yaramıyor" demek değildir; "havuzlamanın ne yaptığını artık biliyoruz"
+> demektir.** Ve bu, ölçülmemiş bir iddiadan daha güçlü bir bilimsel ifadedir. Ama makalenin
+> §1'deki iddiasını **olduğu gibi bırakamaz.**
+
+### 7.4 Ve kazanılan şey — transfer ortalamadan **belirsizliğe** taşınıyor
+
+Aynı kollar, aynı tohumlar, aynı satır:
+
+| metrik | `raw` solo → all5 | Δ | $p$ | `kt` solo → all5 | Δ | $p$ |
+| --- | --- | ---: | ---: | --- | ---: | ---: |
+| **CP** | 0,9529 → 0,9521 | −0,0008 | 0,840 | 0,8800 → **0,9107** | **+0,0307** | **0,0001** |
+| MPIW | 387,3 → 371,7 | −15,7 | 0,028 | 350,1 → 345,5 | −4,6 | **0,010** |
+| CRPS | 54,87 → 53,30 | −1,56 | 0,065 | 50,11 → 48,90 | −1,21 | 0,058 |
+| R² | 0,8064 → 0,8137 | +0,0073 | 0,155 | 0,8306 → 0,8333 | +0,0027 | 0,346 |
+
+`raw` altında havuzlamanın kapsamaya **hiç** etkisi yoktu ($p = 0{,}84$). `kt` altında
+**projedeki en anlamlı tek etki**: CP 0,880 → 0,911, üç tohumun üçünde, $p = 0{,}0001$, ve
+aralık aynı anda **daralıyor** ($p = 0{,}010$) — yani kapsama genişletmeyle değil, daha iyi
+konumlanmayla kazanılıyor.
+
+**Mekanizma tutarlı.** §4.8'in B-7'si Rize'nin ortalamada **gürültü-sınırlı** olduğunu
+göstermişti: kapasiteyi 14,5 katına çıkarmak Rize'nin RMSE'sini iyileştirmiyordu. Zarf da
+verildikten sonra ortalama zaten kendi gürültü tabanına yakındır ve havuzlamanın orada
+kazanacağı bir şey kalmaz. **Epistemik yayılım ise hâlâ veriyle daralır** — havuzlanmış model
+kendi tahmininin ne kadar belirsiz olduğunu daha iyi bilir. Transfer kayboluyor değil, **yer
+değiştiriyor.**
+
+### 7.5 Güç çözümlemesi — daha fazla tohum yanlış yatırım
+
+Ölçülen `kt` RMSE etkisi −0,795, eşleştirilmiş s.s. 1,132. Buradan:
+
+| $n$ | beklenen $t$ | beklenen $p$ |
+| ---: | ---: | ---: |
+| 3 (mevcut) | 1,22 | 0,348 |
+| 6 | 1,72 | 0,146 |
+| 10 | 2,22 | 0,054 |
+| 20 | 3,14 | 0,005 |
+
+Altı tohuma çıkmak (~3,7 sa) beklenen $p \approx 0{,}15$ verir — sonuç değil. Yirmi tohum
+(~12 sa) tek bir ilin nokta tahmini için ödenemez. **Doğru yatırım beş il uç nokta
+ablasyonudur** (`target_kt_endpoints`, 12 kol, ~2,7 sa): §5'in kümelenmiş testi üç tohumla
+$p = 0{,}0146$'ya ulaşmıştı, çünkü beş il tek bir tohumun içinde beş kontrast üretiyor.
+
+### 7.6 Hüküm ve makale için sonuç
+
+- **H1 formülasyona dayanıklı değildir.** Nokta tahmininde havuzlama kazancı `kt` altında
+  %61 küçülüyor ve MAE'de sıfırlanıyor. §1'in iddia bloğu bu hâliyle **`raw`'a koşulludur.**
+- **Ama transfer yok olmuyor, biçim değiştiriyor:** aralık kalibrasyonuna geçiyor ve orada
+  `raw`'da hiç olmayan bir anlamlılığa ulaşıyor ($p = 0{,}0001$).
+- **Makale için üç seçenek var ve karar §7.5'in koşusundan sonra verilmelidir** (`kt` altında
+  diğer dört ilde havuzlama nokta tahminini iyileştiriyor mu?). Şu an bilinen:
+  - `raw` manşet: transfer iddiası güçlü (6 tohum, $p = 0{,}0122$, 15/15) ama mutlak doğruluk
+    akıllı kalıcılığın MAE'sini dört ilde geçemiyor, ve hakem "neden berraklık indeksi
+    tahminlemediniz?" diye soracaktır — bu, solar tahmin yazınının standardıdır.
+  - `kt` manşet: mutlak doğruluk %9–13 daha iyi ve MAE eşiği toplulaştırılmışta geçiliyor, ama
+    transfer iddiası ortalamadan belirsizliğe kayıyor ve yeniden yazılması gerekir.
+  - İkisi birlikte: `kt` manşet, `raw` → `kt` geçişi **transferin ne olduğunu açıklayan
+    ablasyon** olarak sunulur. §7.3 + §7.4 bunun için yeterli malzemedir ve bu, ölçülmemiş bir
+    "iller arası bilgi transferi" iddiasından **daha güçlü** bir katkıdır.
+
+### 7.7 Geçerlilik tehditleri
+
+- **T-7.1 — üç tohum, ve bu bir null.** §7.3 "etki yok" demiyor, "etki −0,79'a küçüldü ve bu
+  büyüklük üç tohumla saptanamaz" diyor. Küçülme iddiası nokta tahmininin kendisiyle
+  desteklenir (−%61, ve MAE'de −%99); **yokluk iddiası desteklenmez** ve makalede öyle
+  yazılmamalıdır.
+- **T-7.2 — kanıt tek il.** Rize, transferin en çok işe yaraması beklenen ildi. `kt` altında
+  diğer dört il ölçülmedi; §5'in `raw` altındaki 15/15 sonucu `kt`'ye taşınabilir de,
+  taşınmayabilir de.
+- **T-7.3 — §7.4'ün CP kazancı nominalin altındaki bir bölgede ölçülüyor.** `kt` solo kolunun
+  CP'si 0,880, havuzlanmışın 0,911 — ikisi de %95'in altında. "Havuzlama kalibrasyonu
+  iyileştiriyor" doğrudur, "kalibre ediyor" değildir. Conformal katman ikisinde de gereklidir.
+- **T-7.4 — dönüşüm ile kayıp ağırlıklandırması ayrılamaz** (§6.7, T-6.2). Transfer kazancının
+  küçülmesi, zarfın verilmesinden değil, kayıp ağırlıklandırmasının değişmesinden de
+  kaynaklanıyor olabilir. İki etki tek değişikliktir ve bu kol onları ayırmaz.
+
+---
+
 ## A. Bu belge bir şablondur — yeni bir ablasyon nasıl eklenir
 
 §1, sonraki ablasyonlar için kalıptır. Yeni bir eksen geldiğinde **§1 düzenlenmez**; `## 2.`,

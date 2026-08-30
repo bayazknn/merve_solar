@@ -648,30 +648,30 @@ def _target_kt_h1_configs() -> list:
     ]
 
 
-def _target_kt_full_configs() -> list:
-    """Stage 2: the whole transfer result re-established under kt. 18 arms, ~6 h.
+def _target_kt_endpoints_configs() -> list:
+    """Stage 2: the five-province endpoint ablation under kt. 12 arms, ~2.7 h.
 
-    Run ONLY if stage 1 shows the pooling gain surviving. Brings H1 to the same six seeds as the
-    raw primary endpoint (sections 3.2) and repeats the five-province endpoint ablation
-    (section 5), so every claim the paper makes about transfer is available under whichever
-    target transform ends up being the headline.
+    Stage 1 answered its question and the answer was the risk it was written to catch: on Rize,
+    the POINT-forecast pooling gain largely goes away under kt (RMSE -2.05 -> -0.79, MAE
+    -1.58 -> -0.01). The predicted mechanism holds -- a large part of what pooling bought was
+    the shared clear-sky envelope, and the transform hands it over for free.
 
-    Costed from the measured stage-0 arms: a pooled kt run took 3508-3945 s against raw's 2337 s,
-    because the kt model early-stops later (best_epoch 21-28 against raw's single digits) rather
-    than because a step is slower. Solo arms are roughly a fifth of that.
+    What survived, and got much stronger, is the UNCERTAINTY side: pooling moves Rize's daylight
+    coverage 0.8800 -> 0.9107, 3/3 seeds, p = 0.0001, against no detectable coverage effect at
+    all under raw (p = 0.84). So under the better formulation the transfer moves from the mean
+    to the interval, which is consistent with Rize being noise-limited in the mean (section 4.8,
+    B-7) while the epistemic spread still benefits from more data.
+
+    THIS group, not more seeds on Rize. Measured from stage 1, Rize's kt RMSE effect is -0.795
+    with a paired sd of 1.132, so six seeds would be expected to return p ~ 0.15 and ~20 seeds
+    would be needed for p ~ 0.005 -- 12 h to buy one province's point estimate. The five-province
+    clustered test used in section 5 gets far more power per hour: it reached p = 0.0146 at three
+    seeds, and these twelve arms complete the same design under kt in 2.7 h.
+
+    The pooled kt arms at these seeds already exist (abl_target_kt_s{42,43,44}_full), as does the
+    Rize solo arm from stage 1, so only the other four provinces are built here.
     """
-    configs = _target_kt_pooled(EXTRA_SEEDS)
-    configs += [
-        ExperimentConfig(
-            experiment_id=f"abl_target_kt_solo_s{seed}_full",
-            training_scope="per_city",
-            excluded_cities=[c for c in CITIES if c != RIZE],
-            seed=seed,
-            **TARGET_KT_BASE,
-        )
-        for seed in EXTRA_SEEDS
-    ]
-    configs += [
+    return [
         ExperimentConfig(
             experiment_id=f"abl_target_kt_percity_{city.lower()}_s{seed}_full",
             training_scope="per_city",
@@ -682,7 +682,26 @@ def _target_kt_full_configs() -> list:
         for city in PERCITY_ENDPOINT_CITIES
         for seed in ABLATION_SEEDS
     ]
-    return configs
+
+
+def _target_kt_seeds_configs() -> list:
+    """Stage 3, LOW PRIORITY: H1 under kt at the primary endpoint's six seeds. 6 arms, ~3.7 h.
+
+    Only worth running if the paper ends up needing the Rize contrast stated at the same seed
+    count as the raw primary endpoint. It is NOT expected to reach significance: the measured
+    effect is -0.795 with a paired sd of 1.132, so six seeds gives an expected p of about 0.15.
+    Run it to report a well-powered-for-its-size null with its effect size, not to find a result.
+    """
+    return _target_kt_pooled(EXTRA_SEEDS) + [
+        ExperimentConfig(
+            experiment_id=f"abl_target_kt_solo_s{seed}_full",
+            training_scope="per_city",
+            excluded_cities=[c for c in CITIES if c != RIZE],
+            seed=seed,
+            **TARGET_KT_BASE,
+        )
+        for seed in EXTRA_SEEDS
+    ]
 
 
 def _sens_scaler_l1_configs() -> list:
@@ -766,7 +785,8 @@ EXPERIMENT_GROUPS = {
     "percity_endpoints": _percity_endpoints_configs,
     "target_transform": _target_transform_configs,
     "target_kt_h1": _target_kt_h1_configs,
-    "target_kt_full": _target_kt_full_configs,
+    "target_kt_endpoints": _target_kt_endpoints_configs,
+    "target_kt_seeds": _target_kt_seeds_configs,
     "sens_scaler_l1": _sens_scaler_l1_configs,
     "device_parity": _device_parity_configs,
     "rize_curve_smoke": _rize_curve_smoke_configs,
