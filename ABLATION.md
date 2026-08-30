@@ -1240,6 +1240,169 @@ sorusunun burada da açık kaldığı anlamına gelir.
 
 ---
 
+## 6. Hedef dönüşümü — ışınım yerine berraklık indeksi
+
+### 6.1 Sınanan iddia
+
+Bu bölüm metodolojiden değil, **§3.6'nın ölçümünden** doğdu: model gündüz RMSE'sini beş ilde de
+kazanıyor ama gündüz MAE'sini dördünde akıllı kalıcılığa kaybediyor. Önerilen mekanizma şuydu:
+
+> Naif kurallar hedef saatin berrak-gökyüzü zarfını **ücretsiz** alır (akıllı kalıcılık taşıdığı
+> $k_t$'yi $\text{CLRSKY}(t{+}h)$ ile çarpar; iklimsel ortalamanın (il, ay, saat) hücresi aynı
+> geometriyi ezberler), model ise zarfı `hour_sin/cos` ve gün-içi kodlamasından çıkarmak
+> zorundadır.
+
+Sınanan önerme: **modele aynı geometriyi vermek farkı kapatır mı?** `target_transform`
+(`main_methodology.md` §5.4) ağa $k_t = \text{ALLSKY}/\text{CLRSKY}$ regrese ettirir ve ters
+ölçeklemeden sonra zarfı geri çarpar. `CLRSKY` saf astronomidir, hava terimi içermez, sızıntı
+değildir ve öznitelik olmaz — modele yalnızca bu dönüşüm üzerinden ulaşır.
+
+### 6.2 Kolların konfigürasyonu
+
+| ne | değer |
+| --- | --- |
+| kollar | `abl_target_kt_s{42,43,44}_full` (`clearsky_index`) |
+| karşı kol | `abl_rize_all5_s{42,43,44}_full` (`raw`) — **aynı dict, tek alan farkı** |
+| doğruluk | `ABLATION_FULL` — $B = 8$, $T = 100$, sapma yok |
+| kayıp / kapsam | L1, beş il havuzlanmış, `[64,32]` |
+| epok | `hit_max_epochs = 0` her satırda |
+| süre | 3429–3945 s (ham kolun 2337 s'sine karşı) |
+
+Ham kol yeniden koşulmadı: `configs/experiment_grid.py::_target_kt_pooled` çifti **alan alan**
+karşılaştırıp yalnızca `target_transform`'da ayrıldığını doğruluyor. Karşılaştırılabilirlik
+kuralının istediği budur; aynı konfigürasyonu yeni bir id ile tekrar koşmak iki saate ve mükerrer
+bir satıra mal olurdu.
+
+**Sayısal ön kontrol (uygulamadan önce, `base_features.parquet` üzerinde):** gündüz `CLRSKY`'nin
+tabanı 2,40 W/m², yani bölme hiçbir yerde patlamıyor; $k_t$ medyanı 0,885, p99'u 1,000,
+151.643 gündüz saatinin 138'i 1,0'ı ve **yalnızca biri** 1,5'i aşıyor (belgelenmiş Van
+1215,88 geri-çatım artefaktı). Kırpma veya eşik uygulanmadı, gerekmedi.
+
+**Kod yolu doğrulaması:** eşleştirilmiş smoke çifti (`smoke_kt_check` / `smoke_raw_check`,
+tohum 42, $B=1$, $T=10$, 5 epok) aggregate gündüz RMSE 101,46 → 89,44 ve MAE 73,95 → 62,40
+verdi. Smoke doğruluğu, tabloya girmez; pahalı koşudan önce yön ve mertebe kontrolüydü.
+
+### 6.3 Sonuçlar (gündüz, il satırı, 3 tohum eşleştirilmiş)
+
+| il | `raw` RMSE | `kt` RMSE | Δ | % | $p$ | `raw` MAE | `kt` MAE | Δ | % | $p$ |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Ankara | 89,27 ± 0,52 | **79,97 ± 0,28** | −9,30 | −10,4 | **0,002** | 66,64 | **57,39** | −9,25 | −13,9 | **0,001** |
+| Antalya | 84,65 ± 0,76 | **75,15 ± 0,51** | −9,50 | −11,2 | **0,000** | 63,00 | **53,63** | −9,37 | −14,9 | **0,002** |
+| Konya | 90,48 ± 0,30 | **81,14 ± 0,34** | −9,34 | −10,3 | **0,001** | 68,27 | **58,42** | −9,85 | −14,4 | **0,002** |
+| Van | 90,09 ± 0,57 | **80,63 ± 0,33** | −9,46 | −10,5 | **0,002** | 66,15 | **56,70** | −9,45 | −14,3 | **0,001** |
+| Rize | 106,27 ± 0,81 | **100,53 ± 1,25** | −5,74 | −5,4 | **0,008** | 75,70 | **69,67** | −6,03 | −8,0 | **0,002** |
+| `Aggregate` | 92,45 ± 0,45 | **83,95 ± 0,31** | −8,50 | −9,2 | **0,000** | 67,95 | **59,16** | −8,79 | −12,9 | **0,001** |
+
+Tohum başına aggregate ΔRMSE −8,50 / −8,69 / −8,31; ΔMAE −8,52 / −9,23 / −8,63. **Yayılım
+etkinin %5'inden küçük** — projedeki en temiz sinyal.
+
+Diğer metrikler (gündüz, 3 tohum ortalaması):
+
+| il | `raw` R² | `kt` R² | `raw` CRPS | `kt` CRPS | `raw` MPIW | `kt` MPIW | `raw` CP | `kt` CP |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Ankara | 0,9019 | 0,9213 | 48,41 | 42,56 | 440,5 | 400,5 | 0,9842 | 0,9207 |
+| Antalya | 0,9126 | 0,9311 | 46,92 | 40,34 | 459,7 | 411,4 | 0,9837 | 0,9667 |
+| Konya | 0,9027 | 0,9218 | 49,87 | 43,90 | 457,8 | 418,1 | 0,9813 | 0,9158 |
+| Van | 0,9003 | 0,9202 | 49,06 | 42,88 | 463,2 | 417,4 | 0,9829 | 0,9238 |
+| Rize | 0,8137 | 0,8333 | 53,30 | 48,90 | 371,7 | 345,5 | 0,9521 | 0,9107 |
+| `Aggregate` | 0,8926 | **0,9114** | 49,51 | **43,72** | 438,6 | 398,6 | 0,9769 | 0,9275 |
+
+### 6.4 Taban çizgisi eşiği — MAE açığı kapandı (toplulaştırılmışta)
+
+`CLAUDE.md`'nin çift eşiği, gündüz:
+
+| il | `kt` RMSE | iklimsel | geçti? | `kt` MAE | akıllı kalıcılık | geçti? | (`raw` MAE) |
+| --- | ---: | ---: | :-: | ---: | ---: | :-: | ---: |
+| Ankara | 79,97 | 100,28 | ✓ | 57,39 | 55,99 | ✗ | 66,64 |
+| Antalya | 75,15 | 95,02 | ✓ | 53,63 | 47,35 | ✗ | 63,00 |
+| Konya | 81,14 | 100,55 | ✓ | 58,42 | 54,30 | ✗ | 68,27 |
+| Van | 80,63 | 104,05 | ✓ | **56,70** | 58,08 | **✓** | 66,15 |
+| Rize | 100,53 | 130,68 | ✓ | **69,67** | 85,23 | **✓** | 75,70 |
+| `Aggregate` | 83,95 | 106,86 | ✓ | **59,16** | 60,19 | **✓** | 67,95 |
+
+`raw`'da MAE eşiği yalnızca Rize'de geçiliyordu; `kt` ile **toplulaştırılmışta ve iki ilde**
+geçiliyor. Üç ilde hâlâ kaybediliyor, ama açık 8–13 W/m²'den 1,4–6,3'e indi. §3.6'nın önerdiği
+mekanizma **doğrulandı**: farkın büyük kısmı gerçekten geometriye erişim farkıydı.
+
+### 6.5 Kalibrasyon — §4.8'in oran yasası bu eksende **çöküyor**
+
+CP 0,977 → 0,9275'e, MPIW 438,6 → 398,6'ya düşüyor. İlk bakışta §4.8'in B-8 bulgusuna benziyor
+(model iyileşir, epistemik yayılım daralır, kapsama düşer) — ama ölçüm bunu **desteklemiyor**.
+
+§4.8'in oran yasası şuydu: gündüz MPIW/RMSE oranı %95 nominal için gereken 3,92'nin üstündeyse
+fazla, altındaysa eksik kapsama; on iki kolda istisnasız. Burada:
+
+| | MPIW | RMSE | **MPIW/RMSE** | CP |
+| --- | ---: | ---: | ---: | ---: |
+| `raw` | 438,6 | 92,45 | **4,74** | 0,9769 |
+| `kt` | 398,6 | 83,95 | **4,75** | **0,9275** |
+
+**Oran aynı, kapsama 0,05 düşük.** Ufuk kırılımı farkı daha da keskinleştiriyor:
+
+| ufuk | `raw` oran | `raw` CP | `kt` oran | `kt` CP |
+| ---: | ---: | ---: | ---: | ---: |
+| h=1 | 6,40 | 0,9948 | **6,70** | **0,9357** |
+| h=8 | 4,74 | 0,9785 | 4,78 | 0,9351 |
+| h=24 | 4,13 | 0,9530 | 4,38 | 0,9258 |
+
+h=1'de `kt`'nin oranı `raw`'dan **daha büyük** (6,70 > 6,40) ama kapsaması 0,06 **daha düşük**.
+Yasa bu eksende geçerli değil.
+
+**Doğru okuma.** MPIW/RMSE, artık dağılımının *şeklini* sabit tutan bir kol ailesi içinde
+(§4.8'in tamamı `raw` mimari merdivenidir) CP'yi öngörür; **formülasyon değiştiğinde
+öngörmez.** Mekanizma açık: `kt` kolunda aralık genişliği inşa gereği
+$\text{CLRSKY}(t{+}h) \times (\text{$k_t$ uzayındaki genişlik})$'tir, yani güneş geometrisiyle
+tam orantılıdır — öğle geniş, alacakaranlık dar. `raw` kolunun aralığı ise gün boyunca çok daha
+düzdür (`raw` MPIW ufuk boyunca ×1,001, yani neredeyse sabit). İki kol aynı *toplam* genişliği
+aynı *toplam* hataya oranlıyor ama genişliği eleman düzeyinde farklı dağıtıyor, ve kapsama bir
+eleman özelliğidir.
+
+**Bunun conformal tasarımına doğrudan sonucu var, ve önceki planı geçersiz kılıyor:**
+
+1. **Skaler bir düzeltme yetmez.** Toplam oran zaten "doğru" görünürken kapsama yanlış
+   olduğuna göre, tek bir çarpan hiçbir şeyi düzeltmez. Katsayı **en azından il × ufuk**
+   ızgarasında olmalı — muhtemelen berrak-gökyüzü düzeyine göre de.
+2. **Düzeltmenin yönü kola bağlı.** `raw` her ufukta nominalin **üstünde** (0,953–0,995,
+   daraltma gerekir), `kt` her ufukta **altında** (0,910–0,957, genişletme gerekir). Çarpansal
+   bir katsayı ızgarası ikisini de karşılar; bunu tek yönlü bir "daraltma katmanı" olarak
+   tasarlamak `kt` kolunu bozardı.
+3. **Yine de derin teşhis ayakta:** aralık epistemik yayılıma göre boyutlanıyor, oysa kapsaması
+   gereken artık hata. §3.5 (doğruluk), §4.8 (kapasite) ve §6.5 (formülasyon) üç ayrı eksende
+   aynı yere çıkıyor. Conformal katman ertelenebilir bir iyileştirme değil.
+
+### 6.6 Hüküm
+
+- **`clearsky_index` her metrikte ve her ilde kazanıyor**, tam doğrulukta, üç tohumun üçünde,
+  $p \le 0{,}008$. Bu, projedeki tek en büyük iyileşme.
+- **§3.6'nın mekanizma açıklaması doğrulandı** ve MAE açığı toplulaştırılmışta kapandı.
+- **Kalibrasyon bedeli var** (CP 0,977 → 0,928) ve conformal katmanla birlikte ele alınmalı.
+  §6.5 ayrıca conformal tasarımını değiştirdi: skaler bir katsayı yetmez, ızgara gerekir, ve
+  düzeltme yönü kola göre ters işaretlidir.
+- **Manşet konfigürasyonu değiştirme kararı henüz verilemez** (§6.7, T-6.1).
+
+### 6.7 Geçerlilik tehditleri
+
+- **T-6.1 — transfer sonucu `raw` altında ölçüldü.** §1–§5'in tamamı (H1 altı tohum, uç nokta
+  ablasyonu) `target_transform="raw"` kollarıdır. `kt`'nin manşet olması hâlinde bunların hepsi
+  yeniden ölçülmelidir, ve **taşınacağı varsayılamaz.** Kuşkunun yönü belirli: `raw` modelin
+  öğrenmek zorunda olduğu şeyin büyük kısmı güneş-geometrisi zarfıdır, ki bu beş il arasında
+  **en açık biçimde paylaşılan** yapıdır — yani havuzlamanın yardımcı olduğu şeyin ta kendisi
+  olabilir. Zarfı bedava vermek transfer kazancını küçültebilir veya yok edebilir. `target_kt_h1`
+  grubu (3 kol, ~0,7 sa) tam olarak bunu soruyor ve **her şeyden önce koşulmalıdır.**
+- **T-6.2 — eksen iki etkiyi birlikte taşıyor ve ayrılamaz.** Hedef tanımı ve onun ima ettiği
+  kayıp ağırlıklandırması ($k_t$ uzayında bulutlu öğle ile açık sabah benzer ağırlık taşır,
+  W/m² uzayında yüksek ışınımlı saatler baskındır) tek bir değişikliktir. Kol bunlardan birini
+  yalıtmaz; makale de öyle sunmamalıdır.
+- **T-6.3 — `best_val_loss` iki kol arasında karşılaştırılamaz.** `kt` kolunun 0,28'i ile ham
+  kolun 0,14'ü farklı birimlerdeki kayıplardır. Ledger sütununun uyarısı buna göre genişletildi.
+- **T-6.4 — üç tohum.** Etki tohum yayılımının mertebelerce üstünde, ama H1'in birincil sonlanım
+  noktası altı tohumdur; `kt` altında da altıya çıkarılmalıdır (`target_kt_full`).
+- **T-6.5 — kapsama düştü.** §6.3'ün aralık metrikleri nominalin altında; `kt` kolunun CP'si
+  Rize'de 0,9107. Kaynak makaleyle PICP karşılaştırması bu kolda **yeniden kurulmalıdır**
+  (`main_methodology.md` §11.5, sonuç 3).
+
+---
+
 ## A. Bu belge bir şablondur — yeni bir ablasyon nasıl eklenir
 
 §1, sonraki ablasyonlar için kalıptır. Yeni bir eksen geldiğinde **§1 düzenlenmez**; `## 2.`,

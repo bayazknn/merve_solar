@@ -349,6 +349,12 @@ $k_t = 3{,}28$). Kırpma veya eşik **uygulanmaz** ve gerekmez.
 `clamp_night_to_zero` bu kolda bir düzeltme değil, etkisiz bir işlem hâline gelir. Bu, gece
 kısıtının daha güçlü bir biçimidir.
 
+**Ölçülen sonuç.** Tam doğrulukta ($B = 8$, $T = 100$, L1, beş il, üç tohum, eşleştirilmiş —
+`ABLATION.md` §6): gündüz `Aggregate` RMSE 92,45 → **83,95** (−%9,2), MAE 67,95 → **59,16**
+(−%12,9), R² 0,8926 → **0,9114**, CRPS 49,51 → **43,72**. Beş ilin hepsinde ve her metrikte,
+$p \le 0{,}008$. §3.6'nın MAE açığı toplulaştırılmışta **kapandı** (akıllı kalıcılık 60,19'a
+karşı 59,16). Kapsama bedeli var: CP 0,977 → 0,928 (§11.5).
+
 **Ayrılamayan karıştırıcı.** Eksen aynı anda **kaybın ağırlıklandırmasını** da değiştirir:
 $k_t$ uzayında bulutlu bir öğle saati ile açık bir sabah saati benzer ağırlık taşır, oysa
 W/m² uzayında yüksek ışınımlı saatler baskındır. İkisi tek bir değişikliktir; kol bunlardan
@@ -822,6 +828,16 @@ oranının (4,29) eşiğin (3,92) hemen üstünde kalmasıdır.
 
 **Metodolojik sonuçları:**
 
+0. **Düzeltme skaler olamaz, ızgara olmalıdır — ve bu ölçüldü.** MPIW/RMSE oranının CP'yi
+   öngörmesi, artık dağılımının *şeklini* sabit tutan bir kol ailesi içinde geçerlidir.
+   `target_transform` ekseninde çöker: `raw` ve `clearsky_index` kolları aynı oranı (4,74 ve
+   4,75) taşırken CP'leri 0,977 ve 0,928'dir; h=1'de `kt`'nin oranı daha *büyük* (6,70 > 6,40)
+   ama kapsaması daha *düşüktür* (0,936 < 0,995). Nedeni, `kt` kolunda aralık genişliğinin inşa
+   gereği $\text{CLRSKY}(t{+}h)$ ile orantılı, `raw` kolunda ise gün boyunca neredeyse düz
+   olmasıdır — aynı toplam genişlik, farklı eleman düzeyinde dağılım, ve kapsama bir eleman
+   özelliğidir. Ayrıca **düzeltmenin yönü kola göre terstir**: `raw` her ufukta nominalin
+   üstünde (daraltma), `kt` her ufukta altında (genişletme). Katmanın en azından il × ufuk
+   ızgarasında çarpansal olması bu nedenle bir tercih değil, gerekliliktir.
 1. **Kapasite yükseltmesi ile aralık kalibrasyonu tek bir karardır**, iki ayrı iş değil. Daha
    iyi bir mimari, conformal/ölçekleme katmanı olmadan benimsenirse nokta doğruluğu kazanılıp
    kapsama kaybedilir.
