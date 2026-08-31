@@ -2067,8 +2067,11 @@ düzeltmenin işareti kola göre değişir — smoke çiftinde her iki kol da $k
 doğrulukta `raw` nominalin üstündedir (CP 0,977, $k<1$ beklenir) ve `kt` altındadır (0,928,
 $k>1$). Çarpansal ızgara ikisini de karşılar.
 
-**Açık kalan:** tam doğrulukta hiçbir conformal koşu yok. `conformal` grubu (6 kol, ~4,6 sa) ve
-opsiyonel `conformal_grid` grubu (5 kol, ~3,8 sa) tanımlı ve koşulmayı bekliyor. Koşulduğunda
+**Açık kalan:** tam doğrulukta hiçbir conformal koşu yok. `conformal` grubu (6 kol, **~5,8 sa**)
+ve opsiyonel `conformal_grid` grubu (5 kol, ~4,0 sa) tanımlı ve koşulmayı bekliyor. Süreler
+ölçülmüştür: altı ikiz kola `süre = epok × c_epok + B{\cdot}T × c_mc` uydurulduğunda Mac/MPS'te
+epok başına 10,22 s ve MC geçişi başına 0,662 s çıkıyor (en büyük artık 9 s); kalibrasyon geçişi
+bunun 32.315/44.155 = 0,732 katı, yani **+%13**. Koşulduğunda
 §8.5 gerçek sayılarla değiştirilir, künye güncellenir ve T-8.3 doğrulama bölmesi üzerinden
 kapatılır.
 

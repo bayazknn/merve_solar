@@ -71,10 +71,15 @@ configured in this repo.
 **Before proposing a full run**, sanity-check the code path with a smoke config
 (`n_bootstrap=1, max_epochs=5, mc_dropout_passes=10`). A full-fidelity run is 8 replicas × 100
 MC passes; a crash at the metrics step after two hours of training is the expensive failure mode
-here. Cost is measured, not guessed: on this CPU-only host (12 cores, torch on 6 threads) the
-pooled five-province split runs 25.7 s/epoch and 1.83 s/MC-pass, which puts a twelve-arm study
-at B=8×T=100 between 22 h (early stopping at epoch 40) and 96 h (every replica to the cap) —
-days, not hours. That is why `ABLATION_B1` exists. `run_all_experiments.py` with no `--group`
+here. Cost is measured, not guessed, and it is measured **per backend**: on this CPU-only host
+(12 cores, torch on 6 threads) the pooled five-province split runs 25.7 s/epoch and
+1.83 s/MC-pass; on the remote Mac's MPS backend it runs **10.22 s/epoch and 0.662 s/MC-pass**
+(fitted on the six `abl_rize_all5_s*_full` / `abl_target_kt_s*_full` arms as
+`time = epochs·c_e + B·T·c_m`, largest residual 9 s of 2337–3945 s). A full B=8×T=100 five-province
+arm is therefore ~51 min on the Mac, of which the MC-Dropout stage is ~8.8 min — which is why the
+conformal layer's validation pass (0.732× that stage) costs +13% and not more. The CPU numbers put
+a twelve-arm study between 22 h and 96 h — days, not hours; always quote the backend with the
+estimate. That is why `ABLATION_B1` exists. `run_all_experiments.py` with no `--group`
 selects *every* group, which is far more than anyone usually means; always `--list` first.
 
 ## Architecture

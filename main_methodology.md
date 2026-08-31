@@ -939,7 +939,10 @@ kapsamayı düzelten eksen, mevsim ekseni %27 daha kazandırıyor çünkü $k$ y
 oynuyor — bulut değişkenliği mevsimseldir, epistemik yayılım değildir.
 
 **Kalibrasyon kümesi = doğrulama bölmesi.** Boru hattı `conformal_mode != "none"` olduğunda
-doğrulama bölmesini de aynı $B \times T$ geçişle tahmin eder (~%13 ek süre; `mc_dropout.pooled_summary`
+doğrulama bölmesini de aynı $B \times T$ geçişle tahmin eder (**ölçülen ek süre %13**: altı ikiz
+kola $\text{süre} = \text{epok} \times c_e + BT \times c_m$ uydurulduğunda Mac/MPS'te
+$c_e = 10{,}22$ s ve $c_m = 0{,}662$ s çıkıyor, en büyük artık 9 s; kalibrasyon bölmesi test
+bölmesinin 32.315/44.155 = 0,732 katıdır. `mc_dropout.pooled_summary`
 pencere ekseninde parçalayarak ikinci bir çok-GB'lık dizi ayırmaz). İki sınır açıkça
 kaydedilmelidir:
 
@@ -1170,7 +1173,7 @@ yüklenirken düşer, saatler sonra eğitim ortasında değil.
 | `loss_daylight_only`  | `False`        | Kayıp yalnız gündüz adımları üzerinden hesaplansın mı (raporlama değil, modelleme değişikliği)                                              |
 | `per_city_scaler`     | `True`         | Yalnızca `training_scope="per_city"` iken; her il kendi ölçekleyicisini alır (§7'deki belgelenmiş istisna). `False` havuzlanmış ölçekleyiciyi paylaştırır |
 | `clamp_night_to_zero` | `True`         | Ters ölçeklemeden sonra $\text{CLRSKY} = 0$ elemanlarını sıfıra kırp (§11.3)                                                                |
-| `conformal_mode`      | `"none"`       | Split-conformal yeniden kalibrasyonun ızgara granülerliği: `none` / `global` / `per_horizon` / `per_city` / `city_horizon` / `per_season` / `city_season` (§11.6). `none` dışındaki her değer koşuyu doğrulama bölmesini de tahmin etmeye zorlar (~%13 ek süre); önerilen mod `city_season` |
+| `conformal_mode`      | `"none"`       | Split-conformal yeniden kalibrasyonun ızgara granülerliği: `none` / `global` / `per_horizon` / `per_city` / `city_horizon` / `per_season` / `city_season` (§11.6). `none` dışındaki her değer koşuyu doğrulama bölmesini de tahmin etmeye zorlar (ölçülen %13 ek süre); önerilen mod `city_season` |
 | `excluded_cities`     | `[]`           | Bu koşudan **tamamen** (eğitim, doğrulama ve test) çıkarılan iller; il kimlikleri yeniden numaralandırılmaz                                 |
 
 ### 13.2 Çıktılar

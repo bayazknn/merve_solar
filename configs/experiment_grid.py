@@ -782,11 +782,14 @@ CONFORMAL_MODE = "city_season"
 
 
 def _conformal_configs() -> list:
-    """The conformal layer at full fidelity, both formulations, 3 seeds. 6 arms, ~4.6 h.
+    """The conformal layer at full fidelity, both formulations, 3 seeds. 6 arms, ~5.8 h.
 
-    Longer than the 2 x 3 arms it replaces would suggest: `conformal_mode != "none"` makes each
-    run predict the VALIDATION split as well, pooled over the same B*T passes, which is roughly
-    a 13% wall-clock surcharge on top of the ~2.0 h a full arm already costs.
+    Measured, not guessed. Fitting `time = epochs * c_epoch + B*T * c_mc` on the six twin arms
+    gives, on the Mac's MPS backend, 10.22 s/epoch and 0.662 s/MC-pass (largest residual 9 s out
+    of 2337-3945 s). So the test MC-Dropout stage is ~8.8 min of a ~51 min arm, and the
+    validation split -- 32,315 windows against the test split's 44,155 -- adds 0.732x of it,
+    i.e. ~6.5 min, a **+13% wall-clock surcharge**. The raw arms average 2505 s and the kt arms
+    3628 s (kt trains longer: 284-334 total epochs against 176-207).
 
     WHY city_season AND NOT THE (city x horizon) GRID ABLATION.md 6.5 PROPOSED. Measured over the
     16 finished runs that have prediction dumps, via scripts/07_conformal_diagnostic.py, as the
@@ -841,7 +844,7 @@ def _conformal_configs() -> list:
 def _conformal_grid_configs() -> list:
     """The grid-geometry ablation at full fidelity: one seed, one formulation, five modes.
 
-    5 arms, ~3.8 h. This is what turns "a scalar factor cannot work" from an argument into a
+    5 arms, ~4.0 h. This is what turns "a scalar factor cannot work" from an argument into a
     measured claim at the fidelity the paper reports, rather than at the B=1 fidelity of the
     diagnostic that chose the default. `none` is not included: abl_rize_all5_s42_full IS that
     arm, already measured, and rerunning it would only add a duplicate row.

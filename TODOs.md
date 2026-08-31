@@ -13,9 +13,9 @@ Yalın liste. Gerekçe ve sayılar burada **tekrarlanmaz**, kaynak dosya göster
       sütunu, varsayılan `"none"`. Izgara **`city_season`** (il × mevsim), §6.5'in önerdiği
       il × ufuk **değil**: ufuk ekseni ölçüldü ve null çıktı. → `ABLATION.md` §8,
       `main_methodology.md` §11.6
-- [ ] **Conformal `conformal` grubunu koş** (6 kol, ~4,6 sa: `raw` × `kt` × 3 tohum). Tam
+- [ ] **Conformal `conformal` grubunu koş** (6 kol, **~5,8 sa**: `raw` × `kt` × 3 tohum). Tam
       doğrulukta hiç ölçülmedi; §8.5 hâlâ smoke sayılarıyla duruyor. Opsiyonel: `conformal_grid`
-      (5 kol, ~3,8 sa) geometri ablasyonunu tam doğrulukta tekrarlar.
+      (5 kol, ~4,0 sa) geometri ablasyonunu tam doğrulukta tekrarlar.
 - [ ] **Izgara geometrisini doğrulama bölmesinde yeniden seç** (T-8.3). Şu anki seçim test
       döneminin içinde uyarlanıp puanlandı. Her conformal koşu `calibration_predictions.npz`
       yazıyor; `07_conformal_diagnostic.py` o dosyayı okuyacak biçimde genişletilmeli.
