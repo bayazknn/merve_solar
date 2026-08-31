@@ -102,7 +102,8 @@ hangilerinin **taşındığı varsayılamayacağı** buradan okunur. Sütun "kan
 | **`lookback` / `horizon` / `stride`** | her şey — pencere sayısı ve `n_elements` değişir | ÖLÇÜLDÜ (B-2, §4.5): 48/72 saat referansı iyileştirmiyor, ama eğitim süresini iki katına çıkarıyor. |
 | **cihaz** (`MERVE_DEVICE`) | hiçbiri — ama **tek koşu farkları** okunamaz hâle gelir | ÖLÇÜLDÜ (§1.10): MPS determinist değildir. Çok tohumlu ortalamalar tek bir arka uçtan gelmelidir. |
 | **`clamp_night_to_zero`, gündüz maskesi** | tüm-saat metriklerinin tamamı; gündüz metrikleri etkilenmez | Gece elemanları tanım gereği kapsanır; tüm-saat CP yapısal olarak şişer. |
-| **conformal / aralık katmanı** (henüz yok) | tüm aralık metrikleri (CP/PINW/MPIW/CWC/Reliability); nokta metrikleri etkilenmez | Planlanıyor; §6.5 katmanın **ızgara** olması ve **işaretinin kola göre değişmesi** gerektiğini gösterdi. |
+| **`conformal_mode`** | tüm aralık metrikleri (CP/PINW/MPIW/CWC/Reliability) **ve CRPS**; nokta metrikleri (RMSE/MAE/R²) tanım gereği **etkilenmez** | UYGULANDI (§8). Varsayılan `"none"`; ledger sütunu. Bir conformal satır yalnız aralığıyla ikizinden ayrılır. §6.5'in "il × ufuk" önerisi ölçülüp **yanlış çıktı**: ufuk ekseni null (C-1), doğru ikinci eksen **mevsim** (C-3, C-5). |
+| **mevsimsel bileşim** (bölme oranları, veri penceresi) | conformal ızgaranın **tamamı**; kalibrasyon kümesinin hangi ayları kapsadığı doğrudan $k$'yi belirler | ÖLÇÜLDÜ (C-5, §8.4): $k$ yıl içinde 1,67–2,51 kat oynuyor. `train_ratio`/`val_ratio` değişirse doğrulama bölmesinin ay kapsaması ve dolayısıyla ızgara yeniden ölçülmelidir. |
 
 ### 0.4 Bölüm haritası
 
@@ -115,6 +116,7 @@ hangilerinin **taşındığı varsayılamayacağı** buradan okunur. Sütun "kan
 | §5 | beş il uç nokta ablasyonu | $B{=}8$ | mae | raw | tamam |
 | §6 | hedef dönüşümü | $B{=}8$ | mae | **raw vs kt** | tamam |
 | §7 | transferin formülasyona dayanıklılığı | $B{=}8$ | mae | kt | tamam; §1–§5'i koşullu kılar |
+| §8 | conformal aralık katmanı, ızgara geometrisi | **$B{=}1$ + smoke** | mae/mse/huber | raw **ve** kt | geometri seçildi; **tam doğrulukta ölçülmedi** |
 
 ## 1. İl havuzlama (cross-city transfer) — Rize transfer eğrisi
 
@@ -1624,6 +1626,13 @@ eleman özelliğidir.
 
 **Bunun conformal tasarımına doğrudan sonucu var, ve önceki planı geçersiz kılıyor:**
 
+> **DÜZELTME (§8.7).** Aşağıdaki 1. maddenin ızgara önerisi **ölçüldü ve yanlış çıktı.** Ufuk
+> ekseni null: 16 koşuda `city_horizon`, `per_city`'ye 24 kat hücre karşılığında 0,0005
+> kazandırıyor (C-1). Doğru ikinci eksen **mevsim**dir (C-3), ve sürücü berrak-gökyüzü düzeyi
+> değil **bulut rejiminin mevsimsel değişkenliği**dir (C-5). "Skaler yetmez" ise ayakta, ama
+> doğru ifadesiyle: skaler **marjinal** kapsamayı tutturur, **koşullu** kapsamayı vermez (C-2).
+> 2. ve 3. maddeler değişmedi. Bu blok, o zaman ne düşünüldüğünün kaydı olarak bırakılmıştır.
+
 1. **Skaler bir düzeltme yetmez.** Toplam oran zaten "doğru" görünürken kapsama yanlış
    olduğuna göre, tek bir çarpan hiçbir şeyi düzeltmez. Katsayı **en azından il × ufuk**
    ızgarasında olmalı — muhtemelen berrak-gökyüzü düzeyine göre de.
@@ -1864,6 +1873,207 @@ $p = 0{,}010$ kötüleşiyor).
 
 ---
 
+## 8. Conformal aralık katmanı — kapsamayı yeniden kuran ızgaranın geometrisi
+
+> **Geçerlilik künyesi** — bu bölümün bulguları yalnızca bu konfigürasyonda geçerlidir (§0.2, §0.3).
+>
+> | veri kümesi | hedef dönüşümü | mimari | doğruluk | kriter | kapsam | tohum | cihaz |
+> | --- | --- | --- | --- | --- | --- | --- | --- |
+> | $F=17$, referans | `raw` **ve** `clearsky_index` | `[64,32]`, do 0,3 | **$B{=}1$ (teşhis), smoke (kod yolu)** | `mae`, `mse`, `huber` | beş il havuzlanmış ve alt kümeler | 42–44 | cpu |
+>
+> **Bu bölümde tam doğrulukta ölçülmüş hiçbir sayı yoktur.** Geometri seçimi 16 bitmiş $B{=}1$
+> koşusunun tahmin dökümlerinden, kod yolu doğrulaması smoke doğrulukta yapıldı. Doğruluk
+> aralığın *ne olduğunu* değiştirir (§0.3, $B$ satırı), dolayısıyla buradaki $k$ değerleri
+> $B{=}8$'in $k$ değerleri **değildir** — taşınan şey yapıdır, sayılar değil. `conformal`
+> grubunun altı kolu koşulduğunda bu künye güncellenir.
+
+### 8.1 Sınanan iddia
+
+Havuzlanmış Bootstrap × MC-Dropout örneği yalnızca **epistemik** yayılım taşır — modelin kendi
+ortalamasının nerede olabileceği — oysa aralık **gözlemi** kapsayıp kapsamadığına göre puanlanır,
+ki bu ek olarak artık (aleatorik) terimi de içerir. Boru hattında ikisini uzlaştıran hiçbir adım
+yoktur, bu yüzden kapsama bu uyumsuzluğun ne verdiğiyse odur — ve üç bağımsız eksende, birbirini
+düzeltmeyecek biçimde bozulur (§3.5 doğruluk, §4.6 kapasite, §6.5 formülasyon).
+
+§6.5 bundan bir tasarım önerisi çıkarmıştı: düzeltme **skaler olamaz**, **en azından il × ufuk**
+ızgarası olmalı, ve **işareti kola göre değişmeli** (`raw` daraltma, `kt` genişletme). Bu bölüm o
+öneriyi ölçtü. İki maddesi doğrulandı, biri **yanlış çıktı.**
+
+### 8.2 Düzeltmenin biçimi — aralığın değil, **dağılımın** ölçeklenmesi
+
+Katman öngörü dağılımını kendi ortalaması etrafında yeniden ölçekler:
+
+$$x \;\longmapsto\; m + k\,(x - m),$$
+
+hücre başına tek bir $k$ ile. Bu bilinçli olarak **aralık hakkında değil, dağılım hakkında** bir
+ifadedir ve üç sonucu vardır:
+
+1. Dönüşüm afin ve artan olduğu için yeniden ölçeklenmiş örneğin 2,5/97,5 yüzdelikleri, tam
+   olarak yeniden ölçeklenmiş yüzdeliklerdir — CP/PINW/MPIW/CWC **ve CRPS** birbiriyle tutarlı
+   kalır. Uç noktaları toplamsal kaydıran CQR biçimi aralığı düzeltir ama CRPS'i düzeltilmemiş
+   bir dağılımı betimler hâlde bırakırdı; tek ledger satırında iki uyumsuz nesne olurdu.
+2. Ortalama **değişmez**, dolayısıyla RMSE/MAE/R² son hanesine kadar aynıdır. Uçtan uca test
+   edilmiştir (`tests/test_conformal.py`).
+3. $k$ doğrudan okunur: $k<1$ epistemik yayılım artıklara göre fazla genişti, $k>1$ dardı.
+   Yazımın istediği sayı budur.
+
+Kalibrasyon skoru, bir elemanı kapsayacak **en küçük** $k$'dir:
+
+$$s = \frac{y-m}{U-m}\ \ (y \ge m), \qquad s = \frac{m-y}{m-L}\ \ (y < m),$$
+
+ve hücrenin $k$'si $\{s_i\}$'nin $\lceil (n+1)(1-\alpha)\rceil$'inci en küçüğüdür — kapsama
+garantisini asimptotik değil **sonlu örnekte kesin** kılan düzeltme.
+
+**Gece hiçbir zaman kalibre edilmez ve hiçbir zaman düzeltilmez.** Ufkun altında $m=L=U=0$ ve
+$y=0$, yani skor $0/0$; bu elemanlar aralık genişliği hakkında bilgi taşımaz, uyuma girmez ve
+$k=1$'de bırakılır.
+
+### 8.3 Izgara geometrisi — C-1…C-4
+
+`scripts/07_conformal_diagnostic.py`, tahmin dökümü olan **16 bitmiş koşunun** test
+pencerelerinin yarısında her modu uyarlayıp diğer yarısında puanlıyor. Dört kalibrasyon
+geometrisi karşılaştırılıyor; makaleye giren `production_like` (rastgele yarı, **Nisan ve Mayıs
+çıkarılmış** — gerçek doğrulama bölmesinin deliği), ölçüt **il başına en kötü** $|CP-0{,}95|$,
+16 koşunun ortalaması:
+
+| mod | hücre | exchangeable | season_balanced | **production_like** | temporal |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| düzeltilmemiş | 0 | 0,2015 | 0,2001 | **0,2052** | 0,2510 |
+| `global` | 1 | 0,0224 | 0,0256 | **0,0314** | 0,0608 |
+| `per_horizon` | 24 | 0,0217 | 0,0250 | **0,0302** | 0,0614 |
+| `per_season` | 4 | 0,0304 | 0,0462 | **0,0282** | 0,0483 |
+| `per_city` | 5 | 0,0032 | 0,0113 | **0,0136** | 0,0905 |
+| `city_horizon` | 120 | 0,0031 | 0,0109 | **0,0131** | 0,0914 |
+| **`city_season`** | 20 | 0,0032 | 0,0202 | **0,0099** | 0,0507 |
+
+Toplulaştırılmış $|CP-0{,}95|$ aynı sırayla: düzeltilmemiş 0,1556 → `global` 0,0069 →
+`city_season` **0,0035**.
+
+- **C-1: ufuk ekseni null.** `city_horizon`, `per_city`'ye 24 kat hücre karşılığında 0,0005
+  kazandırıyor, ve bu **dört geometrinin hepsinde** böyle. §6.5'in "en azından il × ufuk"
+  önerisi **ölçülüp yanlış çıktı**; ufuk eksenini eklemek hücreleri inceltmekten başka bir şey
+  yapmıyor. (Düzeltme kaydı §8.7'de.)
+- **C-2: il ekseni koşullu kapsamayı düzelten eksendir.** 0,0314 → 0,0136, 2,3 kat. Skaler bir
+  çarpan **toplulaştırılmış** kapsamayı zaten tutturuyor (0,0069) — dört ili fazla, Rize'yi
+  eksik kapsayarak. Bu, **Aggregate tuzağının (K-1) kapsama biçimidir** ve §6.5'in "skaler
+  yetmez" iddiasının doğru ifadesidir: skaler **marjinal** kapsamayı verir, **koşullu**
+  kapsamayı vermez.
+- **C-3: kimsenin önermediği mevsim ekseni %27 daha kazandırıyor** (0,0136 → 0,0099) ve
+  `city_horizon`'un 120 hücresi yerine 20 hücre kullanıyor.
+- **C-4: mevsim ekseni en kötü durumda da en dayanıklısıdır.** `temporal` geometride (kalibrasyon
+  ilkbahar-yaz, değerlendirme sonbahar-kış) `per_city` **en kötü** moda düşüyor (0,0905), mevsim
+  modları en iyide kalıyor (0,0483–0,0507): mevsim hücresi hiç değilse bir yaz katsayısını kışa
+  uygulamıyor.
+
+**Ayrıştırma — hangi tehdit gerçek?** `temporal` geometride hiçbir mod nominale ulaşmıyor
+(toplulaştırılmış $|CP-0{,}95|$ 0,032–0,056), `season_balanced` geometride (aylar dönüşümlü:
+zamansal olarak iç içe ama mevsimsel olarak dengeli) her mod 0,003–0,014'e dönüyor. Yani hasar
+**mevsimsel bileşimden** kaynaklanıyor, yıldan yıla kaymadan değil. On iki ayın onunu kapsayan
+bir doğrulama bölmesinin çalışabilir bir kalibrasyon kümesi, kronolojik ilk yarının ise
+olmamasının nedeni budur.
+
+### 8.4 C-5 — $k$ mevsimle 1,7–2,5 kat oynuyor
+
+`outputs/tables/conformal_month_stability_test.csv`: $k$ ay ay yeniden uyarlandığında **16
+koşunun hepsinde** yıl içinde 1,67–2,51 kat salınıyor. Üç temsilci koşu, aylık $k$:
+
+| koşu | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 | 09 | 10 | 11 | 12 | salınım |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `abl_loss_mae_s42_b1` | 1,04 | 1,35 | 1,42 | 1,30 | 1,13 | 0,79 | 0,74 | 0,82 | 0,94 | 0,95 | 0,88 | 0,97 | 1,91× |
+| `abl_rize_all5_s42_b1` | 1,49 | 1,64 | 1,56 | 1,60 | 1,34 | 0,82 | 0,91 | 1,09 | 1,34 | 1,49 | 1,49 | 1,53 | 2,00× |
+| `abl_loss_huber_s42_b1` | 1,57 | 1,68 | 1,61 | 1,59 | 1,40 | 0,99 | 1,10 | 1,33 | 1,51 | 1,54 | 1,59 | 1,64 | 1,70× |
+
+Mekanizma: **bulut değişkenliği mevsimseldir, epistemik yayılım değildir.** Haziran–Temmuz'da
+gökyüzü berrak, artıklar küçük, mevcut aralık zaten yeterince geniş ($k \approx 0{,}74$–1,10);
+Şubat–Nisan'da bulut rejimi oynak, artıklar büyük, aralığın %60'a varan genişletilmesi gerekiyor
+($k \approx 1{,}35$–1,68). Bu, §6.5'in "muhtemelen berrak-gökyüzü düzeyine göre de" tahminini de
+**düzeltiyor**: sürücü geometrik zarf değil, atmosferik değişkenliktir. Zarf zaten `kt`
+dönüşümünün işidir (§6).
+
+**Doğrudan sonucu:** doğrulama bölmesinin Nisan–Mayıs deliği tam olarak $k$'nin en yüksek olduğu
+mevsime denk düşüyor. Mevsim ızgarası bu deliği **hayatta kalınabilir** kılan şeydir: MAM hücresi
+yalnız Mart'tan uyarlanıyor (il başına 6.660 kalibrasyon elemanı, `MIN_CELL_N`=200'ün çok
+üstünde) ve Nisan ile Mayıs'ı taşıyor. Mart'ın $k$'si Nisan'ınkine yakın (1,42 ↔ 1,30;
+1,56 ↔ 1,60; 1,61 ↔ 1,59), bu yüzden vekil savunulabilir.
+
+### 8.5 Kod yolu doğrulaması — smoke, **sonuç değil**
+
+`smoke_conformal_{raw,kt}` ↔ `smoke_{raw,kt}_check`. Çiftler, katmandan önce var olan **her
+config alanında birebir aynıdır** (`config.json`'lar alan alan karşılaştırıldı). Gündüz alt
+kümesi:
+
+| kol | RMSE | MAE | R² | CP önce | CP sonra | MPIW önce | MPIW sonra |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `raw` | 101,459 | 73,946 | 0,8706 | 0,8229 | **0,9427** | 291,6 | 429,1 |
+| `kt` | 89,444 | 62,399 | 0,8995 | 0,7678 | **0,9455** | 263,0 | 511,0 |
+
+RMSE/MAE/R² **son hanesine kadar değişmiyor** — değişmezlik gerçek veride de tutuyor. İl bazında,
+`raw` / `kt`:
+
+| il | CP önce | CP sonra | CWC önce | CWC sonra |
+| --- | ---: | ---: | ---: | ---: |
+| Ankara | 0,834 / 0,786 | 0,943 / 0,942 | 94,9 / 985 | 0,98 / 1,18 |
+| Antalya | 0,866 / 0,819 | 0,947 / 0,949 | 20,3 / 186 | 0,86 / 0,96 |
+| Konya | 0,835 / 0,780 | 0,945 / 0,943 | 95,6 / 1.350 | 0,99 / 1,22 |
+| **Rize** | **0,751 / 0,684** | **0,946 / 0,948** | **5.022 / 131.225** | **1,04 / 1,14** |
+| Van | 0,828 / 0,770 | 0,933 / 0,945 | 131,2 / 2.096 | 1,36 / 1,17 |
+
+En kötü kalibre edilmiş il en iyi kalibre edilmiş il oluyor ve CWC — CLAUDE.md'nin "aşırı
+güvenli modelin bayrağı" dediği metrik — beş büyüklük mertebesi düşüyor.
+
+**Bu sayılar tabloya girmez** ($B{=}1 \times T{=}10$ aralık metrikleri anlamsızdır, K-4).
+Doğrulanan şey kod yoludur: kalibrasyon geçişi, ızgara uyumu, üç CSV, ve gerçek mevsimsel delikle
+üretim geometrisinin çalıştığı.
+
+### 8.6 Geçerlilik tehditleri
+
+- **T-8.1 — kalibrasyon kümesi erken durdurmanın gördüğü kümedir.** Gerçek bir değişilebilirlik
+  ihlali. Zayıf bir ihlal (erken durdurma 32.315 pencerenin ortalama kaybından **tek bir tam
+  sayı** seçer) ama sıfır değil. Temiz sürüm, hiçbir eğitim kararının dokunmadığı bir kalibrasyon
+  bölmesi ister.
+- **T-8.2 — doğrulama bölmesinde Nisan ve Mayıs yok** (2024-06-27 → 2025-03-24, on ay), gündüz
+  oranı 0,489'a karşı testin 0,515'i. §8.4 bunu ölçtü ve mevsim ızgarasıyla hafifletti, ama
+  ortadan kaldırmadı.
+- **T-8.3 — geometri testte seçildi.** §8.3'ün teşhisi test döneminin içinde uyarlanıp
+  puanlanıyor; bu bir hiperparametreyi test kümesinde seçmektir. Desteklediği sonuçlar **yapısal**
+  (hangi eksen sinyal taşıyor, $k$ mevsimle ne kadar oynuyor) ve herhangi bir bölmede görünürdü.
+  Yine de her conformal koşu artık `calibration_predictions.npz` yazıyor, böylece aynı
+  karşılaştırma **doğrulama bölmesinde** — seçimin dürüst olduğu yerde — tekrarlanabilir. İlk
+  `conformal` grubu koştuktan sonra yapılacak iş budur.
+- **T-8.4 — bütün teşhis $B{=}1$.** Doğruluk aralığın ne olduğunu değiştirir (§0.3). $k$
+  değerleri taşınmaz.
+- **T-8.5 — pencereler örtüşüyor.** Stride-1'de bir hücrenin ~3.200 elemanı kabaca 3.200/24
+  bağımsız gözlem eder; sonlu-örnek yüzdeliği ham sayının önerdiğinden gürültülüdür.
+  `MIN_CELL_N`=200 bu yüzden biçimsel olarak gereken ~19'un çok üstündedir.
+- **T-8.6 — CRPS ve nokta metrikleri.** CRPS yeniden ölçeklenmiş **örnekten** hesaplanır, yani
+  düzeltmeyi görür; RMSE/MAE/R² tanım gereği görmez. Bir conformal satır ile düzeltilmemiş
+  ikizi arasındaki tek fark aralıktır.
+
+### 8.7 Hüküm ve düzeltme kaydı
+
+**Öneri: `conformal_mode="city_season"`.** Dört geometrinin ikisinde en iyi, birinde ikinci, ve
+üretime en yakın olanında (`production_like`) hem koşullu (0,0099) hem marjinal (0,0035) kapsamada
+en iyi. 20 hücre, `city_horizon`'un 120'sine karşı.
+
+**Düzeltme — §6.5'in ızgara önerisi.** §6.5 "katsayı **en azından il × ufuk** ızgarasında olmalı —
+muhtemelen berrak-gökyüzü düzeyine göre de" diyordu. Ölçüldü, **iki bakımdan yanlış:**
+
+1. Ufuk ekseni null (C-1). Doğru ikinci eksen **mevsim**dir (C-3).
+2. Sürücü berrak-gökyüzü düzeyi (geometri) değil, **bulut rejiminin mevsimsel değişkenliği**dir
+   (C-5). Geometrik zarfı `kt` dönüşümü zaten hallediyor (§6).
+
+§6.5'in geri kalan iki maddesi **ayakta**: skaler bir düzeltme koşullu kapsamayı vermez (C-2), ve
+düzeltmenin işareti kola göre değişir — smoke çiftinde her iki kol da $k>1$ istedi, ama tam
+doğrulukta `raw` nominalin üstündedir (CP 0,977, $k<1$ beklenir) ve `kt` altındadır (0,928,
+$k>1$). Çarpansal ızgara ikisini de karşılar.
+
+**Açık kalan:** tam doğrulukta hiçbir conformal koşu yok. `conformal` grubu (6 kol, ~4,6 sa) ve
+opsiyonel `conformal_grid` grubu (5 kol, ~3,8 sa) tanımlı ve koşulmayı bekliyor. Koşulduğunda
+§8.5 gerçek sayılarla değiştirilir, künye güncellenir ve T-8.3 doğrulama bölmesi üzerinden
+kapatılır.
+
+---
+
 ## A. Bu belge bir şablondur — yeni bir ablasyon nasıl eklenir
 
 §1, sonraki ablasyonlar için kalıptır. Yeni bir eksen geldiğinde **§1 düzenlenmez**; `## 2.`,
@@ -1925,3 +2135,5 @@ Yeni bir eksen eklerken **koddan** gereken değişiklikler:
 | Taban çizgileri | `outputs/experiments/baseline_{climatology,persistence,smart_persistence}/` |
 | EDA kanıtı | `outputs/eda/tables/`, tartışma `outputs/eda/EDA.md` |
 | Aralık kalibrasyonu sınırı | `METHODOLOGY_REVIEW.md` K3 |
+| Conformal ızgara ve etkisi | `outputs/experiments/<id>/metrics/conformal_{grid,effect,month_stability}.csv` |
+| Conformal geometri seçimi | `outputs/tables/conformal_mode_selection.csv`, `conformal_month_stability_test.csv` (üreten: `scripts/07_conformal_diagnostic.py`) |

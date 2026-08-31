@@ -227,6 +227,30 @@ scaler (none of these rules needs one), and their interval metrics
 deterministic forecast has a zero-width interval, which would make CP an
 equality test. `CRPS` is kept, because for a point forecast it equals MAE.
 
+### 5b. Post-hoc analysis of finished runs (seconds, no retraining)
+
+Two scripts re-read what a finished run already wrote, so they work on the
+machine that ran it (the `.npz` dumps are gitignored):
+
+```bash
+uv run python scripts/06_city_horizon_metrics.py --all      # per (city x horizon step) metrics
+uv run python scripts/07_conformal_diagnostic.py            # which conformal grid geometry to use
+```
+
+`06` writes `metrics/results_by_city_horizon.csv` — the cross of the two tables
+the pipeline emits — and cross-checks it against them, so a transposed slice
+fails loudly instead of silently swapping two provinces' numbers.
+
+`07` fits every `conformal_mode` on half of each run's test windows and scores
+the other half, under four calibration geometries (a random half; the
+chronologically first half; alternating months; and a random half with April and
+May removed, which mimics the real validation split's seasonal hole). It writes
+`outputs/tables/conformal_mode_selection.csv` and
+`conformal_month_stability_test.csv`. This is method **selection**, not a result
+— it fits and scores inside the test period — which is why every conformal run
+also saves `calibration_predictions.npz` so the same comparison can be redone on
+the validation split.
+
 ### 6. Creating your own config
 
 Two ways:
@@ -290,6 +314,7 @@ All fields live in the `ExperimentConfig` dataclass
 | `excluded_cities` | `[]` | Provinces dropped from this run **entirely** — train, val and test alike — so the metric table covers only the remainder. City ids are *not* renumbered (the embedding table keeps a row per province; the excluded row simply never receives a gradient), so checkpoints and predictions stay comparable across runs. Split boundaries are computed on the full frame before the exclusion, so every arm splits on identical dates. Leaving a single province is allowed only with `training_scope="per_city"`. |
 | `model_family` | `"lstm"` | Which model produced the row. `"lstm"` is the only value `run_experiment` trains; `"climatology"`, `"persistence"` and `"smart_persistence"` are written by `scripts/03_run_naive_baselines.py` so their rows are identifiable in the ledger. |
 | `clamp_night_to_zero` | `True` | Zero every prediction at hours where `CLRSKY_SFC_SW_DWN = 0`, applied after the inverse transform to W/m². Not a heuristic: below the horizon the target is exactly `0` and this is known from solar geometry alone, without reading the target. It improves all-hours MAE by ~27% at no cost, **but it also inflates all-hours CP by construction** — see [Metrics explained](#metrics-explained). |
+| `conformal_mode` | `"none"` | Granularity of the split-conformal recalibration of the predictive interval: `"none"`, `"global"`, `"per_horizon"`, `"per_city"`, `"city_horizon"`, `"per_season"`, `"city_season"`. Anything but `"none"` makes the run additionally predict the **validation** split, pooled over the same `n_bootstrap × mc_dropout_passes` passes, and fit one factor `k` per grid cell; the predictive distribution is then rescaled about its own mean, `x → m + k(x − m)`. That rescales the interval and CRPS coherently and leaves the mean — hence RMSE/MAE/R² — bit-identical, so a conformal row differs from its uncorrected twin in the interval alone. Costs roughly 13% wall clock. The recommended value is `"city_season"`: measured over 16 finished runs, the horizon axis is null while the season axis is not, because `k` swings 1.7×–2.5× across the year (cloud variability is seasonal, epistemic spread is not). Night is never calibrated and never corrected. Two limitations are real and stated: the calibration set is the same validation split early stopping used, and it covers ten of twelve months — no April, no May. See `ABLATION.md` §8 and `main_methodology.md` §11.6. |
 | `n_bootstrap` | `8` | Number of bootstrap-resampled model replicas trained for the ensemble (the paper recommends 5–10). **Set to `1` for a fast sanity-check run** — with only one replica there's no resampling, just a single trained LSTM, still scored via MC-Dropout alone. |
 | `mc_dropout_passes` | `100` | Number of stochastic forward passes per replica at inference time (the paper recommends 50–100). Total predictions pooled per test point = `n_bootstrap × mc_dropout_passes` (e.g. 8×100=800 by default). |
 | `bootstrap_block_length` | `168` | Block length (in windows) for the moving-block bootstrap resampling — resampling in contiguous blocks (default ≈1 week) rather than individually preserves the data's temporal autocorrelation. Only relevant when `n_bootstrap > 1`. |
@@ -314,6 +339,11 @@ outputs/
 │   │   ├── results_summary.csv         # one row per (subset, group); group ∈ {Aggregate,
 │   │   │                               #   Aggregate_excl_Rize, and each active city}
 │   │   ├── results_by_horizon.csv      # one row per (subset, horizon step 1..24)
+│   │   ├── conformal_grid.csv          # conformal_mode != "none": per cell n, k, fallback flag
+│   │   ├── conformal_effect.csv        # before/after CP, MPIW, Reliability, CWC per group and step
+│   │   ├── conformal_month_stability.csv  # k refitted month by month on the calibration split
+│   │   ├── calibration_predictions.npz # the validation split's summary (gitignored) — lets the
+│   │   │                               #   grid geometry be re-chosen on validation, not on test
 │   │   └── test_predictions.npz        # mean/lower/upper + y_true, city_id, daylight, window_start
 │   │                                   #   (for paired significance tests; gitignored)
 │   └── figures/
@@ -352,7 +382,7 @@ misalign against the header. The columns, in order:
 - **optimizer** — `batch_size`, `learning_rate`, `lr_reduce_factor`,
   `lr_reduce_patience` (swept by the `abl_arch_lr3e4*` arms)
 - **criterion / post-processing** — `loss_function`, `huber_delta`, `nonneg_penalty_weight`,
-  `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`, `seed`,
+  `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`, `conformal_mode`, `seed`,
   `device` (which torch backend actually produced the row — `cpu`/`cuda`/`mps`,
   overridable with the `MERVE_DEVICE` environment variable; interval metrics
   are not comparable across backends, so check it before any arm-to-arm claim)

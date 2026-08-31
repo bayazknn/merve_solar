@@ -9,12 +9,16 @@ Yalın liste. Gerekçe ve sayılar burada **tekrarlanmaz**, kaynak dosya göster
 
 ## 1. Kritik yol — makale sayıları buna bağlı
 
-- [ ] **Conformal aralık katmanı.** Kalibrasyon üç ayrı eksende bağımsız bozuluyor ve hiçbiri
-      diğerini düzeltmiyor. Katman **il × ufuk ızgarası** olmalı ve düzeltme işareti kola göre
-      değişmeli (`raw` daraltma, `kt` genişletme). Skaler çarpan çalışmaz.
-      → `ABLATION.md` §6.5, `main_methodology.md` §11.5
-      Kod: boru hattı yalnızca test bölmesini tahmin ediyor; conformal bir kalibrasyon kümesi
-      ister (doğrulama bölmesi). Yeni config ekseni + ledger sütunu, varsayılan **kapalı**.
+- [x] ~~**Conformal aralık katmanı — kod.**~~ `conformal.py`, `conformal_mode` ekseni + ledger
+      sütunu, varsayılan `"none"`. Izgara **`city_season`** (il × mevsim), §6.5'in önerdiği
+      il × ufuk **değil**: ufuk ekseni ölçüldü ve null çıktı. → `ABLATION.md` §8,
+      `main_methodology.md` §11.6
+- [ ] **Conformal `conformal` grubunu koş** (6 kol, ~4,6 sa: `raw` × `kt` × 3 tohum). Tam
+      doğrulukta hiç ölçülmedi; §8.5 hâlâ smoke sayılarıyla duruyor. Opsiyonel: `conformal_grid`
+      (5 kol, ~3,8 sa) geometri ablasyonunu tam doğrulukta tekrarlar.
+- [ ] **Izgara geometrisini doğrulama bölmesinde yeniden seç** (T-8.3). Şu anki seçim test
+      döneminin içinde uyarlanıp puanlandı. Her conformal koşu `calibration_predictions.npz`
+      yazıyor; `07_conformal_diagnostic.py` o dosyayı okuyacak biçimde genişletilmeli.
 - [ ] **Manşet formülasyon kararı: `raw` mı `kt` mi?** `kt` doğrulukta %9–13 önde ve MAE eşiğini
       geçiyor; ama transfer iddiası `kt` altında net kazanç vermiyor, yeniden dağıtıma dönüşüyor.
       → `ABLATION.md` §6, §7, ve §7.8'in üç seçeneği

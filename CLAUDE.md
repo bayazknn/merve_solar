@@ -52,6 +52,8 @@ uv run python -m pytest tests/test_windows.py::test_no_window_start_predates_its
 
 uv run python scripts/01_prepare_base_data.py              # ONE-TIME: build outputs/processed/base_features.parquet
 uv run python scripts/03_run_naive_baselines.py            # climatology/persistence/smart-persistence floor (seconds)
+uv run python scripts/06_city_horizon_metrics.py --all     # per (city x horizon) table from finished runs (seconds)
+uv run python scripts/07_conformal_diagnostic.py           # which conformal grid geometry to use (seconds)
 uv run python scripts/run_experiment.py --config configs/config_000_smoke.json   # one run (smoke ≈ minutes)
 uv run python scripts/run_all_experiments.py --list        # what the whole sweep would run, without running it
 uv run python scripts/run_all_experiments.py --group smoke # one named group of configs/experiment_grid.py
@@ -100,15 +102,18 @@ is per-config.**
 **A "config" (facet) is the unit of work.** `ExperimentConfig` (`config.py`) is a dataclass
 serialized to/from JSON; `experiment_id` names both the output directory
 (`outputs/experiments/<id>/`) and the row in the shared `outputs/experiments_ledger.csv`.
-`configs/experiment_grid.py` groups the sweep by name in `EXPERIMENT_GROUPS` (`smoke`, `main`,
-`ablation`, `rize_curve`, `rize_curve_b1`, `rize_curve_smoke`); add sweep entries to a group
-builder there, and `build_experiment_grid(groups)` assembles them and rejects duplicate ids.
+`configs/experiment_grid.py` groups the sweep by name in `EXPERIMENT_GROUPS` — currently
+`smoke`, `main`, `ablation`, the `rize_curve*` family, `arch_sweep`/`arch_sweep_x`/`arch_frontier`,
+`percity_endpoints`, the `target_*` family, `sens_scaler_l1`, `device_parity`, and
+`conformal_smoke`/`conformal`/`conformal_grid`. Add sweep entries to a group builder there, and
+`build_experiment_grid(groups)` assembles them and rejects duplicate ids. `--list` before running
+anything: with no `--group` it selects *every* group.
 
 Besides the windowing/architecture/UQ knobs, `ExperimentConfig` now carries the **arm-selection
 and criterion axes**: `training_scope` (`global` | `per_city`), `model_family`,
 `excluded_cities`, `loss_function` (`mse` | `mae` | `huber`) + `huber_delta`,
-`target_transform` (`raw` | `clearsky_index`), `loss_daylight_only`, `per_city_scaler` and
-`clamp_night_to_zero`. All of them are validated in
+`target_transform` (`raw` | `clearsky_index`), `loss_daylight_only`, `per_city_scaler`,
+`clamp_night_to_zero` and `conformal_mode`. All of them are validated in
 `__post_init__` (so a typo fails at config load, not three hours into a sweep) and all of them
 are ledger columns. `README.md` has the per-field table.
 
@@ -201,8 +206,8 @@ The ledger is only useful if rows are comparable, and the paper's tables come st
   `bootstrap_block_length`, `mc_dropout_passes`, the optimizer knobs (`batch_size`,
   `learning_rate`, `lr_reduce_factor`, `lr_reduce_patience`), `max_epochs`,
   `early_stop_patience`, `loss_function`, `huber_delta`, `nonneg_penalty_weight`,
-  `target_transform`, `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`, `seed`
-  and `device`. A run
+  `target_transform`, `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`,
+  `conformal_mode`, `seed` and `device`. A run
   that changed something *not* in those columns is indistinguishable in the table. If a new axis
   matters, add it to `LEDGER_COLUMNS` and the row dict first — `assert_ledger_schema_ok()` then
   fails loudly in milliseconds instead of misaligning every column of the appended row, and
@@ -266,6 +271,18 @@ aleatoric term (`main_methodology.md` §11.5), so the intervals answer "where co
 mean be", not "where could the observation be" — a residual-variance add-on or a conformal layer
 is a precondition for a fair comparison against the source paper's PICP = 0.9472, not an optional
 extra.
+
+**`conformal_mode` (default `"none"`) is the layer that answers this** (`conformal.py`,
+`main_methodology.md` §11.6, `ABLATION.md` §8). It rescales the predictive *distribution* about
+its own mean, `x -> m + k(x - m)`, one `k` per grid cell, `k` being the finite-sample
+split-conformal quantile of "the smallest factor that would have covered". Two consequences to
+carry into every write-up: because the map is affine and increasing, the interval metrics **and
+CRPS** stay coherent, and because the mean is invariant, **RMSE/MAE/R² are bit-identical to the
+uncorrected twin** — a conformal row differs from its twin in the interval alone. The grid is
+`city_season`, not the `city x horizon` one earlier sections proposed: measured over 16 runs the
+horizon axis is null while `k` swings 1.7x-2.5x across the year. Anything but `"none"` makes the
+run also predict the validation split (~13% wall clock), and that calibration set has two stated
+defects — early stopping already saw it, and it covers ten of twelve months (no April, no May).
 
 Interval metrics are `NaN` for the naive baselines by design (a single deterministic forecast has
 a zero-width interval); CRPS is kept because it reduces exactly to MAE there.
@@ -340,9 +357,14 @@ Roughly translated, still outstanding:
   criterion, full fidelity, the architecture ladder, the five-province endpoint ablation, the
   target transform, and the transfer claim's robustness to it. Two independent reviews exist
   (`ABLATION_REVIEW.md`, `ABLATION_REVIEW_2.md`); the second one's corrections are applied.
-  **Open:** the winning architecture has never been measured at `B=8`, and the conformal
-  interval layer is unimplemented (§6.5 shows it must be a per-(city, horizon) grid whose
-  correction is signed differently per arm, not a scalar).
+  **Open:** the winning architecture has never been measured at `B=8`.
+- **Conformal interval layer: IMPLEMENTED, not yet run at full fidelity** (`conformal.py`,
+  `ABLATION.md` §8). `conformal_mode` defaults to `"none"`; the `conformal` group (6 arms,
+  ~4.6 h) and the optional `conformal_grid` geometry ablation (5 arms, ~3.8 h) are defined and
+  waiting. §6.5's "per-(city, horizon) grid" proposal was measured and is **wrong** — the horizon
+  axis is null, the right second axis is season. Validated end to end at smoke fidelity: daylight
+  CP 0.823 → 0.943 (`raw`) and 0.768 → 0.946 (`kt`), Rize's CWC 5,022 → 1.04, point accuracy
+  unchanged to the last digit.
 - **Metrics table: R² DONE (2026-08-28)** — `metrics.py::r2` feeds the summary, per-horizon and
   ledger outputs alongside MAE/RMSE, for both subsets.
 - **Feature-set work queued from the EDA** (`TODOs.md` §B/§C): `log1p(PRECTOTCORR)` plus a

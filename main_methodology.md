@@ -875,8 +875,13 @@ oranının (4,29) eşiğin (3,92) hemen üstünde kalmasıdır.
    gereği $\text{CLRSKY}(t{+}h)$ ile orantılı, `raw` kolunda ise gün boyunca neredeyse düz
    olmasıdır — aynı toplam genişlik, farklı eleman düzeyinde dağılım, ve kapsama bir eleman
    özelliğidir. Ayrıca **düzeltmenin yönü kola göre terstir**: `raw` her ufukta nominalin
-   üstünde (daraltma), `kt` her ufukta altında (genişletme). Katmanın en azından il × ufuk
-   ızgarasında çarpansal olması bu nedenle bir tercih değil, gerekliliktir.
+   üstünde (daraltma), `kt` her ufukta altında (genişletme). Katmanın çarpansal bir **ızgara**
+   olması bu nedenle bir tercih değil, gerekliliktir.
+
+   > **DÜZELTME (§11.6, `ABLATION.md` §8).** Bu maddenin ilk hâli ızgaranın "en azından il ×
+   > ufuk" olması gerektiğini söylüyordu. Ölçüldü: **ufuk ekseni null**, doğru ikinci eksen
+   > **mevsim**dir. "Skaler yetmez" ayakta, ama doğru ifadesiyle: skaler **marjinal** kapsamayı
+   > tutturur, **koşullu** (il bazlı) kapsamayı vermez.
 1. **Kapasite yükseltmesi ile aralık kalibrasyonu tek bir karardır**, iki ayrı iş değil. Daha
    iyi bir mimari, conformal/ölçekleme katmanı olmadan benimsenirse nokta doğruluğu kazanılıp
    kapsama kaybedilir.
@@ -905,6 +910,60 @@ miktar dar kalmasına katkı verir.
 48 saatlik açıklığın 47'sini paylaşır. `n_samples` sütunu makalede "bağımsız gözlem sayısı"
 gibi okunmamalıdır; anlamlılık testi yapılacaksa (Diebold–Mariano vb.) bu blok yapısı HAC
 varyansı ile hesaba katılmalıdır.
+
+### 11.6 Split-conformal yeniden kalibrasyon katmanı
+
+`conformal.py`, `ExperimentConfig.conformal_mode` ekseni; **varsayılan `"none"`**, yani bu bölüm
+öncesindeki her ledger satırının davranışı. §11.5'in teşhisine verilen yanıttır: aralık epistemik
+yayılıma göre boyutlanıyor, oysa kapsaması gereken artık hatadır.
+
+**Dönüşüm.** Öngörü dağılımı kendi ortalaması etrafında yeniden ölçeklenir,
+$x \mapsto m + k\,(x-m)$, hücre başına tek bir $k$ ile. Aralığın uç noktalarını toplamsal
+kaydırmak (CQR) yerine **dağılımın** ölçeklenmesi seçilmiştir, çünkü dönüşüm afin ve artandır:
+yeniden ölçeklenmiş örneğin 2,5/97,5 yüzdelikleri tam olarak yeniden ölçeklenmiş yüzdeliklerdir,
+dolayısıyla CP/PINW/MPIW/CWC **ve CRPS** tutarlı kalır; ortalama değişmediği için RMSE/MAE/R²
+son hanesine kadar aynıdır.
+
+**Skor.** Bir kalibrasyon elemanını kapsayacak en küçük $k$:
+
+$$s_i = \frac{y_i - m_i}{U_i - m_i}\ \ (y_i \ge m_i), \qquad
+  s_i = \frac{m_i - y_i}{m_i - L_i}\ \ (y_i < m_i),$$
+
+hücrenin $k$'si $\{s_i\}$'nin $\lceil (n+1)(1-\alpha) \rceil$'inci en küçüğü — sonlu örnekte
+kesin kapsama garantisini veren düzeltme. $k<1$ aralık fazla genişti, $k>1$ dardı demektir.
+
+**Izgara.** `global` | `per_horizon` | `per_city` | `city_horizon` | `per_season` | `city_season`.
+Önerilen ve gridde kullanılan mod **`city_season`** (il × meteorolojik mevsim, 5 × 4 = 20 hücre).
+Gerekçe ölçülmüştür (`ABLATION.md` §8.3–§8.4, C-1…C-5): ufuk ekseni null, il ekseni koşullu
+kapsamayı düzelten eksen, mevsim ekseni %27 daha kazandırıyor çünkü $k$ yıl içinde 1,67–2,51 kat
+oynuyor — bulut değişkenliği mevsimseldir, epistemik yayılım değildir.
+
+**Kalibrasyon kümesi = doğrulama bölmesi.** Boru hattı `conformal_mode != "none"` olduğunda
+doğrulama bölmesini de aynı $B \times T$ geçişle tahmin eder (~%13 ek süre; `mc_dropout.pooled_summary`
+pencere ekseninde parçalayarak ikinci bir çok-GB'lık dizi ayırmaz). İki sınır açıkça
+kaydedilmelidir:
+
+1. **Erken durdurma aynı bölmeyi görmüştür** — gerçek ama zayıf bir değişilebilirlik ihlali
+   (32.315 pencerenin ortalama kaybından tek bir tam sayı seçilir).
+2. **Doğrulama bölmesi 2024-06-27 → 2025-03-24 arasıdır: Nisan ve Mayıs yoktur**, gündüz oranı
+   0,489'a karşı testin 0,515'i. MAM hücresi yalnız Mart'tan uyarlanır (il başına 6.660
+   kalibrasyon elemanı) ve Nisan ile Mayıs'ı taşır. Ölçülen: hasar mevsimsel **bileşimden**
+   gelir, yıldan yıla kaymadan değil — mevsimsel olarak dengeli bir kalibrasyon kümesiyle her mod
+   nominale döner.
+
+Tanımlanan iyileştirme yolu **jackknife+-after-bootstrap**'tır: her replikanın hareketli-blok
+yeniden örneklemesi, o replikanın hiç görmediği torba-dışı pencereler bırakır; bu, kalibrasyon
+kümesini beş yıllık eğitim dönemine taşır ve mevsimsel deliği tamamen ortadan kaldırır. $B>1$
+gerektirir ve topluluk aralığını değil tek-replika aralığını kalibre eder, dolayısıyla ayrı bir
+iştir.
+
+**Gece hiçbir zaman kalibre edilmez ve düzeltilmez** ($m=L=U=0$, skor $0/0$); $k=1$'de bırakılır.
+
+**Çıktılar:** `metrics/conformal_grid.csv` (hücre başına $n$, $k$, geri düşüş bayrağı),
+`conformal_effect.csv` (grup ve ufuk adımı başına önce/sonra CP, MPIW, Reliability, CWC),
+`conformal_month_stability.csv` (ay ay yeniden uyarlanan $k$ — mevsimsel deliğin ölçüm aleti),
+ve `metrics/calibration_predictions.npz` (gitignore'lu; ızgara geometrisinin ileride **doğrulama
+bölmesi üzerinde** dürüstçe yeniden seçilebilmesi için).
 
 ---
 
@@ -1111,6 +1170,7 @@ yüklenirken düşer, saatler sonra eğitim ortasında değil.
 | `loss_daylight_only`  | `False`        | Kayıp yalnız gündüz adımları üzerinden hesaplansın mı (raporlama değil, modelleme değişikliği)                                              |
 | `per_city_scaler`     | `True`         | Yalnızca `training_scope="per_city"` iken; her il kendi ölçekleyicisini alır (§7'deki belgelenmiş istisna). `False` havuzlanmış ölçekleyiciyi paylaştırır |
 | `clamp_night_to_zero` | `True`         | Ters ölçeklemeden sonra $\text{CLRSKY} = 0$ elemanlarını sıfıra kırp (§11.3)                                                                |
+| `conformal_mode`      | `"none"`       | Split-conformal yeniden kalibrasyonun ızgara granülerliği: `none` / `global` / `per_horizon` / `per_city` / `city_horizon` / `per_season` / `city_season` (§11.6). `none` dışındaki her değer koşuyu doğrulama bölmesini de tahmin etmeye zorlar (~%13 ek süre); önerilen mod `city_season` |
 | `excluded_cities`     | `[]`           | Bu koşudan **tamamen** (eğitim, doğrulama ve test) çıkarılan iller; il kimlikleri yeniden numaralandırılmaz                                 |
 
 ### 13.2 Çıktılar
@@ -1127,6 +1187,11 @@ outputs/experiments/<experiment_id>/
 ├── metrics/
 │   ├── results_summary.csv           # alt küme × (Aggregate + Aggregate_excl_Rize + iller)
 │   ├── results_by_horizon.csv        # alt küme × 1–24 saat ufuk adımları
+│   ├── conformal_grid.csv            # yalnız conformal_mode != "none": hücre başına n, k, geri düşüş
+│   ├── conformal_effect.csv          # grup ve ufuk adımı başına önce/sonra CP, MPIW, Reliability, CWC
+│   ├── conformal_month_stability.csv # ay ay yeniden uyarlanan k — mevsimsel deliğin ölçüm aleti
+│   ├── calibration_predictions.npz   # doğrulama bölmesinin dağılım özeti (ızgara seçiminin
+│   │                                 #   ileride doğrulama üzerinde tekrarlanabilmesi için)
 │   └── test_predictions.npz          # öngörü dağılımının özeti: mean/lower/upper + y_true,
 │                                     #   city_id, daylight, window_start
 └── figures/
@@ -1153,7 +1218,7 @@ dosyaları sürüm kontrolüne alınmaz, tohumlanmış konfigürasyondan yeniden
 - **Kimlik ve eksenler:** `experiment_id`, `model_family`, `training_scope`,
   `excluded_cities` (sıralı, `|` ile ayrılmış dize; hiçbiri dışlanmamışsa boş),
   `lookback_hours`, `horizon_hours`, `window_stride`, `n_features`, `hidden_sizes`,
-  `dropout_rate`, `city_embedding_dim`, `train_ratio`, `val_ratio`, `n_bootstrap`,
+  `dropout_rate`, `city_embedding_dim`, `conformal_mode`, `train_ratio`, `val_ratio`, `n_bootstrap`,
   `bootstrap_block_length`, `mc_dropout_passes`, `batch_size`, `learning_rate`,
   `lr_reduce_factor`, `lr_reduce_patience`, `max_epochs`, `early_stop_patience`,
   `loss_function`, `huber_delta`, `nonneg_penalty_weight`, `loss_daylight_only`,
@@ -1428,7 +1493,8 @@ seçilir (grup verilmezse **hepsi** seçilir).
 | §8 Pencereleme            | `src/merve_solar/windows.py`    | `build_experiment_windows`                                 |
 | §9 Model                  | `src/merve_solar/model.py`      | `SolarLSTM`                                                |
 | §10 Eğitim                | `src/merve_solar/train.py`      | `train_model`, `nonneg_penalty`                            |
-| §11.1 MC Dropout          | `src/merve_solar/mc_dropout.py` | `mc_dropout_predict`                                       |
+| §11.1 MC Dropout          | `src/merve_solar/mc_dropout.py` | `mc_dropout_predict`, `pooled_summary`                     |
+| §11.6 Conformal katman    | `src/merve_solar/conformal.py`  | `fit_conformal_grid`, `apply_conformal`, `ConformalGrid`, `month_stability_table` |
 | §11.2 Bootstrap           | `src/merve_solar/bootstrap.py`  | `resample_train_split`                                     |
 | §8 Torch veri yükleyici   | `src/merve_solar/datasets.py`   | `WindowDataset`, `make_dataloader`                         |
 | §11.4, §12 Metrikler      | `src/merve_solar/metrics.py`    | `summarize_predictive_distribution`, `compute_metric_subsets` |
@@ -1451,6 +1517,7 @@ Betikler (hepsi `src/`'ı `sys.path`'e ekler; `PROJECT_ROOT` dışında yol arg�
 | `scripts/run_experiment.py`        | Tek `ExperimentConfig` koşusu (§13.1)                                  |
 | `scripts/run_all_experiments.py`   | Seçilen tarama grupları (§13.5)                                        |
 | `scripts/06_city_horizon_metrics.py` | Bitmiş koşulardan il × ufuk metrik tablosu (§12.3); yeniden eğitim yok |
+| `scripts/07_conformal_diagnostic.py` | Conformal ızgara geometrisinin seçimi (§11.6); dört kalibrasyon geometrisi, yeniden eğitim yok |
 
 Sınama (`uv run python -m pytest tests/ -q`) — her dosyanın koruduğu değişmez:
 
@@ -1467,6 +1534,7 @@ Sınama (`uv run python -m pytest tests/ -q`) — her dosyanın koruduğu deği�
 | `tests/test_baselines.py`    | Naif referansların model hedefleriyle aynı pencerelerde ve aynı gece kırpmasıyla puanlanması |
 | `tests/test_model_family.py` | `run_experiment`'ın LSTM dışı bir `model_family`'yi eğitmeyi reddetmesi; naif referans satır tarifçisinin kurulmaya devam etmesi |
 | `tests/test_cli_overrides.py`| Eksen geçersiz kılmalarının `--experiment-id` olmadan reddi                     |
+| `tests/test_conformal.py`    | §11.6 kapsama garantisi (iki yönde), noktasal tahminin değişmezliği, analitik yeniden ölçekleme özdeşliği, devrik ızgaranın yakalanması, Nisan–Mayıs'sız mevsim hücresi |
 | `tests/test_grid.py`         | §13.5 gruplarında yinelenen `experiment_id` olmaması; ablasyon çiftlerinin tek eksende ayrılması |
 | `tests/test_target_transform.py` | §5.4 `raw` yolunun dokunulmamışlığı, $k_t$ gidiş-dönüşünün tamlığı, gecenin inşa gereği sıfır olması |
 | `tests/test_postprocess.py`  | §12.3 özet üzerinden puanlamanın örnek üzerinden puanlamaya eşitliği; transpozisyonun yakalanması |
