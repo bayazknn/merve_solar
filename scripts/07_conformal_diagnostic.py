@@ -79,6 +79,14 @@ def _coverage_row(run, rows, lower, upper) -> dict:
             mask = day[sel]
             out[f"CP_{name}"] = coverage_probability(
                 y[sel][mask], lower[sel][mask], upper[sel][mask])
+    # Scored alongside the per-province coverage, not instead of it. Scoring only the provinces
+    # is what made the first pass drop the horizon axis: the two conditionals are fixed by
+    # different axes and neither one implies the other.
+    out["worst_step_dev"] = max(
+        abs(coverage_probability(y[day[:, h], h], lower[day[:, h], h], upper[day[:, h], h])
+            - TARGET_CI_COVERAGE)
+        for h in range(y.shape[1]) if day[:, h].any()
+    )
     # The two months no calibration point ever saw under `production_like`; under the other
     # geometries this is just an ordinary slice and the column is still comparable.
     unseen = np.isin(pd.to_datetime(run["window_start"][rows]).month.to_numpy(), [4, 5])
@@ -124,6 +132,11 @@ def evaluate_run(experiment_id: str, seed: int = 0) -> pd.DataFrame:
     return frame
 
 
+# The three conditionals a grid can be judged on. Reporting one of them alone is how the horizon
+# axis got dropped; see ABLATION.md 8.9.
+CRITERIA = ["reliability", "max_city_deviation", "worst_step_dev"]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--experiment-id", action="append", default=None,
@@ -161,10 +174,9 @@ def main() -> None:
 
     print(f"\nwrote {TABLES_DIR / MODE_TABLE} ({len(mode_frame)} rows)")
     print(f"wrote {TABLES_DIR / MONTH_TABLE} ({len(month_frame)} rows)")
-    summary = (mode_frame.groupby(["geometry", "mode"], as_index=False)
-               [["reliability", "max_city_deviation"]].mean()
+    summary = (mode_frame.groupby(["geometry", "mode"], as_index=False)[CRITERIA].mean()
                .sort_values(["geometry", "max_city_deviation"]))
-    print("\nmean over runs, lower is better:")
+    print("\nmean over runs, lower is better -- read ALL THREE columns:")
     print(summary.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
     swing = month_frame.groupby("experiment_id")["k"].agg(["min", "max"])
     swing["swing"] = swing["max"] / swing["min"]

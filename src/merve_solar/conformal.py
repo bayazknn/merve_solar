@@ -70,8 +70,38 @@ from merve_solar.config import CITIES, CITY_TO_ID
 # The other four are nested granularities of the same grid, which is what makes the claim "a
 # scalar factor cannot work" testable rather than asserted: they are fitted from one identical
 # set of calibration predictions and differ only in how that set is partitioned.
-CONFORMAL_MODES = ("none", "global", "per_horizon", "per_city",
-                   "city_horizon", "per_season", "city_season")
+CONFORMAL_MODES = ("none", "global", "per_horizon", "per_city", "city_horizon",
+                   "per_season", "city_season", "season_horizon", "city_season_horizon")
+
+# Which axes each mode partitions on. Every mode is a subset of {city, season, horizon}, so the
+# grid is one dict rather than a chain of special cases, and adding an axis combination is one
+# line rather than a new branch in three functions.
+#
+# THE AXES DO NOT SUBSTITUTE FOR ONE ANOTHER -- each fixes its own conditional and no other.
+# Measured over the 16 finished B=1 runs (worst cell |CP - 0.95| after correction, mean):
+#
+#                      per-province    per-horizon
+#     global              0.0290          0.0347
+#     per_city            0.0134          0.0342
+#     per_horizon         0.0279          0.0151
+#     city_horizon        0.0129          0.0144
+#     city_season         0.0103          0.0330
+#     city_season_horizon 0.0084          0.0138
+#
+# The city axis halves per-province deviation and leaves per-horizon untouched; the horizon axis
+# does the reverse; the season axis buys a further 25% on province and nothing on horizon. A
+# grid is therefore only as good as the conditionals it is scored on -- see conformal.py's
+# history and ABLATION.md 8.9 for the selection error that fact produced.
+MODE_AXES: dict[str, tuple[str, ...]] = {
+    "global": (),
+    "per_city": ("city",),
+    "per_horizon": ("horizon",),
+    "per_season": ("season",),
+    "city_horizon": ("city", "horizon"),
+    "city_season": ("city", "season"),
+    "season_horizon": ("season", "horizon"),
+    "city_season_horizon": ("city", "season", "horizon"),
+}
 
 # Meteorological seasons, keyed on the month of the window START. The target hours sit 24-47 h
 # later, so at most two days of a season boundary land in the neighbouring cell out of ~90 --
@@ -87,9 +117,7 @@ CONFORMAL_MODES = ("none", "global", "per_horizon", "per_city",
 SEASON_OF_MONTH = {12: 0, 1: 0, 2: 0, 3: 1, 4: 1, 5: 1, 6: 2, 7: 2, 8: 2, 9: 3, 10: 3, 11: 3}
 SEASON_NAMES = ("DJF", "MAM", "JJA", "SON")
 
-_CITY_MODES = ("per_city", "city_horizon", "city_season")
-_HORIZON_MODES = ("per_horizon", "city_horizon")
-_SEASON_MODES = ("per_season", "city_season")
+
 
 # Below this many usable calibration elements a cell falls back to its parent (city_horizon ->
 # the pooled fit; likewise for the coarser modes). Well above the ~19 the finite-sample quantile
@@ -139,47 +167,66 @@ def conformal_factor(scores: np.ndarray, alpha: float) -> tuple[float, int]:
     return float(np.partition(s, rank - 1)[rank - 1]), n
 
 
-def _cell_keys(mode: str, city_id: np.ndarray, horizon: int,
-               window_start: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
-    """(N, horizon) integer planes for the two grid axes.
+def _axis_planes(city_id: np.ndarray, horizon: int,
+                 window_start: np.ndarray | None) -> dict[str, np.ndarray]:
+    n = city_id.size
+    planes = {
+        "city": np.repeat(city_id[:, None], horizon, axis=1),
+        "horizon": np.repeat(np.arange(1, horizon + 1)[None, :], n, axis=0),
+    }
+    if window_start is not None:
+        months = pd.to_datetime(np.asarray(window_start)).month.to_numpy()
+        codes = np.array([SEASON_OF_MONTH[int(m)] for m in months], dtype=np.int64)
+        planes["season"] = np.repeat(codes[:, None], horizon, axis=1)
+    return planes
 
-    The first is the province (or a constant), the second is whichever of horizon step / season
-    the mode uses (or a constant). Two axes are enough because no mode crosses horizon with
-    season: the horizon axis was measured to carry nothing once the city axis is in, so a
-    three-way grid would only thin the cells.
+
+def _cell_keys(mode: str, city_id: np.ndarray, horizon: int,
+               window_start: np.ndarray | None = None) -> dict[str, np.ndarray]:
+    """{axis name -> (N, horizon) integer plane} for the axes this mode partitions on.
+
+    An empty dict is the `global` mode: one cell for everything.
     """
     if mode not in CONFORMAL_MODES or mode == "none":
         raise ValueError(f"mode must be one of {CONFORMAL_MODES[1:]}, got {mode!r}")
-    zeros = np.zeros((city_id.size, horizon), dtype=np.int64)
-    city_plane = np.repeat(city_id[:, None], horizon, axis=1) if mode in _CITY_MODES else zeros
+    axes = MODE_AXES[mode]
+    if "season" in axes and window_start is None:
+        raise ValueError(f"mode {mode!r} needs window_start to assign each window a season")
+    planes = _axis_planes(city_id, horizon, window_start)
+    return {axis: planes[axis] for axis in axes}
 
-    if mode in _HORIZON_MODES:
-        time_plane = np.repeat(np.arange(1, horizon + 1)[None, :], city_id.size, axis=0)
-    elif mode in _SEASON_MODES:
-        if window_start is None:
-            raise ValueError(f"mode {mode!r} needs window_start to assign each window a season")
-        months = pd.to_datetime(np.asarray(window_start)).month.to_numpy()
-        codes = np.array([SEASON_OF_MONTH[int(m)] for m in months], dtype=np.int64)
-        time_plane = np.repeat(codes[:, None], horizon, axis=1)
-    else:
-        time_plane = zeros
-    return city_plane, time_plane
+
+def _cell_ids(keys: dict[str, np.ndarray], shape: tuple[int, int]) -> np.ndarray:
+    """One integer per element identifying its cell, so grouping is a single unique() pass
+    whatever the number of axes."""
+    out = np.zeros(shape, dtype=np.int64)
+    for plane in keys.values():
+        out = out * 1000 + plane
+    return out
 
 
 @dataclass
 class ConformalGrid:
-    """The fitted correction: one k per cell, plus the pooled fallback and the audit counts."""
+    """The fitted correction: one k per cell, plus the pooled fallback and the audit counts.
+
+    A cell is keyed by the tuple of its axis values in MODE_AXES[mode] order -- () for `global`,
+    (city,) for `per_city`, (city, season, step) for `city_season_horizon`.
+    """
     mode: str
     alpha: float
-    factors: dict[tuple[int, int], float] = field(default_factory=dict)
-    counts: dict[tuple[int, int], int] = field(default_factory=dict)
+    factors: dict[tuple[int, ...], float] = field(default_factory=dict)
+    counts: dict[tuple[int, ...], int] = field(default_factory=dict)
     pooled_factor: float = 1.0
     pooled_n: int = 0
     n_invalid: int = 0
 
-    def factor_for(self, city: int, time_key: int) -> float:
+    @property
+    def axes(self) -> tuple[str, ...]:
+        return MODE_AXES[self.mode]
+
+    def factor_for(self, key: tuple[int, ...]) -> float:
         """The cell's k, or the pooled one when the cell is absent or too small to trust."""
-        key = (int(city), int(time_key))
+        key = tuple(int(v) for v in key)
         if self.counts.get(key, 0) >= MIN_CELL_N:
             return self.factors[key]
         return self.pooled_factor
@@ -187,30 +234,34 @@ class ConformalGrid:
     def factor_array(self, city_id: np.ndarray, daylight: np.ndarray,
                      window_start: np.ndarray | None = None) -> np.ndarray:
         """(N, horizon) multiplier: the cell's k on daylight elements, exactly 1.0 at night."""
-        horizon = daylight.shape[1]
-        city_plane, time_plane = _cell_keys(self.mode, city_id, horizon, window_start)
+        keys = _cell_keys(self.mode, city_id, daylight.shape[1], window_start)
         out = np.ones(daylight.shape, dtype=np.float32)
-        for city in np.unique(city_plane):
-            for time_key in np.unique(time_plane):
-                cell = (city_plane == city) & (time_plane == time_key) & daylight
-                if cell.any():
-                    out[cell] = self.factor_for(city, time_key)
+        if not keys:
+            out[daylight] = self.factor_for(())
+            return out
+        ids = _cell_ids(keys, daylight.shape)
+        planes = list(keys.values())
+        for cell_id in np.unique(ids[daylight]):
+            cell = (ids == cell_id) & daylight
+            first = np.argmax(cell.ravel())
+            key = tuple(int(p.ravel()[first]) for p in planes)
+            out[cell] = self.factor_for(key)
         return out
 
     def to_frame(self) -> pd.DataFrame:
-        """Paper-facing table: a few hundred bytes, so unlike the npz dumps it is committed."""
+        """Paper-facing table: a few kB at most, so unlike the npz dumps it is committed."""
         id_to_city = {i: c for c, i in CITY_TO_ID.items()}
         rows = []
         for key in sorted(set(self.factors) | set(self.counts)):
-            city, time_key = key
             n = self.counts.get(key, 0)
             k = self.factors.get(key, float("nan"))
             used = k if n >= MIN_CELL_N else self.pooled_factor
+            values = dict(zip(self.axes, key))
             rows.append({
                 "mode": self.mode,
-                "city": id_to_city.get(city, "all") if self.mode in _CITY_MODES else "all",
-                "horizon_step": time_key if self.mode in _HORIZON_MODES else "all",
-                "season": SEASON_NAMES[time_key] if self.mode in _SEASON_MODES else "all",
+                "city": id_to_city.get(values["city"], "?") if "city" in values else "all",
+                "season": SEASON_NAMES[values["season"]] if "season" in values else "all",
+                "horizon_step": values.get("horizon", "all"),
                 "n_calibration": n,
                 "k_cell": k,
                 "k_applied": used,
@@ -236,13 +287,21 @@ def fit_conformal_grid(y: np.ndarray, mean: np.ndarray, lower: np.ndarray, upper
                          n_invalid=int((daylight & ~valid).sum()))
     grid.pooled_factor, grid.pooled_n = conformal_factor(scores[usable], alpha)
 
-    city_plane, time_plane = _cell_keys(mode, city_id, daylight.shape[1], window_start)
-    for city in np.unique(city_plane):
-        for time_key in np.unique(time_plane):
-            cell = usable & (city_plane == city) & (time_plane == time_key)
-            k, n = conformal_factor(scores[cell], alpha)
-            grid.factors[(int(city), int(time_key))] = k
-            grid.counts[(int(city), int(time_key))] = n
+    keys = _cell_keys(mode, city_id, daylight.shape[1], window_start)
+    if not keys:
+        grid.factors[()] = grid.pooled_factor
+        grid.counts[()] = grid.pooled_n
+        return grid
+
+    ids = _cell_ids(keys, daylight.shape)
+    planes = list(keys.values())
+    for cell_id in np.unique(ids):
+        cell = ids == cell_id
+        first = np.argmax(cell.ravel())
+        key = tuple(int(p.ravel()[first]) for p in planes)
+        k, n = conformal_factor(scores[usable & cell], alpha)
+        grid.factors[key] = k
+        grid.counts[key] = n
     return grid
 
 

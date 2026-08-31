@@ -230,7 +230,8 @@ def test_every_mode_produces_one_factor_per_cell_and_a_readable_table(mode):
     frame = grid.to_frame()
     expected = {"global": 1, "per_city": len(CITIES), "per_horizon": 4,
                 "city_horizon": len(CITIES) * 4, "per_season": 4,
-                "city_season": len(CITIES) * 4}[mode]
+                "city_season": len(CITIES) * 4, "season_horizon": 4 * 4,
+                "city_season_horizon": len(CITIES) * 4 * 4}[mode]
     assert len(frame) == expected
     assert frame["n_calibration"].min() >= MIN_CELL_N
     assert set(frame["direction"]) <= {"narrower", "wider", "unchanged"}
@@ -241,9 +242,9 @@ def test_a_cell_too_small_to_trust_falls_back_to_the_pooled_factor():
                          factors={(0, 1): 9.9, (1, 1): 0.5},
                          counts={(0, 1): MIN_CELL_N - 1, (1, 1): MIN_CELL_N},
                          pooled_factor=1.25, pooled_n=10_000)
-    assert grid.factor_for(0, 1) == 1.25   # too few points: the pooled fit, not the cell's 9.9
-    assert grid.factor_for(1, 1) == 0.5
-    assert grid.factor_for(4, 3) == 1.25   # a cell that was never fitted at all
+    assert grid.factor_for((0, 1)) == 1.25   # too few points: the pooled fit, not the cell's 9.9
+    assert grid.factor_for((1, 1)) == 0.5
+    assert grid.factor_for((4, 3)) == 1.25   # a cell that was never fitted at all
     frame = grid.to_frame()
     assert frame.loc[frame["fell_back"], "k_applied"].tolist() == [1.25]
 
@@ -449,7 +450,7 @@ def test_the_season_cell_follows_the_month_of_the_window_start():
     from merve_solar.conformal import SEASON_NAMES, _cell_keys
     starts = np.array(["2025-01-15T00", "2025-04-15T00", "2025-07-15T00", "2025-10-15T00"],
                       dtype="datetime64[h]")
-    _, seasons = _cell_keys("per_season", np.zeros(4, dtype=np.int64), 2, starts)
+    seasons = _cell_keys("per_season", np.zeros(4, dtype=np.int64), 2, starts)["season"]
     assert [SEASON_NAMES[c] for c in seasons[:, 0]] == ["DJF", "MAM", "JJA", "SON"]
     assert (seasons[:, 0] == seasons[:, 1]).all(), "a window's season must not vary by horizon step"
 
@@ -524,3 +525,67 @@ def test_a_season_grid_survives_a_calibration_set_that_is_missing_a_month():
     k = grid.factor_array(city_id[unseen], day[unseen], starts[unseen])
     mam = frame.loc[frame["season"] == "MAM", "k_applied"].iloc[0]
     assert np.allclose(k, mam)
+
+
+# --- the axes do not substitute for one another ---------------------------------------------
+
+def test_a_horizon_shaped_miscalibration_is_invisible_to_a_city_grid():
+    """The selection error this suite now guards against.
+
+    The mode was originally chosen by scoring per-PROVINCE coverage alone, on which the horizon
+    axis buys nothing -- so it was dropped, and the runs that followed left a 4.6-5.6 pp coverage
+    spread across the 24 horizon steps that no city or season cell can see. Each axis fixes its
+    own conditional and no other; a grid is only as good as the conditionals it was scored on.
+    """
+    rng = np.random.default_rng(31)
+    n, horizon = 4000, 8
+    city_id = np.repeat(np.arange(len(CITIES)), n // len(CITIES)).astype(np.int64)
+    mean = np.zeros((n, horizon), dtype=np.float32)
+    # Residual scale grows with lead time; the interval does not. Identical in every province,
+    # so the city axis has nothing to find.
+    sigma = np.linspace(0.4, 1.6, horizon)[None, :]
+    y = (rng.normal(0, 1.0, size=(n, horizon)) * sigma).astype(np.float32)
+    half = 1.959963985
+    lower = np.full((n, horizon), -half, dtype=np.float32)
+    upper = np.full((n, horizon), half, dtype=np.float32)
+    day = np.ones((n, horizon), dtype=bool)
+    cal = rng.random(n) < 0.5
+
+    def worst_step_deviation(mode):
+        grid = fit_conformal_grid(y[cal], mean[cal], lower[cal], upper[cal], city_id[cal],
+                                  day[cal], mode, ALPHA)
+        k = grid.factor_array(city_id[~cal], day[~cal])
+        lo = mean[~cal] + k * (lower[~cal] - mean[~cal])
+        hi = mean[~cal] + k * (upper[~cal] - mean[~cal])
+        inside = (y[~cal] >= lo) & (y[~cal] <= hi)
+        return max(abs(inside[:, h].mean() - 0.95) for h in range(horizon))
+
+    assert worst_step_deviation("per_city") > 0.10
+    assert worst_step_deviation("per_horizon") < 0.02
+    assert worst_step_deviation("city_horizon") < 0.02
+
+
+def test_the_three_axis_grid_crosses_all_three_and_keeps_the_cells_apart():
+    y, mean, lower, upper, city_id, day, _ = _heterogeneous_grid_inputs(n_per_city=4000)
+    starts = _year_of_window_starts(len(y), city_id)
+    grid = fit_conformal_grid(y, mean, lower, upper, city_id, day, "city_season_horizon",
+                              ALPHA, window_start=starts)
+    frame = grid.to_frame()
+    assert len(frame) == len(CITIES) * 4 * 4
+    assert set(frame["city"]) == set(CITIES)
+    assert set(frame["season"]) == {"DJF", "MAM", "JJA", "SON"}
+    assert set(frame["horizon_step"]) == {1, 2, 3, 4}
+    # The fixture varies by (city, horizon) only, so within a cell's city+step the four season
+    # cells must agree -- if the axes were being crossed in the wrong order they would not.
+    for (city, step), block in frame.groupby(["city", "horizon_step"]):
+        assert block["k_cell"].std() < 0.25 * block["k_cell"].mean(), (city, step)
+
+
+def test_every_mode_declares_its_axes():
+    """MODE_AXES is what _cell_keys, factor_array and to_frame all read, so a mode missing from
+    it would fit a grid and then label its cells wrong."""
+    from merve_solar.conformal import MODE_AXES
+    assert set(MODE_AXES) == set(CONFORMAL_MODES) - {"none"}
+    for mode, axes in MODE_AXES.items():
+        assert set(axes) <= {"city", "season", "horizon"}, mode
+        assert len(set(axes)) == len(axes), mode

@@ -29,6 +29,7 @@ from .config import CITIES, CITY_TO_ID, PROJECT_ROOT
 from .metrics import compute_metrics_for_subset
 
 PREDICTION_FILENAME = "test_predictions.npz"
+CALIBRATION_FILENAME = "calibration_predictions.npz"
 CITY_HORIZON_FILENAME = "results_by_city_horizon.csv"
 
 # Everything compute_metrics_for_subset returns that does NOT need the pooled sample. CRPS is
@@ -43,18 +44,30 @@ def prediction_path(experiment_id: str):
     return PROJECT_ROOT / "outputs" / "experiments" / experiment_id / "metrics" / PREDICTION_FILENAME
 
 
-def load_run_predictions(experiment_id: str) -> dict:
-    """mean/lower/upper/y_true (N, H), city_id (N,), daylight (N, H), window_start (N,)."""
-    path = prediction_path(experiment_id)
+def calibration_path(experiment_id: str):
+    return prediction_path(experiment_id).parent / CALIBRATION_FILENAME
+
+
+def load_run_predictions(experiment_id: str, split: str = "test") -> dict:
+    """mean/lower/upper/y_true (N, H), city_id (N,), daylight (N, H), window_start (N,).
+
+    split="calibration" reads the validation-split summary a conformal run saves. It has the same
+    keys and the same shape contract, which is what lets the grid be refitted and rescored
+    post-hoc -- the whole point of saving it, since choosing a grid geometry from test-split
+    behaviour would be selecting a hyperparameter on the test set.
+    """
+    path = prediction_path(experiment_id) if split == "test" else calibration_path(experiment_id)
     if not path.exists():
         raise FileNotFoundError(
             f"{path} is missing. It is gitignored, so it exists only on the machine that ran "
             f"{experiment_id}; run this there, or rerun the experiment to regenerate it."
+            + ("" if split == "test" else
+               " Only runs with conformal_mode != 'none' write a calibration file.")
         )
     with np.load(path) as z:
         run = {k: z[k] for k in z.files}
     run["window_start"] = run["window_start"].astype("datetime64[h]")
-    _assert_shapes(run, experiment_id)
+    _assert_shapes(run, f"{experiment_id}/{split}")
     return run
 
 
