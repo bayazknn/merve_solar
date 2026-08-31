@@ -16,6 +16,16 @@ conditionals rather than one:
   worst province   max over the five provinces                  -- what the city axis fixes
   worst step       max over the 24 horizon steps                -- what the horizon axis fixes
 
+THE FILE IT READS IS ALREADY CORRECTED, AND THAT HAS TO BE UNDONE FIRST. `test_predictions.npz`
+stores what was scored, which for a conformal run is the post-correction interval. The first
+version of this script did not undo it and evaluated every mode on top of the run's own
+correction -- a double rescaling, which showed as every mode moving the raw arm from 0.0096 to
+0.056-0.064 and every MPIW landing at exactly 0.843x the stored one. Runs written since carry a
+`conformal_k` array for the exact inverse; older ones are undone by refitting their own
+configured mode from their calibration file, which is deterministic and reproduces the same
+factors. Either way the recovered baseline is checked against the stored intervals before
+anything else runs.
+
 Nothing is retrained: both files are summaries of distributions that already exist, and the
 correction is an affine rescaling of them. Seconds per run.
 
@@ -41,7 +51,7 @@ import numpy as np
 import pandas as pd
 
 from merve_solar.conformal import CONFORMAL_MODES, MIN_CELL_N, fit_conformal_grid
-from merve_solar.config import CITIES, CITY_TO_ID, OUTPUTS_DIR
+from merve_solar.config import CITIES, CITY_TO_ID, OUTPUTS_DIR, ExperimentConfig
 from merve_solar.metrics import (
     TARGET_CI_COVERAGE,
     coverage_probability,
@@ -57,6 +67,50 @@ OUT_NAME = "conformal_mode_selection_validation.csv"
 def _rescale(run: dict, factors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     mean = run["mean"]
     return mean + factors * (run["lower"] - mean), mean + factors * (run["upper"] - mean)
+
+
+def uncorrect(test: dict, cal: dict, experiment_id: str) -> np.ndarray:
+    """The factors this run already applied, so they can be divided back out.
+
+    Preferred source is the `conformal_k` array the run saved. For a run written before that
+    array existed, the same grid is refitted from its calibration file under the mode recorded in
+    its config.json -- deterministic, since fit_conformal_grid is a pure function of those inputs.
+    Returns an all-ones array for a run that applied no correction.
+    """
+    if "conformal_k" in test:
+        return test["conformal_k"]
+    config_path = (OUTPUTS_DIR / "experiments" / experiment_id / "config.json")
+    mode = ExperimentConfig.from_json(config_path).conformal_mode
+    if mode == "none":
+        return np.ones(test["y_true"].shape, dtype=np.float32)
+    grid = fit_conformal_grid(
+        cal["y_true"], cal["mean"], cal["lower"], cal["upper"], cal["city_id"],
+        cal["daylight"], mode, ALPHA, window_start=cal["window_start"],
+    )
+    return grid.factor_array(test["city_id"], test["daylight"], test["window_start"])
+
+
+def strip_correction(test: dict, cal: dict, experiment_id: str) -> tuple[dict, np.ndarray]:
+    """(uncorrected run, applied factors), verified by re-applying them.
+
+    The check is the point: if the recovered factors do not reproduce the stored intervals, the
+    baseline is wrong and every mode below would be scored against the wrong thing. Better to
+    stop than to publish a ranking built on it.
+    """
+    factors = np.asarray(test["conformal_k"] if "conformal_k" in test
+                         else uncorrect(test, cal, experiment_id), dtype=np.float32)
+    mean = test["mean"]
+    base = dict(test)
+    base["lower"] = mean + (test["lower"] - mean) / factors
+    base["upper"] = mean + (test["upper"] - mean) / factors
+    back_lower, back_upper = _rescale(base, factors)
+    worst = max(np.abs(back_lower - test["lower"]).max(), np.abs(back_upper - test["upper"]).max())
+    if worst > 1e-2:
+        raise RuntimeError(
+            f"{experiment_id}: could not invert the applied conformal correction "
+            f"(worst residual {worst:.4g} W/m^2). Refusing to rank modes against a wrong baseline."
+        )
+    return base, factors
 
 
 def _score(run: dict, lower: np.ndarray, upper: np.ndarray) -> dict:
@@ -86,7 +140,11 @@ def _score(run: dict, lower: np.ndarray, upper: np.ndarray) -> dict:
 
 def evaluate_run(experiment_id: str) -> pd.DataFrame:
     cal = load_run_predictions(experiment_id, split="calibration")
-    test = load_run_predictions(experiment_id, split="test")
+    stored = load_run_predictions(experiment_id, split="test")
+    test, applied = strip_correction(stored, cal, experiment_id)
+    day = test["daylight"]
+    print(f"    undid a correction with k in [{applied[day].min():.4f}, {applied[day].max():.4f}]"
+          if not np.allclose(applied[day], 1.0) else "    run applied no correction")
     rows = []
     for mode in CONFORMAL_MODES:
         if mode == "none":
@@ -121,7 +179,34 @@ def evaluate_run(experiment_id: str) -> pd.DataFrame:
             }
         rows.append({"experiment_id": experiment_id, "mode": mode,
                      **extra, **_score(test, lower, upper)})
-    return pd.DataFrame(rows)
+    frame = pd.DataFrame(rows)
+    _assert_reproduces_the_run(frame, stored, experiment_id)
+    return frame
+
+
+def _assert_reproduces_the_run(frame: pd.DataFrame, stored: dict, experiment_id: str) -> None:
+    """The end-to-end check on the un-correction: re-deriving the run's OWN configured mode here
+    must land on the score the pipeline actually wrote.
+
+    It closes the loop on both halves at once -- the factors were recovered correctly, and this
+    script's fit/apply path is the same one experiment.py used. Without it, a silent error in
+    either half would produce a plausible-looking ranking of the wrong thing, which is precisely
+    the failure this script was rewritten to remove.
+    """
+    mode = ExperimentConfig.from_json(
+        OUTPUTS_DIR / "experiments" / experiment_id / "config.json").conformal_mode
+    if mode == "none":
+        return
+    day = stored["daylight"]
+    actual = abs(coverage_probability(
+        stored["y_true"][day], stored["lower"][day], stored["upper"][day]) - TARGET_CI_COVERAGE)
+    derived = float(frame.loc[frame["mode"] == mode, "aggregate_dev"].iloc[0])
+    if abs(derived - actual) > 5e-4:
+        raise RuntimeError(
+            f"{experiment_id}: re-deriving its own mode {mode!r} gives |CP-0.95| = {derived:.5f} "
+            f"but the run scored {actual:.5f}. The un-correction or the refit is wrong."
+        )
+    print(f"    check ok: refitting its own {mode!r} reproduces the run ({derived:.5f})")
 
 
 def main() -> None:

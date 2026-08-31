@@ -320,6 +320,7 @@ def _conformalize(pooled_preds, dist, calibration, layout, config, city_id_test,
     ).to_csv(exp_dir / "metrics" / "conformal_effect.csv", index=False)
 
     apply_conformal(pooled_preds, dist["mean"], factors)
+    after["conformal_k"] = factors
     day_k = factors[daylight]
     log_lines.append(
         f"conformal_mode={config.conformal_mode} alpha={CONFORMAL_ALPHA} "
@@ -350,7 +351,8 @@ def _plot_representative_forecasts(pooled_preds, y_true, city_id_test, config, e
         )
 
 
-def _save_test_predictions(exp_dir, dist, y_true, city_id, daylight, window_start) -> None:
+def _save_test_predictions(exp_dir, dist, y_true, city_id, daylight, window_start,
+                           conformal_factors=None) -> None:
     """Summary of the predictive distribution, for the paired significance tests.
 
     Stores mean/lower/upper rather than the full (S, N, horizon) sample, which is ~3.4 GB at
@@ -360,13 +362,21 @@ def _save_test_predictions(exp_dir, dist, y_true, city_id, daylight, window_star
     bit-identical to what was scored -- including any conformal rescaling, which is applied to
     the summary and to the sample but would be lost by a second summarise of a sample this
     function does not receive.
+
+    `conformal_factors` is that rescaling, saved alongside so the file stays INVERTIBLE. Without
+    it a reader cannot tell a corrected interval from an uncorrected one and will silently apply
+    a second correction on top of the first -- which is exactly what happened to the first run of
+    scripts/08_conformal_mode_selection.py. (N, horizon) float32, ~4 MB, 1.0 wherever nothing was
+    corrected.
     """
-    np.savez_compressed(
-        exp_dir / "metrics" / "test_predictions.npz",
+    payload = dict(
         mean=dist["mean"], lower=dist["lower"], upper=dist["upper"],
         y_true=y_true, city_id=city_id, daylight=daylight,
         window_start=window_start.astype("datetime64[h]").astype(np.int64),
     )
+    if conformal_factors is not None:
+        payload["conformal_k"] = conformal_factors
+    np.savez_compressed(exp_dir / "metrics" / "test_predictions.npz", **payload)
 
 
 def apply_target_transform(base_df: pd.DataFrame, config) -> pd.DataFrame:
@@ -723,9 +733,11 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
     # keeps the whole run to a single sort of the multi-GB array. The sample itself is still
     # rescaled in place, because CRPS is the one metric that reads it rather than the summary.
     dist = summarize_predictive_distribution(pooled_preds)
+    conformal_factors = None
     if calibration is not None:
         dist = _conformalize(pooled_preds, dist, calibration, layout, config,
                              city_id_test, daylight, exp_dir, log_lines)
+        conformal_factors = dist.pop("conformal_k")
 
     subsets = compute_metric_subsets(
         pooled_preds, y_true, city_id_test, config.active_cities, daylight=daylight, dist=dist
@@ -736,7 +748,7 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
     summary_df.to_csv(exp_dir / "metrics" / "results_summary.csv", index=False)
     horizon_df.to_csv(exp_dir / "metrics" / "results_by_horizon.csv", index=False)
     _save_test_predictions(exp_dir, dist, y_true, city_id_test, daylight,
-                           layout["test"]["window_start"])
+                           layout["test"]["window_start"], conformal_factors)
 
     _plot_representative_forecasts(pooled_preds, y_true, city_id_test, config, exp_dir)
     for subset in horizon_df["subset"].unique():

@@ -589,3 +589,34 @@ def test_every_mode_declares_its_axes():
     for mode, axes in MODE_AXES.items():
         assert set(axes) <= {"city", "season", "horizon"}, mode
         assert len(set(axes)) == len(axes), mode
+
+
+def test_a_conformal_run_saves_the_factors_that_make_its_predictions_invertible(isolated_outputs):
+    """test_predictions.npz stores what was SCORED, which for a conformal run is the corrected
+    interval. Without the factors beside it a reader cannot tell a corrected file from an
+    uncorrected one and will apply a second correction on top -- which is what happened to the
+    first run of scripts/08_conformal_mode_selection.py, and showed as every mode's MPIW landing
+    at exactly the same fraction of the stored one."""
+    df = make_synthetic_base_df(900)
+    run_experiment(_tiny_config("cf_invertible", conformal_mode="city_season"), base_df=df)
+    plain = run_experiment(_tiny_config("cf_plain"), base_df=df)
+
+    with np.load(isolated_outputs / "experiments" / "cf_invertible" / "metrics" / "test_predictions.npz") as z:
+        assert "conformal_k" in z.files
+        k, mean, lower, upper = z["conformal_k"], z["mean"], z["lower"], z["upper"]
+        day = z["daylight"]
+    assert k.shape == lower.shape
+    assert (k[~day] == 1.0).all(), "night must carry a factor of exactly 1"
+    assert not np.allclose(k[day], 1.0), "daylight factors that are all 1 would mean no correction"
+
+    # Dividing the factors back out recovers an interval; re-applying them returns the stored one.
+    base_lower = mean + (lower - mean) / k
+    base_upper = mean + (upper - mean) / k
+    assert np.allclose(mean + k * (base_lower - mean), lower, atol=1e-3)
+    assert np.allclose(mean + k * (base_upper - mean), upper, atol=1e-3)
+    # ... and the recovered interval is wider or narrower than the stored one, never equal.
+    assert not np.allclose(base_lower[day], lower[day])
+
+    with np.load(isolated_outputs / "experiments" / "cf_plain" / "metrics" / "test_predictions.npz") as z:
+        assert "conformal_k" not in z.files, "an uncorrected run has nothing to invert"
+    assert plain["daylight"]["aggregate"]["n_elements"] > 0
