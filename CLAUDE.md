@@ -278,9 +278,27 @@ available). New plots should follow the same pattern: a function taking an expli
 creating parent dirs, closing the figure. The per-horizon plots are emitted once per metric
 subset — unsuffixed is `all_hours`, `_daylight` is the one to read.
 
-`ABLATION.md` (Turkish) is the hand-written home for ablation write-ups: one `## N. …` section
-per axis, appended rather than rewritten, with every number traced to a
-`results_summary.csv` / ledger row. Keep it in step with the runs it describes.
+**`ABLATION.md` (Turkish) is, with `outputs/eda/EDA.md`, the project's primary results
+reference** — read its §0 before using any number from it. One `## N. …` section per axis,
+appended rather than rewritten, with every number traced to a `results_summary.csv` / ledger
+row. Three structural rules make it survive changes to the model or the data, and they are
+part of "done" for any new section:
+
+- **Every section opens with a *geçerlilik künyesi*** — a one-row table stating the dataset,
+  target transform, architecture, fidelity, criterion, scope, seeds and device the findings
+  were measured under, with any deviation from §0.2's reference configuration in bold. A
+  finding without its stamp becomes unreadable the moment the architecture or the feature set
+  moves.
+- **§0.3 is a change-tracking matrix**: for each axis, which findings must be re-measured if it
+  changes, and whether we have measured evidence that they do not transfer. Adding a new axis
+  means adding a row there *first*. The worked example is `target_transform`: §7 measured that
+  §1–§5 do **not** carry over to the clearness-index formulation.
+- **Cite finding IDs (`B-8`, `H1`, `T-4.5`), never section numbers** — sections get renumbered,
+  IDs do not.
+
+Two named failure modes are recorded in §0.1 and both have bitten this project: the
+**Aggregate trap** (K-1) and the **Rize trap** (K-5, generalising from the showcase province —
+it produced two wrong verdicts, §2.6/§3.5 and §7.4).
 
 EDA figures and tables that describe the dataset rather than a single run live in `eda.py` and
 are driven by `scripts/02_descriptive_analysis.py`, writing to `outputs/eda/{figures,tables}/` —
@@ -318,10 +336,13 @@ Roughly translated, still outstanding:
 - **Baselines for comparison: still outstanding.** SVM, Prophet, GRU (Random Forest or MLP if
   Prophet is unworkable on this framing) — see *Comparability rules* before adding any.
   `model_family` already exists as a ledger column, so no header migration is needed.
-- **Ablations: the arms exist, the write-up does not.** `training_scope="per_city"` (the
-  cross-city transfer test) and `excluded_cities` (the Rize transfer curve, plus the loss-function
-  selection stage) are implemented and grouped in `configs/experiment_grid.py`; `ABLATION.md` is
-  still a template awaiting the finished runs.
+- **Ablations: DONE and written up** (`ABLATION.md` §1–§7) — the transfer curve, the loss
+  criterion, full fidelity, the architecture ladder, the five-province endpoint ablation, the
+  target transform, and the transfer claim's robustness to it. Two independent reviews exist
+  (`ABLATION_REVIEW.md`, `ABLATION_REVIEW_2.md`); the second one's corrections are applied.
+  **Open:** the winning architecture has never been measured at `B=8`, and the conformal
+  interval layer is unimplemented (§6.5 shows it must be a per-(city, horizon) grid whose
+  correction is signed differently per arm, not a scalar).
 - **Metrics table: R² DONE (2026-08-28)** — `metrics.py::r2` feeds the summary, per-horizon and
   ledger outputs alongside MAE/RMSE, for both subsets.
 - **Feature-set work queued from the EDA** (`TODOs.md` §B/§C): `log1p(PRECTOTCORR)` plus a

@@ -12,39 +12,120 @@ açıkça yazılıdır. Çakışma hâlinde CSV esastır.
 
 ---
 
-## 0. Bu belgedeki tüm koşular için geçerli okuma kuralları
+## 0. Bu belge nasıl okunur
 
-Bu dört kural bölümler arasında değişmez ve her tabloyu bağlar.
+Bu bölüm, belgedeki **her** tabloyu bağlar. Yeni bir bölüm eklendiğinde §0 yeniden yazılmaz,
+yalnızca §0.3'ün matrisine satır eklenir.
+
+### 0.1 Okuma kuralları
 
 **(K-1) İl bazlı satır okunur, `Aggregate` satırı okunmaz.** Havuzlama eğrisinin kolları farklı
 il kümeleri üzerinde eğitilir ve *farklı il kümeleri üzerinde skorlanır*; dolayısıyla
 `Aggregate` satırları farklı popülasyonları kapsar ve kollar arasında karşılaştırılamaz.
-Ölçülmüş örnek — Rize'ye Ankara eklendiğinde `Aggregate` satırı gündüz RMSE'yi 115.83 → 107.56
-gösterir, oysa `Rize` satırının gerçek değişimi 115.83 → 113.13'tür
-(`abl_rize_solo_s42_smoke` ve `abl_rize_plus_ankara_s42_smoke`). Aradaki fark model değil,
-ortalamaya karışan kolay Ankara satırlarıdır. Her kolun `results_summary.csv` dosyasındaki
-`Rize` satırı **aynı** 109 043 gündüz elemanını kapsar (`n_elements`), dolayısıyla
-karşılaştırma eleman-eleman aynıdır.
+Ölçülmüş örnek (smoke doğruluğunda, yalnızca gösterim amaçlı): Rize'ye Ankara eklendiğinde
+`Aggregate` satırı gündüz RMSE'yi 115,83 → 107,56 gösterir, oysa `Rize` satırının gerçek
+değişimi 115,83 → 113,13'tür. Aradaki fark model değil, ortalamaya karışan kolay Ankara
+satırlarıdır. Her kolun `Rize` satırı **aynı** 109.043 gündüz elemanını kapsar (`n_elements`),
+dolayısıyla karşılaştırma eleman-elemandır.
 
-**(K-2) Başlık rakamı gündüz alt kümesidir.** Satırların %48.8'i geometrik olarak gecedir ve
-hedefleri tam sıfırdır; `clamp_night_to_zero` bu saatleri kesin olarak sıfırlar. Gece satırları
-her modelin RMSE'sini bedavaya ~%28 düşürür ve R²'yi şişirir — aynı klimatoloji referansı 24
-saatte R² 0.923, gündüzde 0.856 verir. Tüm hükümler gündüz satırından verilir; 24 saatlik
-değerler yalnızca ikincil olarak raporlanır.
+**(K-2) Başlık rakamı gündüz alt kümesidir** (`CLRSKY_SFC_SW_DWN > 0`, elemanların ≈%51,2'si).
+Kalan %48,8 geometrik olarak gecedir, hedefleri tam sıfırdır ve `clamp_night_to_zero` onları
+kesin sıfırlar. Gece satırları her modelin RMSE'sini bedavaya ~%28 düşürür ve R²'yi şişirir —
+aynı iklimsel ortalama 24 saatte R² 0,923, gündüzde 0,856 verir. **Manşet, 24 ufuk adımının
+havuzlanmış gündüz değeridir**; ufuk adımı bazlı kırılım tanısaldır, manşet değildir (§0.2).
 
-**(K-3) Zemin, kalıcılık değil klimatolojidir.** 24 saat ilerisi bir tahminde kalıcılığı geçmek
-sonuç değildir. İlgili taban değerleri her tablonun altında verilir.
+**(K-3) Zemin çift eşiklidir.** İklimsel ortalamanın gündüz RMSE'si (106,86) *ve* akıllı
+kalıcılığın gündüz MAE'si (60,19). İkisi birden geçilmeden "sonuç" yoktur. Naif kurallar 24
+saat gecikmeli aramalardır ve **ufuk boyunca düzdür**, model ise bozulur; bu yüzden eşik
+karşılaştırması ufuk adımı bazında da verilmelidir (§6.4).
 
-**(K-4) Aralık metrikleri (CP/PINW/MPIW/CWC) kalibre değildir ve kalibrasyon bulgusu olarak
-okunamaz.** Havuzlanan öngörü dağılımı yalnızca epistemik (model) belirsizliğini taşır;
-aleatorik (gözlem gürültüsü) terimi hiçbir yerde eklenmez (`METHODOLOGY_REVIEW.md` K3). Bu
-belgedeki koşular ayrıca `n_bootstrap=1` olduğu için bootstrap/örneklem bileşeni de yoktur:
-aralıklar **yalnızca MC-Dropout** kaynaklıdır. Raporlanırlar, ama %95 hedefine göre bir
-kalibrasyon iddiası taşımazlar ve `n_bootstrap=8` satırlarıyla karşılaştırılamazlar.
+**(K-4) Aralık metrikleri $B$'ye, kritere ve hedef dönüşümüne koşulludur — asla eksenler
+arasında karşılaştırılmaz.** Havuzlanan öngörü dağılımı yalnızca epistemik belirsizlik taşır;
+aleatorik terim hiçbir yerde eklenmez. $B{=}1$ satırlarının aralıkları yalnızca MC-Dropout
+kaynaklıdır ve $B{=}8$ satırlarıyla **karşılaştırılamaz**. Ayrıca kalibrasyonun kendisi üç
+ayrı eksende bozulur ve hiçbiri diğerini düzeltmez: doğruluk ($B$, §3.5), kapasite (B-8, §4.6)
+ve formülasyon (§6.5). Bir kalibrasyon iddiası, hangi eksende ölçüldüğü söylenmeden yazılamaz.
 
----
+**(K-5) Tek ilden genelleme yapılmaz — "Rize tuzağı".** Rize, transferin de doğruluğun da en
+çok işe yaraması beklenen ildir; orada ölçülen bir etkinin **büyüklüğü üst sınırdır ve işareti
+bile** diğer dört ile taşınmayabilir. Bu belgede iki kez oldu: §3.5 (bootstrap kalibrasyonu
+"çözdü" sanıldı, il bazında dördünü bozuyordu) ve §7.4 (transferin belirsizliğe taşındığı
+sanıldı, net etki sıfırdı). **Beş il kolu koşulmadan hiçbir "şu mekanizma şöyle çalışıyor"
+cümlesi yazılmaz.**
+
+**(K-6) Her bulgu bir konfigürasyona koşulludur** (§0.2, §0.3). Her `## N` bölümü bir
+**geçerlilik künyesi** ile başlar; bulgular yalnızca o künyenin içinde geçerlidir.
+
+**(K-7) Atıflar bölüm numarasına değil bulgu kimliğine yapılır.** Bölümler yeniden
+numaralandırılabilir; `B-8`, `H1`, `T-4.5` gibi kimlikler sabittir. Bölüm numarası yalnızca
+kolaylık için parantez içinde verilir.
+
+### 0.2 Referans konfigürasyon — bulguların ölçüldüğü zemin
+
+Aksi künyede belirtilmedikçe her bölüm bunu kullanır. Alan adları `ExperimentConfig`'in
+alanlarıdır; ayrıntı `README.md`'nin konfigürasyon tablosunda.
+
+| eksen | referans değer | nerede tanımlı |
+| --- | --- | --- |
+| **veri kümesi** | NASA POWER saatlik, 5 il, `LAST_VALID_TIMESTAMP`'e kadar kesilmiş; $F = 17$ öznitelik; `ALLSKY_KT` düşürülmüş; `CLRSKY_SFC_SW_DWN` maske sütunu (öznitelik değil) | `config.py`, `main_methodology.md` §3–§5 |
+| **hedef** | `ALLSKY_SFC_SW_DWN`, `target_transform="raw"` | `main_methodology.md` §5.4 |
+| **pencereleme** | `lookback=24`, `horizon=24`, `stride=1` | §8 |
+| **bölme** | kronolojik, `train_ratio=0,74`, `val_ratio=0,11`, tam çerçeve üzerinde | §6 |
+| **mimari** | `hidden_sizes=[64,32]`, `dropout=0,3`, `city_embedding_dim=4` | §9 |
+| **optimizasyon** | `lr=1e-3`, `batch=128`, `lr_reduce_patience=7` | §10.2 |
+| **kriter** | `loss_function`: §1 `mse`, §2 sonrası **`mae`** | §10.1.1 |
+| **doğruluk** | `ABLATION_FULL`: $B=8$, $T=100$, `max_epochs=200`, `early_stop_patience=15`<br>`ABLATION_B1`: $B=1$, $T=100$, `max_epochs=100`, `early_stop_patience=15` | `configs/experiment_grid.py` |
+| **kapsam** | beş il havuzlanmış (`training_scope="global"`, `excluded_cities=[]`) | §13.1 |
+| **gece** | `clamp_night_to_zero=True` | §11.3 |
+| **tekrarlanabilirlik** | CPU'da bit-birebir; **MPS'te değil** — havuzlanmışta ±%0,5, il bazında ±%1,5 (§1.10) | §13.3 |
+
+**Bu tabanın altındaki farklar okunamaz.** MPS tekrar yayılımı ölçülmüş bir çözünürlük
+sınırıdır; ondan küçük bir tek-koşu farkı, kaç tohum koşulursa koşulsun bir bulgu değildir.
+Çok tohumlu eşleştirilmiş testler geçerliliğini korur, çünkü raporlanan tohum standart
+sapmaları bu gürültüyü zaten içerir.
+
+### 0.3 Değişiklik takip matrisi — bir eksen değişirse hangi bulgular yeniden ölçülmeli?
+
+Bu belgenin ana kullanım biçimi budur. Mimari ya da veri kümesi değiştiğinde, bulguların
+hangilerinin **taşındığı varsayılamayacağı** buradan okunur. Sütun "kanıt", o taşımamanın
+ölçülmüş bir örneği varsa onu gösterir.
+
+| değişen eksen | yeniden ölçülmesi gereken | neden / kanıt |
+| --- | --- | --- |
+| **`target_transform`** (`raw` → `kt`) | **§1–§5'in tamamı** — H1, transfer eğrisi, uç nokta ablasyonu, mimari merdiveni | **ÖLÇÜLDÜ, TAŞIMADI** (§7): havuzlamanın nokta kazancı kümelenmiş $p=0{,}0146$'dan $0{,}218$'e düştü ve işareti tutarsızlaştı. Kalibrasyon net sıfır oldu ($p=0{,}995$). Bu, belgedeki en güçlü "bulgular formülasyona koşulludur" kanıtıdır. |
+| **`hidden_sizes` / kapasite** | aralık metriklerinin **tamamı**; B-8'in oran eşiği; nokta bulgularının **büyüklüğü** (işareti değil) | ÖLÇÜLDÜ (B-8, §4.6): CP 0,954 → 0,844, MPIW/RMSE 4,29 → 2,73. Nokta sıralaması korunur ama iller **eşit yararlanmaz** (B-7: Rize etkileşimi $+5{,}51$ puan, $p=0{,}032$). |
+| **`loss_function`** | tüm nokta ve aralık metrikleri; havuzlama kazancının **büyüklüğü** | ÖLÇÜLDÜ (§1.5, §2.4): MSE→L1 havuzlama kazancını −1,53'ten −5,11'e büyüttü. Kriter değişirse eğri yeniden koşulur. |
+| **$B$ (`n_bootstrap`)** | aralık metriklerinin **tamamı**; havuzlama kazancının büyüklüğü | ÖLÇÜLDÜ (§3.2, §3.5): $B{=}1 \to B{=}8$ H1'i −5,11'den −2,70'e indirdi ve kalibrasyonu **net olarak bozdu** ($p=0{,}0054$). $B$ farklı iki satır asla karşılaştırılmaz. |
+| **öznitelik kümesi** ($F$) | **her şey.** Ledger'ın `n_features` sütunu bunu görür ama eski satırlar yeni satırlarla karşılaştırılamaz | ÖLÇÜLMEDİ. $F{=}18 \to 17$ geçişinde tüm eski satırlar geçersiz sayılıp yeniden koşulmuştu (`TODOs.md`). |
+| **veri kümesi tazelenmesi** (yeni xlsx) | **her şey**, ve önce `LAST_VALID_TIMESTAMP` / `EXPECTED_TRIMMED_ROWS_PER_SHEET` / `FULL_ROWS_PER_SHEET` birlikte güncellenmeli | `data.py` bütünlük kontrolleri uyarmaz, **hata fırlatır**. Bölme tarihleri kayar, dolayısıyla `n_elements` değişir ve hiçbir eski satır karşılaştırılabilir olmaz. |
+| **il kümesi** (yeni il eklenmesi) | havuzlama bulgularının tamamı; `CITY_TO_ID` **yeniden numaralandırılmaz** | Gömme tablosu `len(CITIES)` boyutundadır; yeni il eklemek gömmeyi ve bölme sayımlarını değiştirir. |
+| **`lookback` / `horizon` / `stride`** | her şey — pencere sayısı ve `n_elements` değişir | ÖLÇÜLDÜ (B-2, §4.5): 48/72 saat referansı iyileştirmiyor, ama eğitim süresini iki katına çıkarıyor. |
+| **cihaz** (`MERVE_DEVICE`) | hiçbiri — ama **tek koşu farkları** okunamaz hâle gelir | ÖLÇÜLDÜ (§1.10): MPS determinist değildir. Çok tohumlu ortalamalar tek bir arka uçtan gelmelidir. |
+| **`clamp_night_to_zero`, gündüz maskesi** | tüm-saat metriklerinin tamamı; gündüz metrikleri etkilenmez | Gece elemanları tanım gereği kapsanır; tüm-saat CP yapısal olarak şişer. |
+| **conformal / aralık katmanı** (henüz yok) | tüm aralık metrikleri (CP/PINW/MPIW/CWC/Reliability); nokta metrikleri etkilenmez | Planlanıyor; §6.5 katmanın **ızgara** olması ve **işaretinin kola göre değişmesi** gerektiğini gösterdi. |
+
+### 0.4 Bölüm haritası
+
+| bölüm | eksen | doğruluk | kriter | hedef dönüşümü | durum |
+| --- | --- | --- | --- | --- | --- |
+| §1 | havuzlama (Rize eğrisi), aşama 1'de kayıp seçimi | $B{=}1$ | mse → mae | raw | §2 ve §3 tarafından kısmen geçersiz kılındı |
+| §2 | aynı eğri, L1 | $B{=}1$ | mae | raw | §3 tarafından üstünlendi |
+| §3 | aynı eğri, tam doğruluk | $B{=}8$ | mae | raw | **birincil sonlanım noktası (H1)** |
+| §4 | mimari merdiveni | $B{=}1$ | mae | raw | açık: kazanan mimari $B{=}8$'de ölçülmedi |
+| §5 | beş il uç nokta ablasyonu | $B{=}8$ | mae | raw | tamam |
+| §6 | hedef dönüşümü | $B{=}8$ | mae | **raw vs kt** | tamam |
+| §7 | transferin formülasyona dayanıklılığı | $B{=}8$ | mae | kt | tamam; §1–§5'i koşullu kılar |
 
 ## 1. İl havuzlama (cross-city transfer) — Rize transfer eğrisi
+
+> **Geçerlilik künyesi** — bu bölümün bulguları yalnızca bu konfigürasyonda geçerlidir (§0.2, §0.3).
+>
+> | veri kümesi | hedef dönüşümü | mimari | doğruluk | kriter | kapsam | tohum | cihaz |
+> | --- | --- | --- | --- | --- | --- | --- | --- |
+> | $F=17$, referans | `raw` | `[64,32]`, do 0,3 | $B{=}1$, $T{=}100$ | aşama 1 `mse`/`mae`/`huber`, aşama 2 `mse` | Rize eğrisi (5 kol) | 42 (kısmen 42–44) | cpu |
+>
+> **Bu bölümün hükümlerinin bir kısmı §2 ve §3 tarafından geçersiz kılınmıştır** (§2.4, §3.4). Ayrıca $B{=}1$ olduğu için aralık metrikleri K-4 gereği $B{=}8$ bölümleriyle karşılaştırılamaz.
+
 
 ### 1.1 Sınanan iddia
 
@@ -536,6 +617,15 @@ CPU↔MPS farkını ayırır hem de §1.10'un MPS tekrar yayılımını üç yer
 
 ## 2. Aynı eğri, doğru kriterle — L1 altında transfer eğrisi
 
+> **Geçerlilik künyesi** — bu bölümün bulguları yalnızca bu konfigürasyonda geçerlidir (§0.2, §0.3).
+>
+> | veri kümesi | hedef dönüşümü | mimari | doğruluk | kriter | kapsam | tohum | cihaz |
+> | --- | --- | --- | --- | --- | --- | --- | --- |
+> | $F=17$, referans | `raw` | `[64,32]`, do 0,3 | $B{=}1$, $T{=}100$ | `mae` | Rize eğrisi (5 kol) | 42–44 | mps |
+>
+> **§3 bu bölümü tam doğrulukta üstünlemiştir.** Buradaki etki büyüklükleri ($-5{,}11$) $B{=}1$'e aittir; makaleye giren değer §3'ünkidir.
+
+
 §1'in eğrisi MSE ile koştu; §1.5 ise kriteri **L1 olarak seçti**. Bu bir tasarım hatasıydı
 (§1.9, T-1): Aşama 2, kaybını `ExperimentConfig` varsayılanından alıyordu, Aşama 1'in
 kazananından değil. Bu bölüm eğriyi seçilen kriterle ve **her kolda üç tohumla** yeniden koşar.
@@ -619,16 +709,25 @@ lehine çalıştığından ve H1'in null'ını üretiyor olabileceğinden şüph
 `solo` kendi ölçekleyicisinden hiçbir avantaj elde etmiyor. Karıştırıcı yok; H1'in §1'deki
 null'ı ölçekleyici artefaktı değildi, kriter artefaktıydı (§2.2).
 
-### 2.6 Yan bulgu — kalibrasyon büyük ölçüde çözüldü
+### 2.6 Yan bulgu — kalibrasyon "çözüldü" sanıldı, **çözülmedi**
+
+> **DÜZELTME.** Bu bölümün hükmü, düzeltilmiş §3.5 tarafından geçersiz kılınmıştır ve
+> K-5'in ("Rize tuzağı") bir örneğidir. Aşağıdaki gözlem — havuzlama arttıkça CP'nin
+> yükselmesi — doğrudur, ama "alt-kapsamanın tamamı yapısal değilmiş" ve "rezidüel-varyans
+> eklentisi artık bir ön koşul değil" sonuçları **çıkarılamaz**: il bazında bakıldığında
+> $B$'yi büyütmek kalibrasyonu net olarak **bozar** (§3.5, kümelenmiş $p = 0{,}0054$), ve
+> kalibrasyon üç ayrı eksende bağımsız olarak bozulur (K-4). Metin, ne düşünüldüğünün kaydı
+> olarak bırakılmıştır.
 
 Gündüz CP havuzlama arttıkça **tekdüze yükseliyor**: `solo` 0,8869 → `plus_*` 0,896 →
 `minus_antalya` 0,9044 → `all5` 0,9134. Ve `all5` kolunun **`Aggregate`** gündüz CP'si üç
 tohumda 0,9535 / 0,9570 / 0,9534 — yani hedefin üzerinde değil, **hedefte**.
 
-Bu, `METHODOLOGY_REVIEW.md` K3'ün "aleatorik terim eklenmediği için %95 kapsamaya ilkesel
-olarak ulaşılamayabilir" uyarısını önemli ölçüde yumuşatır: MSE altında CP 0,80–0,83 iken L1 ve
-havuzlama ile 0,95'e ulaşılıyor. Alt-kapsamanın tamamı yapısal değilmiş. Rezidüel-varyans
-eklentisi hâlâ değerli olabilir ama artık bir **ön koşul** değil.
+~~Bu, `METHODOLOGY_REVIEW.md` K3'ün uyarısını önemli ölçüde yumuşatır… alt-kapsamanın tamamı
+yapısal değilmiş… artık bir ön koşul değil.~~ **Geri çekildi** — yukarıdaki düzeltmeye bakınız.
+Ayakta kalan gözlem yalnızca şudur: MSE altında CP 0,80–0,83 iken L1 + havuzlama ile
+`Aggregate` gündüz CP'si 0,95 bandına gelir; yani **kriter seçimi kapsamayı belirgin biçimde
+etkiler**. Bu, kalibrasyonun çözüldüğü anlamına gelmez.
 
 `Aggregate` gündüz nokta başarımı da aynı kollarda RMSE 94,89 / 93,19 / 94,18 ve
 R² 0,887–0,891 — iklimsel ortalama tabanının (106,86 / 0,8565) **%12 altında**.
@@ -637,10 +736,12 @@ R² 0,887–0,891 — iklimsel ortalama tabanının (106,86 / 0,8565) **%12 alt�
 
 - **T-1 (kapandı).** Eğri artık Aşama 1'in seçtiği kriterle koşuyor.
 - **T-9 (kapandı).** §2.5.
-- **T-12 (yeni).** Bu 18 kol MPS'te, §1'in 12 kolu CPU'da koştu. §1.11'in ölçümüne göre nokta
-  metrikleri arka uçtan bağımsızdır (%0,25) ama **aralık metrikleri değildir** (%4,49). §2.2–2.5
-  yalnızca nokta metriklerine dayanır ve etkilenmez; §2.6'nın CP sayıları **arka uç içinde**
-  karşılaştırılabilir, §1'in CP'leriyle yan yana konmamalıdır.
+- **T-12 (yeni, GÜNCELLENDİ).** Bu 18 kol MPS'te, §1'in 12 kolu CPU'da koştu. §1.10'un
+  ölçümüne göre **MPS determinist değildir** (havuzlanmışta ±%0,5, il bazında ±%1,5), ve
+  §1.11'in CPU↔MPS eşdeğerlik hükmü geri çekilmiştir — o fark bu gürültünün altında kalır.
+  Bölümler arası tek-koşu karşılaştırması bu nedenle yapılamaz; çok tohumlu eşleştirilmiş
+  testler geçerliliğini korur. *(Eski gerekçe — geri çekildi:* ~~nokta metrikleri arka uçtan
+  bağımsızdır (%0,25) ama aralık metrikleri değildir (%4,49)~~*.)*
 - **T-13 (yeni).** $n = 3$ tohum. H1 $p = 0{,}037$ ile eşiği geçiyor ama üç gözlemle; H2
   ($p = 0{,}062$) geçmiyor. Tam doğruluk (B=8) ve daha fazla tohum ikisini de sağlamlaştırır.
 - **Devam eden:** tüm kollar `n_bootstrap=1`, dolayısıyla aralık metrikleri MC-Dropout'a
@@ -649,6 +750,15 @@ R² 0,887–0,891 — iklimsel ortalama tabanının (106,86 / 0,8565) **%12 alt�
 ---
 
 ## 3. Tam doğruluk — aynı eğri, $B = 8$
+
+> **Geçerlilik künyesi** — bu bölümün bulguları yalnızca bu konfigürasyonda geçerlidir (§0.2, §0.3).
+>
+> | veri kümesi | hedef dönüşümü | mimari | doğruluk | kriter | kapsam | tohum | cihaz |
+> | --- | --- | --- | --- | --- | --- | --- | --- |
+> | $F=17$, referans | `raw` | `[64,32]`, do 0,3 | **$B{=}8$, $T{=}100$** | `mae` | Rize eğrisi; H1 için `solo` ↔ `all5` | **42–47** (H1), 42–44 (diğer) | mps |
+>
+> **Birincil sonlanım noktası burasıdır (H1).** §7, bu bölümün `target_transform="raw"`'a koşullu olduğunu ölçmüştür.
+
 
 `rize_curve_full_l1`: §2'nin on beş kolunun `ABLATION_FULL` doğruluğunda ($B = 8$, $T = 100$,
 `max_epochs=200`) tekrarı. §2'den yalnızca `{n_bootstrap, max_epochs}` alanlarında ayrılır
@@ -792,7 +902,7 @@ Reliability 0,0021, CWC 2,855 → 0,376) ve projedeki en büyük tek metrik iyil
 `METHODOLOGY_REVIEW.md` K3'ün "aleatorik terim bir **ön koşuldur**" ifadesi de hâlâ fazla
 güçlüdür — Rize onsuz nominale oturmaktadır. Ama K3'ün **yönü doğruydu**: aralık, artık
 hatanın ne kadar olduğuna değil epistemik yayılımın ne kadar olduğuna göre boyutlanmaktadır,
-ve $B$'yi büyütmek bunu düzeltmez, yalnızca hangi ilin şanslı olduğunu değiştirir. §4.8 ve
+ve $B$'yi büyütmek bunu düzeltmez, yalnızca hangi ilin şanslı olduğunu değiştirir. B-8 ve
 §6.5 bu teşhise iki eksen daha ekler.
 
 **Ayakta kalan ikinci kısım:** fazla kapsama "aralığı şişirip kapsama satın almak" değildir —
@@ -869,19 +979,36 @@ $p = 0{,}0122$. Buna **tutumluluk** argümanı eklenmelidir — ama doğru biçi
 - **T-13 (açık, artık birincil kısıt).** $n = 3$. Üç kontrast 3/3 tutarlı ama BH'yi geçmiyor.
   En ucuz çare tohum eklemektir: `solo` + `all5` + `minus_antalya` için üçer tohum daha
   ≈4,2 saat (ölçülen kol maliyetleri: `solo` ~9 dk, `minus_antalya` ~33 dk, `all5` ~42 dk).
-- **T-12 (açık).** Bu 15 kol MPS'te, §1'in kolları CPU'da. Nokta metrikleri etkilenmez (%0,25),
-  aralık metrikleri etkilenir (%4,49) — §1.11. §3'ün aralık sayıları kendi içinde tutarlıdır.
+- **T-12 (açık, GÜNCELLENDİ).** Bu 15 kol MPS'te, §1'in kolları CPU'da. §1.11'in
+  "nokta metrikleri arka uçtan bağımsız" hükmü **geri çekilmiştir**: §1.10 MPS'in determinist
+  olmadığını ölçüyor (havuzlanmışta ±%0,5, il satırında ±%1,5) ve iddia edilen CPU↔MPS farkı
+  (%0,25) bu gürültünün altındadır. §3'ün sayıları kendi içinde ve MPS içinde tutarlıdır;
+  §1'in CPU sayılarıyla **tek koşu düzeyinde** karşılaştırılamaz. Çok tohumlu eşleştirilmiş
+  testler etkilenmez.
 - **T-14 (yeni).** Erken durdurma çok geç duruyor: `best_epoch` 3–9 arasında, koşulan epok
   19–25. `early_stop_patience=15` yüzünden sürenin ~%60-70'i optimumdan sonra harcanıyor.
   Sonuçları etkilemez (en iyi ağırlıklar geri yükleniyor) ama mimari taramasında sabrın
   düşürülmesi duvar saatini üçte bir kısaltır. Ayrıca 3–9 epokta yakınsama, mevcut mimarinin
   kapasitesinin sınırlayıcı olmadığına dair bir işarettir.
 - **T-15 (yeni).** Dört il fazla kapsıyor (0,981–0,984). Aralık tablosu yayımlanacaksa il
-  bazlı verilmelidir; `Aggregate` 0,977 iki karşıt hatanın ortalamasıdır.
+  bazlı verilmelidir; `Aggregate` 0,977 iki karşıt hatanın ortalamasıdır. **§3.5'in düzeltmesi
+  bunun nedenini veriyor:** $B$'yi büyütmek bu dört ili hedeften *uzaklaştırmıştır*.
+- **T-16 (yeni).** §3.6'nın taban çizgisi karşılaştırması 24 ufuk adımının havuzudur. Naif
+  kurallar ufuk boyunca düz, model bozuluyor; ufuk adımı bazlı kırılım §6.4'te verilmiştir ve
+  makalede o da raporlanmalıdır (K-3).
 
 ---
 
 ## 4. Mimari taraması — kapasite, geriye bakış, düzenlileştirme ve öğrenme oranı
+
+> **Geçerlilik künyesi** — bu bölümün bulguları yalnızca bu konfigürasyonda geçerlidir (§0.2, §0.3).
+>
+> | veri kümesi | hedef dönüşümü | mimari | doğruluk | kriter | kapsam | tohum | cihaz |
+> | --- | --- | --- | --- | --- | --- | --- | --- |
+> | $F=17$, referans | `raw` | **taranan eksen** | $B{=}1$, $T{=}100$ | `mae` | beş il havuzlanmış | 42–44 | mps |
+>
+> **Aralık metrikleri $B{=}1$'dir** (T-4.7): B-8'in oran eşiği $B{=}8$'e taşınamaz. Kazanan mimari tam doğrulukta **ölçülmemiştir**.
+
 
 ### 4.1 Sınanan iddia
 
@@ -941,7 +1068,7 @@ sınırdadır; bu iki kolun sıralaması bu nedenle test RMSE'siyle çapraz kont
 | `dropout 0,4` | 58.444 | 0,15785 ± 0,00158 | 101,69 | 77,32 | 0,974 | 251,6 | 14,3 |
 | `[32,16]` | 16.444 | 0,17933 ± 0,00420 | 112,43 | 87,65 | 0,979 | 266,0 | 8,0 |
 
-(MPIW sütunu ledger'ın tüm-saat değeridir; §4.8'in gündüz MPIW'i ~2× büyüktür.)
+(MPIW sütunu ledger'ın tüm-saat değeridir; §4.6'nın gündüz MPIW'i ~2× büyüktür.)
 
 Doğrulama kaybı ile test RMSE'si arasındaki sıra korelasyonu **Spearman $\rho = 0,84$
 ($p = 0,002$)** — kriter işini görüyor ama kusursuz değil: `[64,64,32]` doğrulamada referansı
@@ -1023,7 +1150,7 @@ Rize gürültü-sınırlı: hatası modelin kapasitesinden değil, bulutluluğun
 > (göreli ölçekte $p = 0{,}032$, üç tohumun üçünde). Makalede kullanılacak sayı budur; bir
 > non-anlamlı tek-il $p$'si değil.
 
-### 4.8 Cephe koşusu — merdiven dönmedi, **ama kalibrasyon çöktü**
+### 4.6 Cephe koşusu — merdiven dönmedi, **ama kalibrasyon çöktü**
 
 `arch_sweep_x`'in lr sonucu (B-3) `[256,128]`'i varsayılan oranda okumayı serbest bıraktı. Kol
 koşuldu; `abl_arch_h256x128_lr3e4_*` **koşulmadı**, çünkü önceden yazılmış kural buydu:
@@ -1116,7 +1243,7 @@ düştüğünden **daha hızlı** daralıyor.
 >
 > Bu, `METHODOLOGY_REVIEW.md` K3'ü ne doğruluyor ne yanlışlıyor; **rafine ediyor.** §3.5,
 > $B = 1 \to B = 8$ geçişinin kapsamayı yükselttiğini gösterdi, yani sorun "yalnızca eksik
-> aleatorik terim" değildi. §4.8 bunun tersini gösteriyor: doğruluk sabit tutulduğunda
+> aleatorik terim" değildi. B-8 bunun tersini gösteriyor: doğruluk sabit tutulduğunda
 > **kapasite kapsamayı bozuyor**. İkisi birlikte doğru teşhisi veriyor — aralık, epistemik
 > yayılımın ne kadar büyük olduğuna göre değişiyor, oysa kapsaması gereken şey artık hatadır.
 > **Aralıklar hiçbir zaman inşa gereği kalibre değildi; tek bir işletme noktasında tesadüfen
@@ -1129,7 +1256,7 @@ kaydırıyor: `[128,64]`'e göre CP +0,031 ama RMSE +1,42 ($p = 0,047$), MAE +3,
 ($p = 0,010$), doğrulama kaybı +0,0074 ($p = 0,081$). **Kalibrasyon dropout ile satın
 alınamaz.** Bu, conformal katmanı bir alternatif değil, tek yol hâline getirir.
 
-### 4.6 Hüküm
+### 4.7 Hüküm
 
 - **Referans `[64,32]` kapasitesinin belirgin biçimde altında.** `[64,32]` → `[128,64]` →
   `[256,128]` doğrulama kaybını 0,1436 → 0,1263 → 0,1200, gündüz RMSE'yi 94,57 → 90,29 → 88,58
@@ -1148,7 +1275,7 @@ alınamaz.** Bu, conformal katmanı bir alternatif değil, tek yol hâline getir
 - **Sıradaki tek karar noktası:** kazanan mimariyi $B = 8$'de + conformal katmanla ölçmek.
   $B = 1$'de seçip $B = 8$'de raporlamak §3.2–§3.4'ün gösterdiği gibi güvenli değil.
 
-### 4.7 Geçerlilik tehditleri
+### 4.8 Geçerlilik tehditleri
 
 - **T-4.1 — `learning_rate` koşu anında ledger sütunu değildi.** `ABLATION_REVIEW.md` §4-B bunu
   koşudan *önce* uyarmıştı ve uyarı uygulanmadı; `abl_arch_lr3e4_*` satırları üç gün boyunca
@@ -1180,6 +1307,15 @@ alınamaz.** Bu, conformal katmanı bir alternatif değil, tek yol hâline getir
 ---
 
 ## 5. Havuzlama beş ilin **hepsini** iyileştiriyor mu? — uç nokta ablasyonu
+
+> **Geçerlilik künyesi** — bu bölümün bulguları yalnızca bu konfigürasyonda geçerlidir (§0.2, §0.3).
+>
+> | veri kümesi | hedef dönüşümü | mimari | doğruluk | kriter | kapsam | tohum | cihaz |
+> | --- | --- | --- | --- | --- | --- | --- | --- |
+> | $F=17$, referans | `raw` | `[64,32]`, do 0,3 | $B{=}8$, $T{=}100$ | `mae` | beş ilin her biri `solo` ↔ `all5` | 42–44 | mps |
+>
+> **§7.6 aynı tasarımı `kt` altında tekrarlamış ve sonuç taşımamıştır.** Bu bölümün 15/15 sonucu `raw`'a koşulludur.
+
 
 ### 5.1 Sınanan iddia
 
@@ -1311,6 +1447,15 @@ sorusunun burada da açık kaldığı anlamına gelir.
 ---
 
 ## 6. Hedef dönüşümü — ışınım yerine berraklık indeksi
+
+> **Geçerlilik künyesi** — bu bölümün bulguları yalnızca bu konfigürasyonda geçerlidir (§0.2, §0.3).
+>
+> | veri kümesi | hedef dönüşümü | mimari | doğruluk | kriter | kapsam | tohum | cihaz |
+> | --- | --- | --- | --- | --- | --- | --- | --- |
+> | $F=17$, referans | **`raw` ↔ `clearsky_index`** | `[64,32]`, do 0,3 | $B{=}8$, $T{=}100$ | `mae` | beş il havuzlanmış | 42–44 | mps |
+>
+> Tek eksen: karşılaştırılan çift `experiment_grid.py` içinde alan alan doğrulanmıştır. `kt` mimarisi **optimize edilmemiştir** — §4'ün merdiveni `raw` altında koşuldu (T-7.5).
+
 
 ### 6.1 Sınanan iddia
 
@@ -1444,12 +1589,12 @@ altında bu seçim yalnızca bir **zorluk ölçeği** üretiyordu. `kt` ile ayn�
 tasarımın karşılığını veren sonuç budur, ve `kt` manşetinin doğruluktan bağımsız ikinci
 gerekçesidir.
 
-### 6.5 Kalibrasyon — §4.8'in oran yasası bu eksende **çöküyor**
+### 6.5 Kalibrasyon — B-8'in oran yasası bu eksende **çöküyor**
 
-CP 0,977 → 0,9275'e, MPIW 438,6 → 398,6'ya düşüyor. İlk bakışta §4.8'in B-8 bulgusuna benziyor
+CP 0,977 → 0,9275'e, MPIW 438,6 → 398,6'ya düşüyor. İlk bakışta B-8'e benziyor
 (model iyileşir, epistemik yayılım daralır, kapsama düşer) — ama ölçüm bunu **desteklemiyor**.
 
-§4.8'in oran yasası şuydu: gündüz MPIW/RMSE oranı %95 nominal için gereken 3,92'nin üstündeyse
+B-8'in oran yasası şuydu: gündüz MPIW/RMSE oranı %95 nominal için gereken 3,92'nin üstündeyse
 fazla, altındaysa eksik kapsama; on iki kolda istisnasız. Burada:
 
 | | MPIW | RMSE | **MPIW/RMSE** | CP |
@@ -1469,7 +1614,7 @@ h=1'de `kt`'nin oranı `raw`'dan **daha büyük** (6,70 > 6,40) ama kapsaması 0
 Yasa bu eksende geçerli değil.
 
 **Doğru okuma.** MPIW/RMSE, artık dağılımının *şeklini* sabit tutan bir kol ailesi içinde
-(§4.8'in tamamı `raw` mimari merdivenidir) CP'yi öngörür; **formülasyon değiştiğinde
+(B-8'in dayandığı on iki kolun tamamı `raw` mimari merdivenidir) CP'yi öngörür; **formülasyon değiştiğinde
 öngörmez.** Mekanizma açık: `kt` kolunda aralık genişliği inşa gereği
 $\text{CLRSKY}(t{+}h) \times (\text{$k_t$ uzayındaki genişlik})$'tir, yani güneş geometrisiyle
 tam orantılıdır — öğle geniş, alacakaranlık dar. `raw` kolunun aralığı ise gün boyunca çok daha
@@ -1487,7 +1632,7 @@ eleman özelliğidir.
    bir katsayı ızgarası ikisini de karşılar; bunu tek yönlü bir "daraltma katmanı" olarak
    tasarlamak `kt` kolunu bozardı.
 3. **Yine de derin teşhis ayakta:** aralık epistemik yayılıma göre boyutlanıyor, oysa kapsaması
-   gereken artık hata. §3.5 (doğruluk), §4.8 (kapasite) ve §6.5 (formülasyon) üç ayrı eksende
+   gereken artık hata. §3.5 (doğruluk), B-8 (kapasite) ve §6.5 (formülasyon) üç ayrı eksende
    aynı yere çıkıyor. Conformal katman ertelenebilir bir iyileştirme değil.
 
 ### 6.6 Hüküm
@@ -1524,6 +1669,15 @@ eleman özelliğidir.
 ---
 
 ## 7. Transfer iddiası formülasyona dayanıklı mı? — hayır, ama kayıp yerine bir şey kazanıyor
+
+> **Geçerlilik künyesi** — bu bölümün bulguları yalnızca bu konfigürasyonda geçerlidir (§0.2, §0.3).
+>
+> | veri kümesi | hedef dönüşümü | mimari | doğruluk | kriter | kapsam | tohum | cihaz |
+> | --- | --- | --- | --- | --- | --- | --- | --- |
+> | $F=17$, referans | **`clearsky_index`** | `[64,32]`, do 0,3 | $B{=}8$, $T{=}100$ | `mae` | beş ilin her biri `solo` ↔ `all5` | 42–44 | mps |
+>
+> §3 ve §5'in `kt` altındaki tekrarıdır. **Bu bölüm §0.3'ün matrisindeki en güçlü satırın kanıtıdır:** bulgular formülasyona koşulludur.
+
 
 ### 7.1 Sınanan iddia
 
@@ -1719,6 +1873,7 @@ Bir bölümün taşıması gereken alt başlıklar, §1'deki sırayla:
 
 | Alt başlık | İçerik |
 | --- | --- |
+| **Geçerlilik künyesi** | Başlığın hemen altında, alıntı bloğu içinde: veri kümesi · hedef dönüşümü · mimari · doğruluk · kriter · kapsam · tohum · cihaz. §0.2'nin referans konfigürasyonundan sapan her alan **kalın** yazılır. Bu tablo olmadan bölüm, mimari veya veri kümesi değiştiğinde okunamaz hâle gelir. |
 | `N.1` Sınanan iddia | `main_methodology.md`'den **doğrudan alıntı**, satır numarasıyla. Alıntılanacak bir cümle yoksa ablasyon henüz bir iddiaya bağlanmamıştır. |
 | `N.2` Hipotezler + EDA kanıtı | H1/H2…, ve her birini doğuran `outputs/eda/tables/*.csv` satırı. |
 | `N.3` Kolların tam konfigürasyonu | Ortak ayar tablosu + kola göre değişen alanlar tablosu + kol başına yeniden üretim komutu. Bu tablo, kodu okumadan koşuyu tekrarlatabilmelidir. |
@@ -1730,6 +1885,9 @@ Bir bölümün taşıması gereken alt başlıklar, §1'deki sırayla:
 
 Yeni bir eksen eklerken **koddan** gereken değişiklikler:
 
+0. **§0.3'ün değişiklik takip matrisine satır ekleyin:** bu eksen değişirse hangi bulgular
+   yeniden ölçülmelidir, ve taşımadığına dair ölçülmüş bir kanıt var mı? Bu satır, belgenin
+   sonraki oturumlarda referans olarak kullanılabilmesini sağlayan şeydir.
 1. **Ekseni `ExperimentConfig`'e alan olarak ekleyin** (varsayılanı, mevcut ledger satırlarının
    üretildiği davranışı koruyacak biçimde seçin — varsayılan değiştirmek eski satırların
    tamamını yetim bırakır).

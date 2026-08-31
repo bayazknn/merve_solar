@@ -835,7 +835,7 @@ güçlüdür (Rize onsuz nominale oturur), ama K3'ün **yönü doğruydu**: $B$'
 şanslı olduğunu değiştirir, sorunu çözmez. Ayrıntı ve tablo: `ABLATION.md` §3.5.
 
 **1b. Aralıklar hiçbir zaman *inşa gereği* kalibre değildi — tek bir işletme noktasında
-tesadüfen doğruydular.** Mimari merdiveni bunu doğrudan ölçmektedir (`ABLATION.md` §4.8, B-8).
+tesadüfen doğruydular.** Mimari merdiveni bunu doğrudan ölçmektedir (`ABLATION.md` B-8 (§4.6)).
 Doğruluk sabit tutulup ($B = 1$, $T = 100$, aynı veri, aynı kayıp) yalnızca mimari
 değiştirildiğinde, gündüz `Aggregate` üzerinde:
 
@@ -881,7 +881,7 @@ oranının (4,29) eşiğin (3,92) hemen üstünde kalmasıdır.
    iyi bir mimari, conformal/ölçekleme katmanı olmadan benimsenirse nokta doğruluğu kazanılıp
    kapsama kaybedilir.
 2. **Kalibrasyon `dropout_rate` ile satın alınamaz.** İki eksenli `[128,64] × dropout 0,4`
-   kolu, tek eksenli kolların cephesinin 1,07 s.s. içinde kalır (`ABLATION.md` §4.8, B-9):
+   kolu, tek eksenli kolların cephesinin 1,07 s.s. içinde kalır (`ABLATION.md` B-9 (§4.6)):
    kapsama geri alınır ama onu ödeyen doğruluk kaybedilir. Cephe kaydırılmamıştır.
 3. **Kaynak makaleyle PICP karşılaştırması mimariye bağlıdır.** "Adil karşılaştırma"
    ifadesi yalnızca `[64,32]` × $B = 8$ işletme noktası için geçerlidir ve her mimari
@@ -1218,13 +1218,18 @@ değiştirilmişse iki satır tabloda ayırt edilemez (§13.4).
   | Aralık (MPIW / PINW) | **%4,49** | tohum s.s.'sının ≈5 katı |
   | CP | +0,0220 | 3 tohumun tüm aralığından geniş |
 
-  Yani **nokta metrikleri arka uçtan bağımsız okunabilir, aralık metrikleri okunamaz**.
+  ~~Yani nokta metrikleri arka uçtan bağımsız okunabilir, aralık metrikleri okunamaz.~~
+  **GERİ ÇEKİLDİ** (`ABLATION.md` §1.10–§1.11): bu karşılaştırma her arka uçta tek koşuya
+  dayanıyordu ve MPS'in kendi tekrar yayılımı (il satırında %1,47) iddia edilen CPU↔MPS nokta
+  farkının (%0,25) altı katıdır. Doğru ifade: **CPU↔MPS farkı bu veriyle ayrılamaz**, ve
+  `device` sütununun gerekçesi ölçülmüş bir arka uç kayması değil, MPS'in determinist
+  olmamasıdır.
   Belirsizlik katmanı bu makalenin konusu olduğundan kural nettir: bir arka uçta üretilmiş
   CP/PINW/MPIW/CWC değeri başka bir arka uçta üretilmiş olanla **karşılaştırılmaz**, ve bir
   çok-tohumlu ortalama tek bir arka uçtan gelmelidir. Kullanılan cihaz hem `log.txt`'ye hem de
   ledger'ın `device` sütununa yazılır; karşılaştırma yapılmadan önce o sütun kontrol edilir.
-- Konfigürasyon, ölçekleyici ve tüm model ağırlıkları diske yazılır; sonuçlar yeniden
-  üretilebilir.
+- Konfigürasyon, ölçekleyici ve tüm model ağırlıkları diske yazılır. **"Yeniden üretilebilir"
+  ifadesi arka uca koşulludur** — yukarıdaki determinizm sınırına bakınız.
 
 
 > **ÖLÇÜLMÜŞ SINIR — determinizm yalnızca CPU'da geçerlidir** (`ABLATION.md` §1.10). Ledger'da
