@@ -932,11 +932,26 @@ $$s_i = \frac{y_i - m_i}{U_i - m_i}\ \ (y_i \ge m_i), \qquad
 hücrenin $k$'si $\{s_i\}$'nin $\lceil (n+1)(1-\alpha) \rceil$'inci en küçüğü — sonlu örnekte
 kesin kapsama garantisini veren düzeltme. $k<1$ aralık fazla genişti, $k>1$ dardı demektir.
 
-**Izgara.** `global` | `per_horizon` | `per_city` | `city_horizon` | `per_season` | `city_season`.
-Önerilen ve gridde kullanılan mod **`city_season`** (il × meteorolojik mevsim, 5 × 4 = 20 hücre).
-Gerekçe ölçülmüştür (`ABLATION.md` §8.3–§8.4, C-1…C-5): ufuk ekseni null, il ekseni koşullu
-kapsamayı düzelten eksen, mevsim ekseni %27 daha kazandırıyor çünkü $k$ yıl içinde 1,67–2,51 kat
-oynuyor — bulut değişkenliği mevsimseldir, epistemik yayılım değildir.
+**Izgara.** Modlar `{il, mevsim, ufuk}` kümesinin alt kümeleridir (`conformal.py::MODE_AXES`):
+`global`, `per_city`, `per_horizon`, `per_season`, `city_horizon`, `city_season`,
+`season_horizon`, `city_season_horizon`.
+
+**Eksenler birbirinin yerine geçmez — her biri yalnızca kendi koşullusunu düzeltir**
+(`ABLATION.md` §8.9, C-6). 16 bitmiş koşuda, düzeltme sonrası en kötü hücre sapması:
+
+| | il başına | ufuk başına |
+| --- | ---: | ---: |
+| `global` | 0,0290 | 0,0347 |
+| `per_city` | **0,0134** | 0,0342 |
+| `per_horizon` | 0,0279 | **0,0151** |
+| `city_horizon` | **0,0129** | **0,0144** |
+| `city_season` | **0,0103** | 0,0330 |
+| `city_season_horizon` | **0,0084** | **0,0138** |
+
+İlk tam doğruluk koşuları `city_season` ile yapıldı; o ızgaranın ufuk ekseni olmadığı için
+kapsama 24 adım boyunca **5,6 puan** yayılık kaldı. **Izgara geometrisi bu nedenle açık bir
+sorudur** ve `scripts/08_conformal_mode_selection.py` ile — doğrulama bölmesinde uyarlayıp test
+üzerinde üç koşulluyu birden puanlayarak, yeniden eğitim olmadan — kapatılacaktır.
 
 **Kalibrasyon kümesi = doğrulama bölmesi.** Boru hattı `conformal_mode != "none"` olduğunda
 doğrulama bölmesini de aynı $B \times T$ geçişle tahmin eder (**ölçülen ek süre %13**: altı ikiz
@@ -1497,7 +1512,7 @@ seçilir (grup verilmezse **hepsi** seçilir).
 | §9 Model                  | `src/merve_solar/model.py`      | `SolarLSTM`                                                |
 | §10 Eğitim                | `src/merve_solar/train.py`      | `train_model`, `nonneg_penalty`                            |
 | §11.1 MC Dropout          | `src/merve_solar/mc_dropout.py` | `mc_dropout_predict`, `pooled_summary`                     |
-| §11.6 Conformal katman    | `src/merve_solar/conformal.py`  | `fit_conformal_grid`, `apply_conformal`, `ConformalGrid`, `month_stability_table` |
+| §11.6 Conformal katman    | `src/merve_solar/conformal.py`  | `fit_conformal_grid`, `apply_conformal`, `ConformalGrid`, `MODE_AXES`, `month_stability_table` |
 | §11.2 Bootstrap           | `src/merve_solar/bootstrap.py`  | `resample_train_split`                                     |
 | §8 Torch veri yükleyici   | `src/merve_solar/datasets.py`   | `WindowDataset`, `make_dataloader`                         |
 | §11.4, §12 Metrikler      | `src/merve_solar/metrics.py`    | `summarize_predictive_distribution`, `compute_metric_subsets` |
@@ -1520,7 +1535,8 @@ Betikler (hepsi `src/`'ı `sys.path`'e ekler; `PROJECT_ROOT` dışında yol arg�
 | `scripts/run_experiment.py`        | Tek `ExperimentConfig` koşusu (§13.1)                                  |
 | `scripts/run_all_experiments.py`   | Seçilen tarama grupları (§13.5)                                        |
 | `scripts/06_city_horizon_metrics.py` | Bitmiş koşulardan il × ufuk metrik tablosu (§12.3); yeniden eğitim yok |
-| `scripts/07_conformal_diagnostic.py` | Conformal ızgara geometrisinin seçimi (§11.6); dört kalibrasyon geometrisi, yeniden eğitim yok |
+| `scripts/07_conformal_diagnostic.py` | Izgara geometrisinin **test bölmesi üzerinden** ön teşhisi; dört kalibrasyon geometrisi, üç koşullu ölçüt, yeniden eğitim yok |
+| `scripts/08_conformal_mode_selection.py` | Izgara geometrisinin **doğrulama bölmesi üzerinden** seçimi (§11.6, T-8.3); oracle sütunuyla aktarım hatası ayrıştırması, yeniden eğitim yok |
 
 Sınama (`uv run python -m pytest tests/ -q`) — her dosyanın koruduğu değişmez:
 
