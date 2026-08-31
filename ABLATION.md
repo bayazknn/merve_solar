@@ -1441,28 +1441,26 @@ berrak-gökyüzü zarfıydı. Zarf modele doğrudan verildiğinde, ondan öğren
 > demektir.** Ve bu, ölçülmemiş bir iddiadan daha güçlü bir bilimsel ifadedir. Ama makalenin
 > §1'deki iddiasını **olduğu gibi bırakamaz.**
 
-### 7.4 Ve kazanılan şey — transfer ortalamadan **belirsizliğe** taşınıyor
+### 7.4 Rize'de kazanılan şey — ve neden bunu genellemek hataydı
 
-Aynı kollar, aynı tohumlar, aynı satır:
+Stage 1 yalnızca Rize'yi ölçmüştü ve orada tablo şuydu:
 
 | metrik | `raw` solo → all5 | Δ | $p$ | `kt` solo → all5 | Δ | $p$ |
 | --- | --- | ---: | ---: | --- | ---: | ---: |
 | **CP** | 0,9529 → 0,9521 | −0,0008 | 0,840 | 0,8800 → **0,9107** | **+0,0307** | **0,0001** |
 | MPIW | 387,3 → 371,7 | −15,7 | 0,028 | 350,1 → 345,5 | −4,6 | **0,010** |
 | CRPS | 54,87 → 53,30 | −1,56 | 0,065 | 50,11 → 48,90 | −1,21 | 0,058 |
-| R² | 0,8064 → 0,8137 | +0,0073 | 0,155 | 0,8306 → 0,8333 | +0,0027 | 0,346 |
 
-`raw` altında havuzlamanın kapsamaya **hiç** etkisi yoktu ($p = 0{,}84$). `kt` altında
-**projedeki en anlamlı tek etki**: CP 0,880 → 0,911, üç tohumun üçünde, $p = 0{,}0001$, ve
-aralık aynı anda **daralıyor** ($p = 0{,}010$) — yani kapsama genişletmeyle değil, daha iyi
-konumlanmayla kazanılıyor.
+Bu belgenin önceki sürümü buradan **"transfer ortalamadan belirsizliğe taşınıyor"** sonucunu
+çıkarmıştı. **Bu genelleme yanlıştı** ve beş il koşulunca (§7.8) çöktü: diğer üç ilde havuzlama
+kalibrasyonu **bozuyor**, net etki tam olarak sıfır. Doğru ifade §7.8'dedir.
 
-**Mekanizma tutarlı.** §4.8'in B-7'si Rize'nin ortalamada **gürültü-sınırlı** olduğunu
-göstermişti: kapasiteyi 14,5 katına çıkarmak Rize'nin RMSE'sini iyileştirmiyordu. Zarf da
-verildikten sonra ortalama zaten kendi gürültü tabanına yakındır ve havuzlamanın orada
-kazanacağı bir şey kalmaz. **Epistemik yayılım ise hâlâ veriyle daralır** — havuzlanmış model
-kendi tahmininin ne kadar belirsiz olduğunu daha iyi bilir. Transfer kayboluyor değil, **yer
-değiştiriyor.**
+> **Tekrarlayan hata biçimi.** §0'ın "Aggregate tuzağı"nın kardeşi: **Rize tuzağı.** Rize
+> transferin en çok işe yaraması beklenen ildir, dolayısıyla orada ölçülen her etki üst
+> sınırdır ve işareti bile diğer illere taşınmayabilir. §5 bu dersi bir kez verdi (kazanç
+> iklimsel aykırılığı takip etmiyordu); §7.4 aynı hatayı bir kez daha üretti. **Tek ilden
+> genelleme yapılmaz** — beş il kolu koşulmadan hiçbir "transfer şu biçimde çalışıyor"
+> cümlesi yazılmamalıdır.
 
 ### 7.5 Güç çözümlemesi — daha fazla tohum yanlış yatırım
 
@@ -1480,38 +1478,115 @@ Altı tohuma çıkmak (~3,7 sa) beklenen $p \approx 0{,}15$ verir — sonuç de�
 ablasyonudur** (`target_kt_endpoints`, 12 kol, ~2,7 sa): §5'in kümelenmiş testi üç tohumla
 $p = 0{,}0146$'ya ulaşmıştı, çünkü beş il tek bir tohumun içinde beş kontrast üretiyor.
 
-### 7.6 Hüküm ve makale için sonuç
+**Koşuldu** (§7.6–§7.7) ve karar verdi: 2,7 saat, tek ilde 12 saat harcamanın veremeyeceği bir
+cevap üretti — hem de üç ilde işaretin ters döndüğünü göstererek, ki tohum sayısını artırmak
+bunu asla ortaya çıkaramazdı.
 
-- **H1 formülasyona dayanıklı değildir.** Nokta tahmininde havuzlama kazancı `kt` altında
-  %61 küçülüyor ve MAE'de sıfırlanıyor. §1'in iddia bloğu bu hâliyle **`raw`'a koşulludur.**
-- **Ama transfer yok olmuyor, biçim değiştiriyor:** aralık kalibrasyonuna geçiyor ve orada
-  `raw`'da hiç olmayan bir anlamlılığa ulaşıyor ($p = 0{,}0001$).
-- **Makale için üç seçenek var ve karar §7.5'in koşusundan sonra verilmelidir** (`kt` altında
-  diğer dört ilde havuzlama nokta tahminini iyileştiriyor mu?). Şu an bilinen:
-  - `raw` manşet: transfer iddiası güçlü (6 tohum, $p = 0{,}0122$, 15/15) ama mutlak doğruluk
-    akıllı kalıcılığın MAE'sini dört ilde geçemiyor, ve hakem "neden berraklık indeksi
-    tahminlemediniz?" diye soracaktır — bu, solar tahmin yazınının standardıdır.
-  - `kt` manşet: mutlak doğruluk %9–13 daha iyi ve MAE eşiği toplulaştırılmışta geçiliyor, ama
-    transfer iddiası ortalamadan belirsizliğe kayıyor ve yeniden yazılması gerekir.
-  - İkisi birlikte: `kt` manşet, `raw` → `kt` geçişi **transferin ne olduğunu açıklayan
-    ablasyon** olarak sunulur. §7.3 + §7.4 bunun için yeterli malzemedir ve bu, ölçülmemiş bir
-    "iller arası bilgi transferi" iddiasından **daha güçlü** bir katkıdır.
+### 7.6 Beş il uç nokta ablasyonu, `kt` altında — net kazanç yok, **yeniden dağıtım var**
 
-### 7.7 Geçerlilik tehditleri
+`target_kt_endpoints` (12 kol) + §7.2'nin Rize kolu. Her il tek başına, aynı ilin `all5` satırı,
+aynı tohum, gündüz, üç tohum eşleştirilmiş:
 
-- **T-7.1 — üç tohum, ve bu bir null.** §7.3 "etki yok" demiyor, "etki −0,79'a küçüldü ve bu
-  büyüklük üç tohumla saptanamaz" diyor. Küçülme iddiası nokta tahmininin kendisiyle
-  desteklenir (−%61, ve MAE'de −%99); **yokluk iddiası desteklenmez** ve makalede öyle
-  yazılmamalıdır.
-- **T-7.2 — kanıt tek il.** Rize, transferin en çok işe yaraması beklenen ildi. `kt` altında
-  diğer dört il ölçülmedi; §5'in `raw` altındaki 15/15 sonucu `kt`'ye taşınabilir de,
-  taşınmayabilir de.
-- **T-7.3 — §7.4'ün CP kazancı nominalin altındaki bir bölgede ölçülüyor.** `kt` solo kolunun
-  CP'si 0,880, havuzlanmışın 0,911 — ikisi de %95'in altında. "Havuzlama kalibrasyonu
-  iyileştiriyor" doğrudur, "kalibre ediyor" değildir. Conformal katman ikisinde de gereklidir.
+| il | solo RMSE | `all5` RMSE | Δ | % | işaret | $p$ | ΔMAE | $p$ |
+| --- | ---: | ---: | ---: | ---: | :-: | ---: | ---: | ---: |
+| Ankara | 80,68 | 79,97 | −0,72 | −0,89 | 3/3 | **0,035** | +0,33 | 0,400 |
+| Antalya | 74,76 | 75,15 | **+0,39** | **+0,52** | 1/3 | 0,318 | **+2,38** | **0,043** |
+| Konya | 81,20 | 81,14 | −0,06 | −0,07 | 2/3 | 0,902 | +0,10 | 0,531 |
+| Van | 81,58 | 80,63 | −0,95 | −1,17 | 2/3 | 0,192 | −0,21 | 0,825 |
+| Rize | 101,33 | 100,53 | −0,79 | −0,78 | 2/3 | 0,348 | −0,01 | 0,985 |
+
+İki formülasyon yan yana (ΔRMSE, aynı kontrast, aynı tohumlar):
+
+| il | `raw` Δ | `raw` % | `kt` Δ | `kt` % |
+| --- | ---: | ---: | ---: | ---: |
+| Ankara | −2,07 | −2,27 | −0,72 | −0,89 |
+| Antalya | −1,02 | −1,19 | **+0,39** | **+0,52** |
+| Konya | −1,31 | −1,43 | −0,06 | −0,07 |
+| Van | −0,43 | −0,47 | −0,95 | −1,17 |
+| Rize | −2,05 | −1,89 | −0,79 | −0,78 |
+
+**Tohum düzeyinde kümelenmiş test** (bağımsızlığı doğru ele alan tek test, §5.4):
+
+| dönüşüm | tohum başına ort. göreli kazanç | ortalama | $t$ | $p$ |
+| --- | --- | ---: | ---: | ---: |
+| `raw` | −1,455 / −1,747 / −1,136 % | **−1,446 %** | −8,19 | **0,0146** |
+| `clearsky_index` | −0,326 / −0,986 / −0,100 % | −0,471 % | −1,77 | **0,2184** |
+
+`raw` altında **15/15 tohum-kol** havuzlamayı destekliyordu. `kt` altında işaret karışıyor
+(Antalya tersine dönüyor), etki %67 küçülüyor ve kümelenmiş test **null**.
+
+### 7.7 Kalibrasyon da net sıfır — ama güçlü biçimde yeniden dağıtıyor
+
+Reliability ($|CP - 0{,}95|$, küçük iyi), `kt`, gündüz, üç tohum eşleştirilmiş:
+
+| il | solo CP | `all5` CP | solo Rel. | `all5` Rel. | Δ Rel. | iyileşti | $p$ |
+| --- | ---: | ---: | ---: | ---: | ---: | :-: | ---: |
+| **Rize** | 0,8800 | **0,9107** | 0,0700 | **0,0393** | **−0,0307** | 3/3 | **0,0001** |
+| Antalya | 0,9332 | 0,9667 | 0,0168 | 0,0167 | −0,0002 | 1/3 | 0,949 |
+| Van | 0,9304 | 0,9238 | 0,0196 | 0,0262 | **+0,0065** | 0/3 | **0,013** |
+| Ankara | 0,9289 | 0,9207 | 0,0211 | 0,0293 | **+0,0082** | 0/3 | 0,060 |
+| Konya | 0,9319 | 0,9158 | 0,0181 | 0,0342 | **+0,0160** | 0/3 | **0,0066** |
+| **kümelenmiş** | | | | | **+0,0000** | | **0,995** |
+
+Havuzlama Rize'nin kalibrasyonunu belirgin biçimde **iyileştiriyor** ve üç ilinkini
+**bozuyor**; net etki **tam olarak sıfır** ($t = -0{,}01$, $p = 0{,}995$). CRPS de aynı biçimde
+karışık (Ankara −0,41 $p = 0{,}017$ ve Rize −1,21 $p = 0{,}058$ iyileşiyor; Antalya +1,17
+$p = 0{,}010$ kötüleşiyor).
+
+> **Bu tam olarak `percity_endpoints`'in docstring'inde öngörülen "yeniden dağıtım"
+> senaryosudur** — `raw` altında **gerçekleşmemişti** (§5.7: hiçbir il zarar görmüyordu), `kt`
+> altında **gerçekleşiyor**, ve nokta tahmininde değil kalibrasyonda. Küresel model, zarf
+> verildikten sonra kalan kapasitesini veri-fakiri/gürültülü rejime yeniden tahsis ediyor,
+> kolay illerin pahasına.
+
+### 7.8 Hüküm ve makale için sonuç
+
+- **H1 formülasyona dayanıklı değildir.** `kt` altında nokta tahmininde havuzlamanın net kazancı
+  yok (kümelenmiş $p = 0{,}218$), işaret karışık, Antalya tersine dönüyor. §1–§5'in tamamı
+  **`raw`'a koşulludur.**
+- **Kalibrasyonda da net kazanç yok** ($p = 0{,}995$) — ama dağılım **kuvvetle yeniden
+  dağıtıcıdır**: Rize −0,0307 ($p = 0{,}0001$), Konya +0,0160 ($p = 0{,}0066$), Van +0,0065
+  ($p = 0{,}013$).
+- **Öngörülen mekanizma doğrulandı.** Havuzlamanın satın aldığı şeyin büyük kısmı beş il
+  arasında paylaşılan güneş-geometrisi zarfıydı; zarf modele doğrudan verildiğinde ondan
+  öğrenilecek bir şey kalmıyor.
+- **Makale için en güçlü çerçeve `kt` manşet + `raw` → `kt` geçişinin ablasyon olarak
+  sunulmasıdır.** Gerekçe:
+  - `kt` mutlak doğrulukta %9–13 daha iyi ve akıllı kalıcılığın MAE eşiğini toplulaştırılmışta
+    geçiyor (§6.4). "Neden berraklık indeksi tahminlemediniz?" solar tahmin yazınının standart
+    sorusudur ve `raw` manşetle savunulamaz.
+  - Transfer iddiası **ölçülmemiş bir varsayımdan, mekanizması ölçülmüş bir açıklamaya**
+    dönüşüyor: havuzlama ışınım uzayında yardımcıdır çünkü paylaşılan geometriyi öğretir;
+    geometri verildiğinde kalan rol yeniden dağıtımdır.
+  - Yeniden dağıtım iddiası ("küresel model doğruluğu ve kalibrasyonu veri-fakiri rejime
+    tahsis eder") **hakemin ilk ulaşacağı itiraz değildir** ve tek il üzerinden değil, beş il
+    ve üç tohum üzerinden ölçülmüştür.
+- **Bu bir yokluk sonucu değil, bir küçülme/yeniden dağıtım sonucudur** (§7.9, T-7.1).
+
+### 7.9 Geçerlilik tehditleri
+
+- **T-7.1 — bu bir yokluk sonucu DEĞİLDİR.** §7.6 "havuzlamanın etkisi yok" demiyor;
+  "net etki üç tohumla saptanamayacak kadar küçüldü ve **işaret iller arasında tutarsızlaştı**"
+  diyor. İkincisi birincisinden güçlüdür ve tohum sayısıyla düzelmez: Antalya'nın RMSE'de
+  (+0,39) ve MAE'de (+2,38, $p = 0{,}043$) ters yönde olması bir güç sorunu değildir.
+- **T-7.2 — üç tohum.** İl bazlı $p$'lerin çoğu güç sınırında. Kümelenmiş test doğru araçtır
+  ve o da $n = 3$ ile çalışıyor; `raw` altında bu $p = 0{,}0146$ vermeye yetmişti, dolayısıyla
+  `kt`'deki $p = 0{,}218$ yalnızca güç eksikliğiyle açıklanamaz — etki büyüklüğü üçte bire
+  inmiştir.
+- **T-7.3 — kalibrasyon karşılaştırması nominalin altındaki bir bölgede.** `kt` kollarının
+  CP'si 0,880–0,967, çoğu %95'in altında. "Havuzlama Rize'nin kalibrasyonunu iyileştiriyor"
+  doğrudur; "kalibre ediyor" değildir. Conformal katman her iki kolda da gereklidir
+  (`main_methodology.md` §11.5).
 - **T-7.4 — dönüşüm ile kayıp ağırlıklandırması ayrılamaz** (§6.7, T-6.2). Transfer kazancının
-  küçülmesi, zarfın verilmesinden değil, kayıp ağırlıklandırmasının değişmesinden de
-  kaynaklanıyor olabilir. İki etki tek değişikliktir ve bu kol onları ayırmaz.
+  küçülmesi zarfın verilmesinden değil, kayıp ağırlıklandırmasının değişmesinden de
+  kaynaklanıyor olabilir. İki etki tek değişikliktir ve bu kollar onları ayırmaz. Ayıracak kol
+  düşünülebilir (`kt` hedefi + W/m² uzayında ağırlıklandırılmış kayıp) ama koşulmamıştır.
+- **T-7.5 — `raw` kolları `[64,32]`, `kt` kolları da `[64,32]`.** Mimari sabittir, dolayısıyla
+  karşılaştırma adildir; ancak `kt` formülasyonunun optimal kapasitesi ölçülmemiştir. §4'ün
+  merdiveni `raw` altında koşuldu ve `kt` altında farklı sonuçlanabilir.
+- **T-7.6 — tek ilden genelleme.** §7.4'ün kayıt altına aldığı hata biçimi. Bu bölümdeki her
+  cümle beş il × üç tohum üzerinden kurulmuştur; Rize satırı tek başına hiçbir şeyin kanıtı
+  değildir.
 
 ---
 

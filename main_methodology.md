@@ -103,23 +103,31 @@ her il için ayrı ayrı eğitilmiş modellere kıyasla veri verimliliği artar.
 >    karşılaştırma her kolda aynı mimaridir ve bu sağlanmıştır; ancak "tek-il modeli en iyi
 >    hâlinde de kaybeder" iddiası bu koşulardan çıkmaz (`ABLATION.md` §5.8, T-5.3).
 > 6. **YUKARIDAKİ HER SAYI `target_transform="raw"` KOŞULLUDUR** (§5.4). Berraklık indeksi
->    formülasyonu altında Rize'de nokta tahmini transfer kazancı −2,05'ten **−0,79**'a düşer
->    (2/3 tohum, $p = 0{,}35$) ve MAE'de **tamamen kaybolur** (−1,58 → −0,01). Öngörülen
->    mekanizma doğrulanmıştır: havuzlamanın satın aldığı şeyin büyük kısmı, beş il arasında
->    paylaşılan güneş-geometrisi zarfıydı; zarf modele doğrudan verildiğinde ondan öğrenilecek
->    bir şey kalmıyor (`ABLATION.md` §7.3).
+>    formülasyonu altında, beş il × üç tohum ölçüldüğünde havuzlamanın nokta tahmininde **net
+>    kazancı yoktur**: kümelenmiş test −%0,471, $t = -1{,}77$, **$p = 0{,}218$** (aynı test
+>    `raw` altında −%1,446, $p = 0{,}0146$). İşaret de tutarsızlaşır — Antalya'da havuzlama
+>    RMSE'yi +0,39 ve MAE'yi **+2,38 ($p = 0{,}043$)** kötüleştirir. Öngörülen mekanizma
+>    doğrulanmıştır: havuzlamanın satın aldığı şeyin büyük kısmı beş il arasında paylaşılan
+>    güneş-geometrisi zarfıydı; zarf modele doğrudan verildiğinde ondan öğrenilecek bir şey
+>    kalmıyor (`ABLATION.md` §7).
 >
->    **Ancak transfer yok olmuyor, yer değiştiriyor.** `raw` altında havuzlamanın Rize'nin
->    kapsamasına hiç etkisi yoktu ($p = 0{,}84$); `kt` altında CP 0,8800 → **0,9107**, üç
->    tohumun üçünde, **$p = 0{,}0001$** — projedeki en anlamlı tek etki — ve aralık aynı anda
->    daralıyor ($p = 0{,}010$). Bu, §12.3.1 ve `ABLATION.md` §4.8'in B-7'siyle tutarlıdır:
->    Rize ortalamada gürültü-sınırlıdır, epistemik yayılım ise hâlâ veriyle daralır.
+>    **Kalibrasyonda da net kazanç yoktur** (Reliability kümelenmiş $p = 0{,}995$) — ama etki
+>    kuvvetle **yeniden dağıtıcıdır**: Rize −0,0307 ($p = 0{,}0001$, iyileşme), Konya +0,0160
+>    ($p = 0{,}0066$), Van +0,0065 ($p = 0{,}013$), Ankara +0,0082 (kötüleşme). Küresel model,
+>    zarf verildikten sonra kalan kapasitesini **veri-fakiri/gürültülü rejime tahsis eder,
+>    kolay illerin pahasına.** Bu, `raw` altında **gerçekleşmeyen** senaryodur (orada hiçbir il
+>    zarar görmüyordu, 15/15).
 >
 >    Makale, manşet formülasyon `kt` olacaksa **iddiayı buna göre yeniden yazmalıdır**:
->    havuzlama ortalamayı değil, tahminin belirsizlik tahminini iyileştirir. Bu, ölçülmemiş
->    bir "iller arası bilgi transferi" iddiasından daha güçlü bir katkıdır — ama farklı bir
->    iddiadır. **Bu bir yokluk sonucu değil, bir küçülme sonucudur** (`ABLATION.md` §7.7,
->    T-7.1); üç tohum "etki yok" demeye yetmez.
+>    "iller arası bilgi transferi her ili iyileştirir" değil, "**havuzlama ışınım uzayında
+>    paylaşılan geometriyi öğretir; geometri doğrudan verildiğinde küresel modelin kalan rolü,
+>    doğruluğu ve kalibrasyonu en zor rejime yeniden tahsis etmektir**". Bu, ölçülmemiş bir
+>    transfer iddiasından daha güçlü ve mekanizması ölçülmüş bir katkıdır — ama farklı bir
+>    iddiadır.
+>
+>    **Bu bir yokluk sonucu değildir** (`ABLATION.md` §7.9, T-7.1): iddia edilen, etkinin üçte
+>    bire inmesi ve işaretinin iller arasında tutarsızlaşmasıdır; ikincisi tohum sayısıyla
+>    düzelmez.
 
 ---
 
