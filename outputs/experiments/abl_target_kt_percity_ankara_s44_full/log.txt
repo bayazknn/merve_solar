@@ -1,0 +1,20 @@
+device=mps
+training_scope=per_city model_family=lstm
+loss_function=mae
+active_cities=['Ankara'] excluded=['Antalya', 'Konya', 'Rize', 'Van']
+train_end=2024-06-27 19:00:00 val_end=2025-03-26 01:00:00
+test daylight elements: 109644 of 211944
+Ankara/train: 43749 windows
+Ankara/val: 6463 windows
+Ankara/test: 8831 windows
+Ankara replica 0: best_val_loss=0.2932 best_epoch=23 last_val_loss=0.2993 epochs=39
+Ankara replica 1: best_val_loss=0.2954 best_epoch=26 last_val_loss=0.2992 epochs=42
+Ankara replica 2: best_val_loss=0.2866 best_epoch=30 last_val_loss=0.2923 epochs=46
+Ankara replica 3: best_val_loss=0.2909 best_epoch=46 last_val_loss=0.2964 epochs=62
+Ankara replica 4: best_val_loss=0.2870 best_epoch=44 last_val_loss=0.2879 epochs=60
+Ankara replica 5: best_val_loss=0.2939 best_epoch=30 last_val_loss=0.3018 epochs=46
+Ankara replica 6: best_val_loss=0.2897 best_epoch=63 last_val_loss=0.2941 epochs=79
+Ankara replica 7: best_val_loss=0.2928 best_epoch=23 last_val_loss=0.2930 epochs=39
+target_transform=clearsky_index
+clamped 102300 night elements to zero
+total_training_time_sec=917.6

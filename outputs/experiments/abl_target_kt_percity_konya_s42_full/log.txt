@@ -1,0 +1,20 @@
+device=mps
+training_scope=per_city model_family=lstm
+loss_function=mae
+active_cities=['Konya'] excluded=['Ankara', 'Antalya', 'Rize', 'Van']
+train_end=2024-06-27 19:00:00 val_end=2025-03-26 01:00:00
+test daylight elements: 109476 of 211944
+Konya/train: 43749 windows
+Konya/val: 6463 windows
+Konya/test: 8831 windows
+Konya replica 0: best_val_loss=0.2901 best_epoch=69 last_val_loss=0.3009 epochs=85
+Konya replica 1: best_val_loss=0.2937 best_epoch=27 last_val_loss=0.3075 epochs=43
+Konya replica 2: best_val_loss=0.2962 best_epoch=45 last_val_loss=0.3008 epochs=61
+Konya replica 3: best_val_loss=0.2957 best_epoch=35 last_val_loss=0.2974 epochs=51
+Konya replica 4: best_val_loss=0.2958 best_epoch=20 last_val_loss=0.3105 epochs=36
+Konya replica 5: best_val_loss=0.2887 best_epoch=54 last_val_loss=0.2937 epochs=70
+Konya replica 6: best_val_loss=0.2904 best_epoch=53 last_val_loss=0.2965 epochs=69
+Konya replica 7: best_val_loss=0.2940 best_epoch=24 last_val_loss=0.3033 epochs=40
+target_transform=clearsky_index
+clamped 102468 night elements to zero
+total_training_time_sec=996.5
