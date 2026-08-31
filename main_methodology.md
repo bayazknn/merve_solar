@@ -824,7 +824,17 @@ rezidüel-varyans eklentisinin bir *ön koşul* olduğu değerlendirilmişti
 > kanıt: $B{=}1 \to B{=}8$ geçişinde CRPS her ilde iyileşmektedir (%1,8–3,3), yani dağılım
 > bir bütün olarak daha iyidir, yalnızca daha geniş değil.
 
-**1b. Ama aralıklar hiçbir zaman *inşa gereği* kalibre değildi — tek bir işletme noktasında
+**1a. DÜZELTME — $B$'yi büyütmek kalibrasyonu düzeltmiyor, yeniden dağıtıyor.** Yukarıdaki
+paragraf Rize satırından okunmuştur ve o satır doğrudur, ama il bazında bakıldığında
+$B{=}1 \to B{=}8$ geçişi Reliability'yi ($|CP-0{,}95|$) **dört ilde anlamlı olarak
+kötüleştirir** (Ankara $p = 0{,}016$, Antalya $0{,}0023$, Konya $0{,}0003$, Van $0{,}0004$;
+her birinde 0/3 tohum iyileşiyor) ve yalnızca Rize'yi iyileştirir ($-0{,}0345$,
+$p = 0{,}0123$). Kümelenmiş net etki **$+0{,}0076$, $p = 0{,}0054$** — yani net olarak
+**bozar**. `METHODOLOGY_REVIEW.md` K3'ün "aleatorik terim bir ön koşuldur" ifadesi hâlâ fazla
+güçlüdür (Rize onsuz nominale oturur), ama K3'ün **yönü doğruydu**: $B$'yi büyütmek hangi ilin
+şanslı olduğunu değiştirir, sorunu çözmez. Ayrıntı ve tablo: `ABLATION.md` §3.5.
+
+**1b. Aralıklar hiçbir zaman *inşa gereği* kalibre değildi — tek bir işletme noktasında
 tesadüfen doğruydular.** Mimari merdiveni bunu doğrudan ölçmektedir (`ABLATION.md` §4.8, B-8).
 Doğruluk sabit tutulup ($B = 1$, $T = 100$, aynı veri, aynı kayıp) yalnızca mimari
 değiştirildiğinde, gündüz `Aggregate` üzerinde:
@@ -836,10 +846,13 @@ değiştirildiğinde, gündüz `Aggregate` üzerinde:
 | `[128,64]` | 90,29 | 309,9 | 0,8949 | 3,43 |
 | `[256,128]` | 88,58 | 242,1 | **0,8436** | **2,73** |
 
-MPIW/RMSE oranı model kalitesiyle **tekdüze** düşer ve CP tam olarak onu izler: Gauss
-varsayımı altında nominal %95 için gereken oran $2 \times 1{,}96 = 3{,}92$'dir ve on iki kolun
-**istisnasız hepsinde** oran 3,92'nin üstündeyse fazla, altındaysa eksik kapsama görülür.
-Tek-eksenli kollar üzerinde CP ile $\log(\text{MPIW})$ arasındaki cephe $R^2 = 0{,}95$'tir.
+MPIW/RMSE oranı model kalitesiyle **güçlü biçimde ama tekdüze olmayarak** düşer (11 adımda
+5 işaret dönüşü) ve CP onu yakından izler. Ampirik kırılma noktası **4,27**'dir; Gauss
+varsayımının verdiği $2 \times 1{,}96 = 3{,}92$ değil — beklenen bir sapma, çünkü aralık
+yüzdelik tabanlıdır, ortalama $\pm z\sigma$ değil. On iki kolun **üçü** eşiği ihlal eder ve
+üçü de saf kapasite/düzenlileştirme kolu değildir (iki geriye-bakış kolu ve bilinçli iki
+eksenli kol); yedi saf kolun hepsi uyumludur. Tek-eksenli kollar üzerinde CP ile
+$\log(\text{MPIW})$ arasındaki cephe $R^2 = 0{,}9486$'dır.
 
 **Mekanizma:** aralık, havuzlanan örneğin yüzdelikleridir ve o örnek yalnızca *epistemik*
 yayılımı taşır. Model iyileştikçe epistemik yayılım daralır, ancak indirgenemez artık hata aynı
@@ -1212,6 +1225,23 @@ değiştirilmişse iki satır tabloda ayırt edilemez (§13.4).
   ledger'ın `device` sütununa yazılır; karşılaştırma yapılmadan önce o sütun kontrol edilir.
 - Konfigürasyon, ölçekleyici ve tüm model ağırlıkları diske yazılır; sonuçlar yeniden
   üretilebilir.
+
+
+> **ÖLÇÜLMÜŞ SINIR — determinizm yalnızca CPU'da geçerlidir** (`ABLATION.md` §1.10). Ledger'da
+> `experiment_id` dışında birebir aynı konfigürasyonla koşulmuş beş kol kümesi vardır. Tek CPU
+> çifti **bit-birebir** aynıdır. Dört MPS çiftinin **hiçbiri** aynı değildir: aynı `seed`, aynı
+> config, aynı kod ile havuzlanmış gündüz RMSE %0,43–0,60, tek il satırında **%1,47** ayrılır.
+> Araya giren commit'lerde eğitim yolunu değiştiren bir şey yoktur.
+>
+> Makalede yazılacak cümle bu nedenle "tohum sabitlendi, sonuçlar tekrarlanabilir" **değil**,
+> **"CPU'da bit-birebir tekrarlanabilir; MPS'te sabit tohumda havuzlanmış metriklerde ±%0,5,
+> il bazında ±%1,5"** olmalıdır. 126 ledger satırının 107'si MPS'tir.
+>
+> Çok tohumlu eşleştirilmiş testler bundan **geçersiz olmaz**: arka uç gürültüsü sistematik
+> değil bağımsızdır, dolayısıyla raporlanan tohum standart sapmaları onu zaten içerir ve test
+> doğru varyansa karşı sınar. Değişen yorumdur — "6/6 tohum" altı bağımsız *tohum* etkisi
+> değil, altı (tohum + arka uç gürültüsü) çekilişidir. Değişmeyen sonuç: **tek koşu farkları
+> bu tabanın altında okunamaz.**
 
 ### 13.4 Karşılaştırılabilirlik kuralları (makale tabloları için kritik)
 

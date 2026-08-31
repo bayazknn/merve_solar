@@ -472,56 +472,65 @@ mevcut hâliyle, seçilmemiş bir kriter altındaki transfer davranışını öl
   karıştırıcının hükmü değiştirmesi için `solo`'yu *kayırdığı* yönde çalışması gerekirdi, ki
   o durumda gerçek havuzlama kazancı ölçülenden biraz daha büyük olurdu.
 
-### 1.10 Yan bulgu — tekrarlanabilirlik doğrulaması
+### 1.10 Tekrarlanabilirlik — CPU'da tam, MPS'te **değil**
 
-`abl_loss_mse_s42_b1` ile `abl_rize_all5_s42_b1` konfigürasyonları `experiment_id` dışında
-**birebir aynıdır** (beş il, global, mse, tohum 42, aynı doğruluk). İki ayrı süreçte, saatler
-arayla koşulmuşlardır ve `results_summary.csv` çıktıları tüm metriklerde aynıdır — gündüz
-`Aggregate` RMSE 96.9915 / MAE 73.8333 / R² 0.8818 / CP 0.8254, gündüz `Rize` RMSE 112.8847.
-Bu, `main_methodology.md` §13.3'ün determinizm iddiası için ölçülmüş bir doğrulamadır. Kasıtlı
-kurgulanmamıştı — Aşama 1 ile Aşama 2'nin kesişmesinden doğdu — ama makalede alıntılanmaya
-değer. (Maliyeti bir koşudur; ileride grid'de bu çakışma bilerek korunabilir veya kaldırılabilir.)
+Ledger'da, `experiment_id` dışında konfigürasyonu birebir aynı olan beş kol kümesi vardır.
+Kasıtlı kurgulanmamışlardı; aşamaların kesişmesinden doğdular ve birlikte **ölçülmüş bir
+tekrarlanabilirlik tabanı** verirler.
 
-### 1.11 Cihaz eşdeğerliği (parity) — MPS ile CPU aynı sayıları vermez
+| kol çifti | cihaz | gündüz `Aggregate` RMSE farkı |
+| --- | --- | ---: |
+| `abl_loss_mse_s42_b1` / `abl_rize_all5_s42_b1` | cpu / cpu | **0,000000 — bit-birebir** |
+| `abl_rize_all5_s43_l1` / `abl_arch_base_s43` | mps / mps | 0,401 (%0,43) |
+| `abl_rize_all5_s44_l1` / `abl_arch_base_s44` | mps / mps | 0,570 (%0,60) |
+| `abl_parity_mps_s42` / `abl_rize_solo_s42_l1` | mps / mps | **1,637 (%1,47)**, Rize satırı |
 
-`abl_parity_cpu_s42` ve `abl_parity_mps_s42`, `experiment_id` dışında **birebir aynı**
-konfigürasyondur (Rize tek başına, `per_city`, L1, tohum 42, B=1, T=100); tek fark
-`MERVE_DEVICE` ile sabitlenen arka uçtur. Amaç, bir denetimde ileri sürülen ama
-**doğrulanamamış** bir iddiayı sınamaktı: `nn.LSTM`'in katmanlar arası dropout'unun MPS'te
-CPU'dan ayrıştığı. `hidden_sizes=[64, 32]` gerçekten `nn.LSTM(num_layers=2, dropout=0.3)`
-kuruyor ve o dropout çıkarım anındaki MC-Dropout gürültü kaynaklarından biri, yani maruziyet
-gerçek — iddia doğrulanmamış olsa bile.
+**CPU deterministiktir; MPS değildir.** Aynı `seed`, aynı config, aynı kod — ve MPS'te iki
+koşu havuzlanmış RMSE'de %0,4–0,6, tek il satırında **%1,47** ayrılıyor. Araya giren
+commit'lerde eğitim yolunu değiştiren bir şey yok, yani bu arka uç kaynaklı determinizm
+eksikliğidir.
 
-| metrik (Rize, gündüz) | CPU | MPS | fark |
+**Sonuçları, önem sırasıyla:**
+
+1. **`main_methodology.md` §13.3'ün determinizm iddiası yalnızca CPU'yu kapsar.** 126 ledger
+   satırının 107'si MPS'tir. Makalede "tohum sabitlendi, sonuçlar tekrarlanabilir" cümlesi bu
+   hâliyle yanlış olur; doğru cümle **"CPU'da bit-birebir; MPS'te sabit tohumda havuzlanmış
+   metriklerde ±%0,5, il bazında ±%1,5"**tir.
+2. **§1.11'in cihaz eşdeğerliği hükmü geçersizdir** — aşağıda.
+3. **Tek koşu farkları okunamaz.** Bu, ölçülmüş bir çözünürlük alt sınırıdır: bu tabanın
+   altındaki bir fark, kaç tohum koşulursa koşulsun tek bir koşu çiftinden okunamaz.
+   Çok tohumlu eşleştirilmiş testler geçerliliğini korur — arka uç gürültüsü sistematik değil
+   bağımsız gürültüdür, dolayısıyla raporladığımız tohum s.s.'leri onu **zaten içerir** ve test
+   doğru varyansa karşı sınar. Değişen şey yorumdur: "6/6 tohum" altı bağımsız *tohum* etkisi
+   değil, altı (tohum + arka uç gürültüsü) çekilişidir.
+
+### 1.11 Cihaz eşdeğerliği — **hüküm geri çekildi**
+
+`abl_parity_cpu_s42` / `abl_parity_mps_s42` çifti, doğrulanmamış bir `nn.LSTM` MPS dropout
+iddiasını sınamak için koşulmuştu ve iddia doğrulanmadı: dropout işlevsiz olsaydı yayılım
+*çökerdi*, gözlenen yön tersidir (MPIW %4,5 daha geniş). **Bu kısım ayaktadır.**
+
+Geri çekilen kısım, o çiftten çıkarılan **eşdeğerlik hükmüdür**:
+
+| metrik (Rize, gündüz) | CPU | MPS | iddia edilen "arka uç farkı" |
 | --- | --- | --- | --- |
-| RMSE | 110,557 | 110,832 | **+%0,25** |
-| MAE | 77,559 | 77,920 | +%0,46 |
-| R² | 0,7984 | 0,7974 | −%0,13 |
-| CP | 0,8674 | 0,8894 | **+0,0220** |
-| MPIW | 318,38 | 332,66 | **+%4,49** |
-| PINW | 0,3248 | 0,3394 | +%4,49 |
-| CRPS | 57,055 | 56,579 | −%0,83 |
-| süre | 155,2 s | 71,4 s | **2,17× hızlı** |
+| RMSE | 110,557 | 110,832 | +%0,25 |
+| CP | 0,8674 | 0,8894 | +0,0220 |
+| MPIW | 318,38 | 332,66 | +%4,49 |
 
-**Sonuç 1 — iddia edilen hata bu biçimde görünmüyor.** Dropout MPS'te işlevsiz olsaydı öngörü
-dağılımının yayılımı *çökerdi*: MPIW daralır, CP düşerdi. Gözlenen yön tam tersidir (MPIW %4,5
-daha *geniş*). Koşular gerçekten farklı çekilişlerdir — erken durdurma CPU'da 28, MPS'te 30
-epokta bağladı — ama benzer bir çözüme yakınsamışlardır (doğrulama kaybı 0,1912 / 0,1915).
+Belgenin önceki sürümü buradan **"nokta metrikleri arka uçlar arasında okunabilir, aralık
+metrikleri okunamaz"** kuralını türetmişti. §1.10 bunu çürütüyor: **aynı arka uçta (MPS) aynı
+config'in iki koşusu Rize RMSE'sinde %1,47 ayrılıyor**, yani iddia edilen CPU↔MPS nokta farkı
+(%0,25) MPS'in kendi tekrar yayılımının **altıda biri**. Karşılaştırma, ölçmeye çalıştığı
+büyüklükten büyük bir gürültünün içinde yapılmıştır ve hiçbir şeyi ölçmemektedir.
 
-**Sonuç 2 — ama arka uçlar aralık metriklerinde değiştirilebilir değil.** Ölçek için: aynı
-kolun üç tohumu arasında MPIW standart sapması ortalamanın **%0,91'i**, tüm aralık %1,82'dir.
-Arka uç farkı %4,49 — yani **tohum s.s.'sının ≈5 katı ve üç tohumun tüm aralığının 2,5 katı**.
-CP'de de fark (0,0220) üç tohumun tüm aralığından (0,0182) geniştir. Nokta metriklerinde ise
-fark %0,25 ile tohum gürültüsünün çok altında kalır.
+**Doğru hüküm:** CPU ↔ MPS farkı bu veriyle **ayrılamaz**; ayrılabilmesi için her arka uçta
+çok tohumlu koşum gerekir (§1.11'in kendi "Sınır" paragrafı bunu zaten söylüyordu, ama hüküm
+yine de yazılmıştı). Ledger'ın `device` sütunu yine de gereklidir — ama gerekçesi ölçülmüş bir
+arka uç kayması değil, **MPS'in determinist olmaması**dır.
 
-Pratik kural: **nokta metrikleri arka uçlar arasında okunabilir, aralık metrikleri okunamaz.**
-Bir çok-tohumlu ortalama tek bir arka uçtan gelmelidir; ledger'ın `device` sütunu bunun
-kontrol edilebilmesi için vardır.
-
-**Sınır:** bu tek bir tohumla yapılmış tek bir karşılaştırmadır. %4,49'un sistematik bir arka
-uç kayması mı yoksa şanssız tek bir çekiliş mi olduğunu ayırmak için her arka uçta üç tohum
-gerekir. Bu koşuların maliyeti düşüktür (Rize tek başına, arka uç başına ≈3 × 100 s) ve
-belirsizlik katmanı hakkında bir tablo yayımlanacaksa yapılması önerilir.
+**Yapılabilir düzeltme (ucuz):** Rize tek başına, arka uç başına üç tohum, ≈3 × 100 s. Bu hem
+CPU↔MPS farkını ayırır hem de §1.10'un MPS tekrar yayılımını üç yerine altı noktadan ölçer.
 
 ---
 
@@ -741,11 +750,11 @@ ise fazlalıktır ve seyreltir. Bu, "daha çok veri her zaman daha iyi değildir
 ifade edilebilir ama **düzeltme sonrası anlamlı değildir**; hipotez üreten bir gözlem olarak
 sunulmalıdır.
 
-### 3.5 Kalibrasyon — §1 ve §2'nin teşhisini geçersiz kılar
+### 3.5 Kalibrasyon — Rize düzeliyor, **diğer dördü bozuluyor**
 
 `all5` kolu, üç tohum, gündüz:
 
-| il | CP | MPIW | 
+| il | CP | MPIW |
 | --- | --- | --- |
 | **Rize** | **0,9521 ± 0,0009** | 371,66 |
 | Konya | 0,9813 ± 0,0019 | 457,80 |
@@ -754,19 +763,42 @@ sunulmalıdır.
 | Ankara | 0,9842 ± 0,0006 | 440,46 |
 | `Aggregate` | 0,977 ± 0,001 | 438,58 |
 
-Bootstrap bileşeni **tam da eksik kapsanan ili düzeltti**: Rize $B{=}1$'de CP 0,910 /
-Reliability 0,040 / CWC 2,855 iken, $B{=}8$'de 0,9521 / 0,001 / 0,376 — nominal %95'e pratikte
-tam oturma ve projedeki en büyük tek metrik iyileşmesi (CWC −%87).
+> **DÜZELTME (bağımsız review, `ABLATION_REVIEW_2.md`).** Bu bölümün önceki sürümü Rize
+> satırını okuyup "$B{=}1 \to B{=}8$ kalibrasyonu düzeltti, `METHODOLOGY_REVIEW.md` K3 yanlıştı"
+> hükmünü vermişti. **İl bazında okununca hüküm tersine döner.** $B{=}1 \to B{=}8$ geçişi,
+> Reliability ($|CP - 0{,}95|$, küçük iyi), eşleştirilmiş üç tohum:
+>
+> | il | $B{=}1$ CP | $B{=}8$ CP | Rel. $B{=}1$ | Rel. $B{=}8$ | Δ | iyileşti | $p$ |
+> | --- | ---: | ---: | ---: | ---: | ---: | :-: | ---: |
+> | **Rize** | 0,9134 | **0,9521** | 0,0366 | **0,0021** | **−0,0345** | 3/3 | **0,0123** |
+> | Antalya | 0,9690 | 0,9837 | 0,0190 | 0,0337 | +0,0147 | 0/3 | **0,0023** |
+> | Van | 0,9674 | 0,9829 | 0,0174 | 0,0329 | +0,0156 | 0/3 | **0,0004** |
+> | Konya | 0,9608 | 0,9813 | 0,0108 | 0,0313 | +0,0205 | 0/3 | **0,0003** |
+> | Ankara | 0,9627 | 0,9842 | 0,0127 | 0,0342 | +0,0215 | 0/3 | **0,0158** |
+> | **kümelenmiş** | | | | | **+0,0076** | | **0,0054** |
+>
+> Bootstrap bileşeni **net olarak kalibrasyonu bozuyor** ($p = 0{,}0054$): Rize'yi 0,913'ten
+> 0,952'ye taşırken diğer dördünü zaten aştıkları hedeften daha da uzaklaştırıyor
+> (0,961–0,969 → 0,981–0,984). Bu bir **yeniden dağıtımdır**, bir düzeltme değil — ve §7.7'de
+> `target_transform` ekseninde ölçülen olgunun aynısıdır (orada net etki sıfır, burada net
+> etki negatif).
+>
+> **Bu, §7.4'ün adını koyduğu "Rize tuzağı"nın belgedeki yakalanmamış örneğiydi** ve
+> yakalanmasını bağımsız review'e borçluyuz. Rize, transferin ve doğruluğun en çok işe
+> yaraması beklenen ildir; orada ölçülen her etkinin işareti bile diğer illere taşınmayabilir.
 
-`METHODOLOGY_REVIEW.md` K3, alt-kapsamanın **yapısal** olduğunu ve aleatorik bir terim
-eklenmesinin **ön koşul** olduğunu söylüyordu. Yanlıştı: sorun eksik aleatorik terim değil,
-**eksik doğruluktu**. Üstelik o eklenti yapılsaydı diğer dört ili (0,981–0,984) daha da fazla
-kapsatırdı. Kalan iş **daraltmadır**, genişletme değil.
+**Ayakta kalan kısım:** Rize'nin $B{=}8$'de nominal %95'e oturması gerçektir (CP 0,9521,
+Reliability 0,0021, CWC 2,855 → 0,376) ve projedeki en büyük tek metrik iyileşmesidir.
+`METHODOLOGY_REVIEW.md` K3'ün "aleatorik terim bir **ön koşuldur**" ifadesi de hâlâ fazla
+güçlüdür — Rize onsuz nominale oturmaktadır. Ama K3'ün **yönü doğruydu**: aralık, artık
+hatanın ne kadar olduğuna değil epistemik yayılımın ne kadar olduğuna göre boyutlanmaktadır,
+ve $B$'yi büyütmek bunu düzeltmez, yalnızca hangi ilin şanslı olduğunu değiştirir. §4.8 ve
+§6.5 bu teşhise iki eksen daha ekler.
 
-Fazla kapsamanın "aralığı şişirip kapsama satın almak" olmadığının kanıtı: $B{=}1 \to B{=}8$
-geçişinde **CRPS her ilde iyileşiyor** (−%1,8 … −%3,3). CRPS uygun (proper) bir skordur ve hem
-kalibrasyonu hem keskinliği cezalandırır; iyileşmesi dağılımın bir bütün olarak daha iyi
-olduğunu gösterir.
+**Ayakta kalan ikinci kısım:** fazla kapsama "aralığı şişirip kapsama satın almak" değildir —
+$B{=}1 \to B{=}8$ geçişinde **CRPS her ilde iyileşiyor** (−%1,8 … −%3,3). CRPS uygun bir
+skordur; iyileşmesi dağılımın bir bütün olarak daha iyi olduğunu gösterir. Bozulan şey
+dağılımın kendisi değil, ondan okunan %95'lik aralığın **boyutlandırılmasıdır**.
 
 ### 3.6 Toplulaştırılmış başarım ve taban çizgileri (beş il, `all5`, altı tohum, gündüz)
 
@@ -972,8 +1004,24 @@ eşleştirilmiş üç tohum, gündüz, il satırı:
 
 Kapasiteyi 3,75 katına çıkarmak dört ili %4–7 iyileştiriyor, **Rize'yi hiç iyileştirmiyor**.
 Rize gürültü-sınırlı: hatası modelin kapasitesinden değil, bulutluluğun kendisinden geliyor
-(§2.5 il profili, günlük $k_t$ 0,697). Bu, "havuzlama kazancınız aslında yetersiz kapasitenin
-telafisiydi" itirazını kapatır — daha büyük model Rize'de kazanç üretmiyor, havuzlama üretiyor.
+(§2.5 il profili, günlük $k_t$ 0,697).
+
+> **DÜZELTME — doğru sonuç, yanlış test** (bağımsız review, `ABLATION_REVIEW_2.md`).
+> Yukarıdaki $p = 0{,}845$ bir **reddetmeme**dir, kanıt değildir: Rize'nin kapasite etkisinin
+> %95 güven aralığı **[−11,47, +10,35]** olup diğer dört ilin nokta tahminlerinin (−3,68 …
+> −6,45) **hepsini içerir**. "Rize duyarsız" iddiası bu testten çıkmaz.
+>
+> Doğru test bir **etkileşim** testidir: Rize'nin Δ'sı eksi diğer dördünün ortalama Δ'sı, tohum
+> eşleştirilmiş. Ölçüldü:
+>
+> | | tohum başına | ortalama | işaret | $p$ |
+> | --- | --- | ---: | :-: | ---: |
+> | mutlak (W/m²) | +5,52 / +6,66 / +2,46 | **+4,88** | 3/3 | 0,060 |
+> | göreli (puan) | +6,29 / +6,72 / +3,52 | **+5,51 pp** | 3/3 | **0,032** |
+>
+> **Sonuç güçleniyor:** Rize kapasiteden diğer illerden anlamlı olarak daha az yararlanıyor
+> (göreli ölçekte $p = 0{,}032$, üç tohumun üçünde). Makalede kullanılacak sayı budur; bir
+> non-anlamlı tek-il $p$'si değil.
 
 ### 4.8 Cephe koşusu — merdiven dönmedi, **ama kalibrasyon çöktü**
 
@@ -1029,13 +1077,32 @@ teşhisini rafine ediyor.** Gündüz `Aggregate`, on iki kol, kalite sırasına 
 | `[128,64]` | 90,29 | 309,9 | 0,8949 | 3,43 | 46,47 |
 | `[256,128]` | **88,58** | 242,1 | **0,8436** | **2,73** | **44,10** |
 
-MPIW/RMSE oranı model kalitesiyle **tekdüze** düşüyor (4,59 → 2,73) ve CP tam olarak onu
-izliyor. Gauss varsayımı altında nominal %95 için gereken oran $2 \times 1{,}96 = 3{,}92$'dir:
-oranın 3,92'nin üstünde olduğu her kol fazla kapsıyor, altında olduğu her kol eksik kapsıyor,
-istisnasız.
+MPIW/RMSE oranı model kalitesiyle **güçlü biçimde ama tekdüze olmayarak** düşüyor
+(4,59 → 2,73) ve CP onu yakından izliyor.
 
-Aynı şey regresyonla da görülür. Tek-eksenli on kol üzerinde CP ile $\log(\text{MPIW})$
-arasında $R^2 = 0{,}95$'lik bir cephe var; `[256,128]` bu cephenin **2,19 s.s. altında**.
+> **DÜZELTME (bağımsız review, `ABLATION_REVIEW_2.md`).** Bu paragrafın önceki sürümü iki
+> kelimeyi ve bir sayıyı fazla güçlü söylüyordu:
+>
+> - **"tekdüze" yanlış:** RMSE sırasına dizildiğinde oranda **11 adımda 5 işaret dönüşü** var
+>   (`dropout 0,4` 4,80 > `[32,16]` 4,59; `[64,32]` 4,29 > `[64,64,32]` 4,26; vb.). Doğru ifade
+>   "güçlü negatif sıra ilişkisi", "tekdüze" değil.
+> - **"istisnasız" yanlış:** 3,92 eşiği **12 kolun 3'ünde ihlal ediliyor** — `lookback 48`
+>   (oran 4,32, CP 0,9495), `lookback 72` (4,35, 0,9475) ve en açık örnek
+>   `[128,64] × dropout 0,4` (4,08, CP **0,9260**).
+> - **Eşik 3,92 değil.** CP'yi orana regrese edip 0,95'i çözünce ampirik kırılma noktası
+>   **4,27** çıkıyor. Gauss haritası 12 kolun 10'unda CP'yi **fazla** öngörüyor — beklenen bir
+>   sonuç, çünkü aralık yüzdelik tabanlıdır (havuzlanan örneğin 2,5/97,5'i), ortalama ± $z\sigma$
+>   değil, ve havuzlanmış dağılım Gauss değildir.
+>
+> **Ama ihlallerin kimliği bilgi taşıyor:** üçü de saf kapasite/düzenlileştirme kolu *değildir*
+> — ikisi geriye bakışı (yani girdi penceresini, dolayısıyla veriyi) değiştirir, biri
+> bilinçli iki eksenli koldur. Yedi saf kolun (`[32,16]`, `[64,32]`, `[128,64]`, `[256,128]`,
+> `dropout 0,2`, `dropout 0,4`, `[64,64,32]`) **hepsi eşikle uyumludur.** Yani ilişki, artık
+> dağılımının şeklini sabit tutan kollar içinde geçerlidir ve dışında değildir — §6.5'in
+> `target_transform` ekseninde bulduğunun aynısı, burada önceden görülebilirmiş.
+
+Regresyon tarafı doğrulandı ($R^2 = 0{,}9486$). Tek-eksenli on kol üzerinde CP ile
+$\log(\text{MPIW})$ arasındaki cephede `[256,128]` bu cephenin **2,19 s.s. altında**.
 $\text{RMSE} \sim \log(\text{MPIW})$ cephesinde ise `[256,128]`'in gözlenen RMSE'si 88,58,
 cephenin o genişlik için öngördüğü 80,50'nin **2,31 s.s. üstünde** — yani aralık, hatanın
 düştüğünden **daha hızlı** daralıyor.
@@ -1187,7 +1254,10 @@ yalnızca il değişir.
 **Bu tablo §5.4'ten daha güçlüdür ve makalede ayrı bir cümleyi hak eder.** Havuzlama:
 
 1. **aralığı her ilde daraltıyor** (−%2,4 … −%4,1),
-2. **kapsamayı bozmadan** (|ΔCP| ≤ 0,0031, hiçbiri anlamlı değil),
+2. **kapsamayı pratikte bozmadan** (|ΔCP| ≤ 0,0032 — *düzeltme:* Ankara $p = 0{,}024$ ve
+   Antalya $p = 0{,}005$ ile **istatistiksel olarak anlamlıdır**; belgenin önceki sürümü
+   "hiçbiri anlamlı değil" diyordu ve bu yanlıştı. Anlamlıdırlar ama büyüklükleri ihmal
+   edilebilirdir: +0,0032 ve −0,0017, yani nominalden sapmanın onda biri mertebesinde),
 3. **CRPS'yi her ilde iyileştirerek** (−%1,7 … −%3,4).
 
 Yani kazanç, aralığı kısaltıp kapsamayı feda etme takası değildir; dağılım bir bütün olarak
@@ -1323,6 +1393,56 @@ Diğer metrikler (gündüz, 3 tohum ortalaması):
 `raw`'da MAE eşiği yalnızca Rize'de geçiliyordu; `kt` ile **toplulaştırılmışta ve iki ilde**
 geçiliyor. Üç ilde hâlâ kaybediliyor, ama açık 8–13 W/m²'den 1,4–6,3'e indi. §3.6'nın önerdiği
 mekanizma **doğrulandı**: farkın büyük kısmı gerçekten geometriye erişim farkıydı.
+
+> **Ama bu geçiş 24 saatlik ortalamada gerçekleşiyor, her ufuk adımında değil**
+> (bağımsız review, `ABLATION_REVIEW_2.md`). Üç naif kural 24 saat gecikmeli aramalardır,
+> dolayısıyla ufuk boyunca **düzdür** (akıllı kalıcılık RMSE 108,89–109,19; iklimsel
+> 106,84–106,88, dört anlamlı basamakta sabit). Model ise ufukla bozulur:
+>
+> | ufuk | `kt` MAE | akıllı kalıcılık MAE | kazanan | `kt` beceri (iklime göre) | `raw` beceri |
+> | ---: | ---: | ---: | :-: | ---: | ---: |
+> | h=1 | 42,59 | 60,13 | **kt** | %46,5 | %37,6 |
+> | h=5 | 53,22 | 60,13 | **kt** | %29,7 | %19,6 |
+> | h=9 | 59,95 | 60,14 | **kt** | %19,9 | %12,5 |
+> | h=10 | 60,98 | 60,14 | akıllı | %18,9 | %12,3 |
+> | h=12 | 63,03 | 60,17 | akıllı | %17,0 | %11,0 |
+> | h=24 | 63,43 | 60,26 | akıllı | %15,0 | **%3,3** |
+>
+> `kt`, akıllı kalıcılığın MAE'sini **24 ufuk adımının 9'unda** ($h \le 9$) geçiyor, h=10'dan
+> itibaren **her adımda** kaybediyor. Manşet 1–24 havuzu olduğu için §6.4'ün "geçti" hükmü
+> geçerlidir, ama hakem gün-öncesi satırını hesaplayacaktır ve **makalede bu tablo önceden
+> verilmelidir.**
+>
+> **Aynı tablo `kt` lehine çok güçlü bir argüman da taşıyor:** ufkun ucunda `raw`'ın iklimsel
+> ortalamaya göre becerisi %3,3'e çöküyor, `kt`'ninki %15,0'te kalıyor — **4,5 katı.** Gün
+> öncesi tahminde asıl yaşanan yer h=24'tür ve `kt`'nin üstünlüğü orada en büyüktür. Bu,
+> §6.6'nın kt lehine gerekçesine eklenmelidir.
+
+### 6.4.1 Görülmemiş katkı — `kt` modeli **her iklim bölgesinde eşit becerikli** kılıyor
+
+Bağımsız review'ün (`ABLATION_REVIEW_2.md`) bulduğu ve §6'nın ilk sürümünün gözden kaçırdığı
+sonuç. İklimsel ortalamaya göre RMSE becerisi ($1 - \text{RMSE}/\text{RMSE}_{\text{iklim}}$),
+gündüz, üç tohum:
+
+| il | `raw` beceri | `kt` beceri |
+| --- | ---: | ---: |
+| Konya | %10,01 | %19,30 |
+| Antalya | %10,91 | %20,91 |
+| Ankara | %10,98 | %20,26 |
+| Van | %13,42 | %22,51 |
+| **Rize** | **%18,68** | **%23,07** |
+| **iller arası yayılım** | **8,67 puan** | **3,77 puan** |
+
+`raw` altında beceri ile ilin bulutluluk rejimi arasında güçlü bir bağ var: model Rize'de
+%18,7, Konya'da %10,0 beceri gösteriyor — yani **beş il için eşit derecede iyi değil**.
+`kt` altında yayılım **2,3 katı daralıyor** ve beş il %19,3–23,1 bandına giriyor.
+
+**Bunun makale için değeri, doğruluk artışından ayrı ve ondan bağımsızdır.** Beş il "farklı
+iklim kuşaklarını kapsasın diye" bilinçle seçilmiştir (`main_methodology.md` §3); ama `raw`
+altında bu seçim yalnızca bir **zorluk ölçeği** üretiyordu. `kt` ile aynı seçim
+"**yöntem iklim rejiminden bağımsız olarak aynı beceriyi veriyor**" iddiasına dönüşüyor —
+tasarımın karşılığını veren sonuç budur, ve `kt` manşetinin doğruluktan bağımsız ikinci
+gerekçesidir.
 
 ### 6.5 Kalibrasyon — §4.8'in oran yasası bu eksende **çöküyor**
 
