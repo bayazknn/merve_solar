@@ -21,9 +21,16 @@ from merve_solar.config import (
     TARGET_COLUMN,
 )
 from merve_solar.data import load_base_features
-from merve_solar.mc_dropout import mc_dropout_predict
+from merve_solar.conformal import (
+    apply_conformal,
+    fit_conformal_grid,
+    month_stability_table,
+)
+from merve_solar.mc_dropout import mc_dropout_predict, pooled_summary
 from merve_solar.metrics import (
+    TARGET_CI_COVERAGE,
     compute_metric_subsets,
+    compute_metrics_for_subset,
     results_by_horizon_dataframe,
     results_summary_dataframe,
     summarize_predictive_distribution,
@@ -48,7 +55,7 @@ LEDGER_COLUMNS: tuple[str, ...] = (
     "max_epochs", "early_stop_patience",
     "loss_function", "huber_delta", "nonneg_penalty_weight",
     "target_transform", "loss_daylight_only", "per_city_scaler",
-    "clamp_night_to_zero", "seed", "device",
+    "clamp_night_to_zero", "conformal_mode", "seed", "device",
     "RMSE", "MAE", "R2", "CP", "PINW", "MPIW", "Reliability", "CWC", "CRPS",
     "n_samples", "n_elements",
     "RMSE_daylight", "MAE_daylight", "R2_daylight", "CP_daylight", "n_elements_daylight",
@@ -183,6 +190,12 @@ def _ledger_row(config, subsets: dict, run_stats: dict, training_time_sec: float
         "loss_daylight_only": config.loss_daylight_only,
         "per_city_scaler": config.per_city_scaler,
         "clamp_night_to_zero": config.clamp_night_to_zero,
+        # Which conformal grid (if any) rescaled the predictive distribution before the interval
+        # metrics below were computed. A ledger column rather than a note because it changes
+        # CP/PINW/MPIW/Reliability/CWC/CRPS while leaving RMSE/MAE/R2 identical: two rows that
+        # differ only in this are the same point forecast with different intervals, and without
+        # the column they would be indistinguishable in exactly the table that reports coverage.
+        "conformal_mode": config.conformal_mode,
         "seed": config.seed,
         # Which backend produced the numbers. Not a config field -- see utils.get_device. Without
         # it the ledger cannot tell a CPU row from an MPS one, and a multi-seed mean would silently
@@ -210,6 +223,113 @@ def _ledger_row(config, subsets: dict, run_stats: dict, training_time_sec: float
     }
 
 
+
+CONFORMAL_ALPHA = 1.0 - TARGET_CI_COVERAGE
+
+
+def _rescaled_summary(dist: dict, factors: np.ndarray) -> dict:
+    """The summary of m + k(x - m), derived rather than re-sorted.
+
+    Exact, not an approximation: the map is affine and increasing in x, so it carries the mean
+    to the transformed mean and every percentile to the transformed percentile. `std` scales by
+    |k| = k. tests/test_conformal.py pins this against an actual resummarise of the rescaled
+    sample, because the whole single-sort saving rests on the identity holding.
+    """
+    return {
+        "mean": dist["mean"],
+        "std": dist["std"] * factors,
+        "lower": dist["mean"] + factors * (dist["lower"] - dist["mean"]),
+        "upper": dist["mean"] + factors * (dist["upper"] - dist["mean"]),
+    }
+
+
+def _conformal_effect_frame(y_true, daylight, city_id, cities, before, after, factors):
+    """What the correction did, group by group -- the before/after table the write-up needs.
+
+    Daylight only: night elements are held at k = 1 by construction, so an all-hours row would
+    dilute the effect with a subset the layer never touches. Point accuracy is deliberately
+    absent: the mean is invariant under the rescaling, so RMSE/MAE/R2 are identical either side
+    and a column of them would only invite the reader to look for a difference that cannot exist.
+    """
+    rows = []
+
+    def _row(label, sel_rows, step):
+        idx = (slice(None) if sel_rows is None else sel_rows,
+               slice(None) if step is None else slice(step, step + 1))
+        mask = daylight[idx]
+        if not mask.any():
+            return
+        y = y_true[idx]
+        pre = compute_metrics_for_subset(None, y, mask, {k: v[idx] for k, v in before.items()})
+        post = compute_metrics_for_subset(None, y, mask, {k: v[idx] for k, v in after.items()})
+        rows.append({
+            "group": label,
+            "horizon_step": "all" if step is None else step + 1,
+            "n_elements": pre["n_elements"],
+            "k_mean": float(factors[idx][mask].mean()),
+            "CP_before": pre["CP"], "CP_after": post["CP"],
+            "MPIW_before": pre["MPIW"], "MPIW_after": post["MPIW"],
+            "Reliability_before": pre["Reliability"], "Reliability_after": post["Reliability"],
+            "CWC_before": pre["CWC"], "CWC_after": post["CWC"],
+        })
+
+    _row("Aggregate", None, None)
+    for city in cities:
+        sel = city_id == CITY_TO_ID[city]
+        if sel.any():
+            _row(city, sel, None)
+    for step in range(y_true.shape[1]):
+        _row("Aggregate", None, step)
+    return pd.DataFrame(rows)
+
+
+def _conformalize(pooled_preds, dist, calibration, layout, config, city_id_test, daylight,
+                  exp_dir, log_lines) -> dict:
+    """Fit the conformal grid on the validation split and apply it to the test distribution.
+
+    Returns the rescaled summary; `pooled_preds` is rescaled in place so CRPS describes the same
+    distribution the interval metrics do. Everything written here is a small CSV, so unlike the
+    npz dumps it syncs through git and the grid itself is a publishable table.
+    """
+    val = layout["val"]
+    # Saved before anything is fitted, so the choice of grid geometry can later be redone on the
+    # CALIBRATION split alone. Selecting a mode from test-split behaviour would be test-set
+    # selection; with this file the same comparison runs on validation, where it is honest.
+    # Gitignored with the other npz dumps, so it lives only where the run ran.
+    np.savez_compressed(
+        exp_dir / "metrics" / "calibration_predictions.npz",
+        mean=calibration["mean"], lower=calibration["lower"], upper=calibration["upper"],
+        y_true=val["y"], city_id=val["city_id"], daylight=val["daylight"],
+        window_start=val["window_start"].astype("datetime64[h]").astype(np.int64),
+    )
+    grid = fit_conformal_grid(
+        val["y"], calibration["mean"], calibration["lower"], calibration["upper"],
+        val["city_id"], val["daylight"], config.conformal_mode, CONFORMAL_ALPHA,
+        window_start=val["window_start"],
+    )
+    grid.to_frame().to_csv(exp_dir / "metrics" / "conformal_grid.csv", index=False)
+    month_stability_table(
+        val["y"], calibration["mean"], calibration["lower"], calibration["upper"],
+        val["daylight"], val["window_start"], CONFORMAL_ALPHA,
+    ).to_csv(exp_dir / "metrics" / "conformal_month_stability.csv", index=False)
+
+    factors = grid.factor_array(city_id_test, daylight, layout["test"]["window_start"])
+    after = _rescaled_summary(dist, factors)
+    _conformal_effect_frame(
+        layout["test"]["y"], daylight, city_id_test, config.active_cities, dist, after, factors
+    ).to_csv(exp_dir / "metrics" / "conformal_effect.csv", index=False)
+
+    apply_conformal(pooled_preds, dist["mean"], factors)
+    day_k = factors[daylight]
+    log_lines.append(
+        f"conformal_mode={config.conformal_mode} alpha={CONFORMAL_ALPHA} "
+        f"pooled_k={grid.pooled_factor:.4f} (n={grid.pooled_n}) "
+        f"daylight k in [{day_k.min():.4f}, {day_k.max():.4f}] mean {day_k.mean():.4f}; "
+        f"{grid.n_invalid} calibration elements dropped for a degenerate half-width"
+    )
+    return after
+
+
 def _plot_representative_forecasts(pooled_preds, y_true, city_id_test, config, exp_dir) -> None:
     horizon_axis = np.arange(1, config.horizon_hours + 1)
     for city in config.active_cities:
@@ -230,13 +350,17 @@ def _plot_representative_forecasts(pooled_preds, y_true, city_id_test, config, e
         )
 
 
-def _save_test_predictions(exp_dir, pooled_preds, y_true, city_id, daylight, window_start) -> None:
+def _save_test_predictions(exp_dir, dist, y_true, city_id, daylight, window_start) -> None:
     """Summary of the predictive distribution, for the paired significance tests.
 
     Stores mean/lower/upper rather than the full (S, N, horizon) sample, which is ~3.4 GB at
     full fidelity; this is ~12 MB compressed. Gitignored alongside the .pt checkpoints.
+
+    Takes the already-computed summary rather than re-deriving it, so what is saved is
+    bit-identical to what was scored -- including any conformal rescaling, which is applied to
+    the summary and to the sample but would be lost by a second summarise of a sample this
+    function does not receive.
     """
-    dist = summarize_predictive_distribution(pooled_preds)
     np.savez_compressed(
         exp_dir / "metrics" / "test_predictions.npz",
         mean=dist["mean"], lower=dist["lower"], upper=dist["upper"],
@@ -283,19 +407,41 @@ def invert_target_transform(pooled_preds: np.ndarray, config, clearsky_test: np.
     return pooled_preds
 
 
+def invert_summary_transform(summary: dict, config, clearsky: np.ndarray) -> dict:
+    """invert_target_transform for a (N, horizon) distribution SUMMARY rather than the sample.
+
+    Valid for every key because the clear-sky multiplication is affine with a non-negative
+    factor: it maps the mean to the transformed mean and each percentile to the transformed
+    percentile. `std` scales by the same factor and is kept only for diagnostics.
+    """
+    if config.target_transform == "raw":
+        return summary
+    return {k: v * clearsky for k, v in summary.items()}
+
+
 def _predict_replicas(splits, config, n_cities, device, exp_dir, checkpoint_stem,
-                      seed_base, rng, log_prefix, log_lines):
+                      seed_base, rng, log_prefix, log_lines, calibrate=False):
     """Train n_bootstrap replicas on `splits` and MC-Dropout predict the test split.
 
-    Returns ((n_bootstrap * mc_dropout_passes, N_test, horizon) float32, SCALED units) and
-    run statistics. The destination array is preallocated rather than built by appending and
-    concatenating, which would double a 3.4 GB allocation at full fidelity.
+    Returns ((n_bootstrap * mc_dropout_passes, N_test, horizon) float32, SCALED units), an
+    optional calibration-split summary, and run statistics. The destination array is
+    preallocated rather than built by appending and concatenating, which would double a 3.4 GB
+    allocation at full fidelity.
+
+    `calibrate=True` additionally predicts the VALIDATION split, pooled over the same B*T passes,
+    for the conformal layer. The replicas are held in memory for that second pass (8 models of
+    at most ~848k parameters is ~27 MB, against a ~2.5 GB pooled validation sample it avoids)
+    and the summary is taken chunk by chunk, so peak memory is unchanged in practice. Summarising
+    in SCALED units is exact: the inverse scaler and the clear-sky multiplication are both affine
+    and non-decreasing, so a percentile of the transformed sample equals the transform of the
+    percentile.
     """
     passes, replicas = config.mc_dropout_passes, config.n_bootstrap
     n_test = splits["test"]["y"].shape[0]
     out = np.empty((replicas * passes, n_test, config.horizon_hours), dtype=np.float32)
     hit_cap = 0
     best_val_losses = []
+    models = []
 
     for b in range(replicas):
         set_seed(seed_base + b)
@@ -312,6 +458,8 @@ def _predict_replicas(splits, config, n_cities, device, exp_dir, checkpoint_stem
         out[b * passes:(b + 1) * passes] = mc_dropout_predict(
             model, splits["test"]["X"], splits["test"]["city_id"], passes, device=device
         )
+        if calibrate:
+            models.append(model)
         at_cap = len(history) >= config.max_epochs
         hit_cap += int(at_cap)
         best = _best_val_loss(history)
@@ -326,10 +474,23 @@ def _predict_replicas(splits, config, n_cities, device, exp_dir, checkpoint_stem
             f"last_val_loss={history[-1]['val_loss']:.4f} epochs={len(history)}"
             + ("  WARNING: hit max_epochs" if at_cap else "")
         )
-        del model
+        if not calibrate:
+            del model
 
-    return out, {"hit_max_epochs": hit_cap, "n_models": replicas,
-                 "best_val_losses": best_val_losses}
+    calibration = None
+    if calibrate:
+        calibration = pooled_summary(
+            models, splits["val"]["X"], splits["val"]["city_id"], passes,
+            config.horizon_hours, device=device,
+        )
+        log_lines.append(
+            f"{log_prefix}calibration pass: {splits['val']['y'].shape[0]} validation windows "
+            f"x {replicas * passes} pooled predictions"
+        )
+        models.clear()
+
+    return out, calibration, {"hit_max_epochs": hit_cap, "n_models": replicas,
+                              "best_val_losses": best_val_losses}
 
 
 def _fit_scale_window(base_df, config, train_end, val_end, cities, scaler_path):
@@ -358,7 +519,7 @@ def _zero_city_ids(splits: dict) -> dict:
     }
 
 
-def _assert_city_block_aligned(city, city_test, layout_test, slot) -> None:
+def _assert_city_block_aligned(city, city_test, layout_test, slot, split="test") -> None:
     """The per_city arm is only valid if a city's own test windows are the SAME windows, in the
     SAME order, as the pooled layout's slice for that city.
 
@@ -369,11 +530,11 @@ def _assert_city_block_aligned(city, city_test, layout_test, slot) -> None:
     """
     n = city_test["y"].shape[0]
     if n != slot.size:
-        raise RuntimeError(f"{city}: {n} test windows but {slot.size} layout slots")
+        raise RuntimeError(f"{city}: {n} {split} windows but {slot.size} layout slots")
     if slot.size and np.any(np.diff(slot) != 1):
         raise RuntimeError(f"{city}: layout slice is not contiguous — the CITIES-order assumption broke")
     if not np.array_equal(city_test["window_start"], layout_test["window_start"][slot]):
-        raise RuntimeError(f"{city}: window timestamps differ between the per-city and pooled builds")
+        raise RuntimeError(f"{city}: {split} window timestamps differ between the per-city and pooled builds")
 
 
 def _run_global_scope(base_df, config, train_end, val_end, layout, device, exp_dir, log_lines):
@@ -388,24 +549,36 @@ def _run_global_scope(base_df, config, train_end, val_end, layout, device, exp_d
     # n_cities is len(CITIES), NOT len(active_cities): the embedding table keeps a row per
     # province so that city_id values are never renumbered by an exclusion and checkpoints stay
     # comparable across runs. An excluded province's row simply never receives a gradient.
-    pooled_scaled, stats = _predict_replicas(
+    calibrate = config.conformal_mode != "none"
+    if calibrate and not np.array_equal(splits["val"]["window_start"], layout["val"]["window_start"]):
+        raise RuntimeError("scaled and unscaled window builds disagree on the validation windows")
+    pooled_scaled, calibration, stats = _predict_replicas(
         splits, config, len(CITIES), device, exp_dir, "bootstrap_model",
         seed_base=config.seed + 1, rng=np.random.default_rng(config.seed),
-        log_prefix="", log_lines=log_lines,
+        log_prefix="", log_lines=log_lines, calibrate=calibrate,
     )
     out = inverse_transform_target(scaler, pooled_scaled)
     del pooled_scaled
-    return out, stats
+    if calibration is not None:
+        calibration = {k: inverse_transform_target(scaler, v) for k, v in calibration.items()}
+    return out, calibration, stats
 
 
 def _run_per_city_scope(base_df, config, train_end, val_end, layout, device, exp_dir, log_lines):
     """Train an independent model set per city, then assemble into the pooled test layout."""
     n_pooled = config.n_bootstrap * config.mc_dropout_passes
-    layout_test = layout["test"]
+    layout_test, layout_val = layout["test"], layout["val"]
     pooled = np.full((n_pooled, layout_test["y"].shape[0], config.horizon_hours), np.nan, dtype=np.float32)
     filled = np.zeros(layout_test["y"].shape[0], dtype=bool)
     hit_cap = 0
     best_val_losses = []
+    calibrate = config.conformal_mode != "none"
+    # Assembled into the pooled VALIDATION layout exactly as the test predictions are, so the
+    # conformal grid is fitted on the same province ordering it will be applied in.
+    calibration = None if not calibrate else {
+        k: np.full((layout_val["y"].shape[0], config.horizon_hours), np.nan, dtype=np.float32)
+        for k in ("mean", "std", "lower", "upper")
+    }
 
     # With per_city_scaler=False the pooled scaler is fitted once and shared, so the arms differ
     # only in what each model was trained on, not in how the target was normalised.
@@ -430,18 +603,24 @@ def _run_per_city_scope(base_df, config, train_end, val_end, layout, device, exp
             )
         slot = np.flatnonzero(layout_test["city_id"] == city_idx)
         _assert_city_block_aligned(city, splits["test"], layout_test, slot)
+        val_slot = np.flatnonzero(layout_val["city_id"] == city_idx)
+        if calibrate:
+            _assert_city_block_aligned(city, splits["val"], layout_val, val_slot, split="val")
         for name, d in splits.items():
             log_lines.append(f"{city}/{name}: {d['y'].shape[0]} windows")
 
         # Seeds must not collide across cities, or two cities would share weight inits and
         # bootstrap draws. Documented alongside the global seed+b+1 scheme in methodology 13.3.
-        scaled_preds, stats = _predict_replicas(
+        scaled_preds, city_calibration, stats = _predict_replicas(
             _zero_city_ids(splits), config, 1, device, exp_dir, f"bootstrap_model_{city}",
             seed_base=config.seed + 1 + city_idx * config.n_bootstrap,
             rng=np.random.default_rng([config.seed, city_idx]),
-            log_prefix=f"{city} ", log_lines=log_lines,
+            log_prefix=f"{city} ", log_lines=log_lines, calibrate=calibrate,
         )
         pooled[:, slot, :] = inverse_transform_target(city_scaler, scaled_preds)
+        if city_calibration is not None:
+            for key, value in city_calibration.items():
+                calibration[key][val_slot] = inverse_transform_target(city_scaler, value)
         filled[slot] = True
         hit_cap += stats["hit_max_epochs"]
         # Pooled flat across (city, replica): the ledger's best_val_loss is then the mean over all
@@ -454,9 +633,11 @@ def _run_per_city_scope(base_df, config, train_end, val_end, layout, device, exp
         raise RuntimeError(f"per_city assembly left {int((~filled).sum())} test windows unfilled")
     if np.isnan(pooled).any():
         raise RuntimeError("per_city assembly produced NaN predictions")
-    return pooled, {"hit_max_epochs": hit_cap,
-                    "n_models": config.n_bootstrap * len(config.active_cities),
-                    "best_val_losses": best_val_losses}
+    if calibration is not None and any(np.isnan(v).any() for v in calibration.values()):
+        raise RuntimeError("per_city assembly left validation windows unfilled")
+    return pooled, calibration, {"hit_max_epochs": hit_cap,
+                                 "n_models": config.n_bootstrap * len(config.active_cities),
+                                 "best_val_losses": best_val_losses}
 
 
 SCOPE_RUNNERS = {"global": _run_global_scope, "per_city": _run_per_city_scope}
@@ -513,13 +694,17 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
         f"test daylight elements: {int(daylight.sum())} of {daylight.size}",
     ]
 
-    pooled_preds, run_stats = SCOPE_RUNNERS[config.training_scope](
+    pooled_preds, calibration, run_stats = SCOPE_RUNNERS[config.training_scope](
         apply_target_transform(base_df, config), config, train_end, val_end, layout,
         device, exp_dir, log_lines
     )
     pooled_preds = invert_target_transform(
         pooled_preds, config, layout["test"]["extras"][DAYLIGHT_REFERENCE_COLUMN]
     )
+    if calibration is not None:
+        calibration = invert_summary_transform(
+            calibration, config, layout["val"]["extras"][DAYLIGHT_REFERENCE_COLUMN]
+        )
     log_lines.append(f"target_transform={config.target_transform}")
 
     if config.clamp_night_to_zero:
@@ -531,15 +716,26 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
         pooled_preds[:, night] = 0.0
         log_lines.append(f"clamped {int(night.sum())} night elements to zero")
 
+    # The conformal layer rescales the predictive distribution about its own mean, so the
+    # summary has to exist BEFORE the rescaling (it supplies the centre) and the rescaled summary
+    # is then derived analytically rather than re-sorted -- the map is affine and increasing, so
+    # the percentiles of the rescaled sample ARE the rescaled percentiles, and deriving them
+    # keeps the whole run to a single sort of the multi-GB array. The sample itself is still
+    # rescaled in place, because CRPS is the one metric that reads it rather than the summary.
+    dist = summarize_predictive_distribution(pooled_preds)
+    if calibration is not None:
+        dist = _conformalize(pooled_preds, dist, calibration, layout, config,
+                             city_id_test, daylight, exp_dir, log_lines)
+
     subsets = compute_metric_subsets(
-        pooled_preds, y_true, city_id_test, config.active_cities, daylight=daylight
+        pooled_preds, y_true, city_id_test, config.active_cities, daylight=daylight, dist=dist
     )
 
     summary_df = results_summary_dataframe(subsets)
     horizon_df = results_by_horizon_dataframe(subsets)
     summary_df.to_csv(exp_dir / "metrics" / "results_summary.csv", index=False)
     horizon_df.to_csv(exp_dir / "metrics" / "results_by_horizon.csv", index=False)
-    _save_test_predictions(exp_dir, pooled_preds, y_true, city_id_test, daylight,
+    _save_test_predictions(exp_dir, dist, y_true, city_id_test, daylight,
                            layout["test"]["window_start"])
 
     _plot_representative_forecasts(pooled_preds, y_true, city_id_test, config, exp_dir)

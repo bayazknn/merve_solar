@@ -770,6 +770,112 @@ def _rize_curve_smoke_configs() -> list:
     return [c for c in configs if c.experiment_id.startswith("abl_rize_")]
 
 
+
+# --- conformal interval layer -----------------------------------------------------------------
+
+# The two formulations the conformal layer has to serve, and it has to correct them in OPPOSITE
+# directions: `raw` comes out over-wide (daylight CP 0.977) and `kt` over-narrow (0.928) at an
+# identical MPIW/RMSE ratio. Built from the same dict as the arms they are matched against, so a
+# conformal row differs from its uncorrected twin in conformal_mode alone.
+CONFORMAL_BASE = {**ABLATION_FULL, "loss_function": "mae"}
+CONFORMAL_MODE = "city_season"
+
+
+def _conformal_configs() -> list:
+    """The conformal layer at full fidelity, both formulations, 3 seeds. 6 arms, ~4.6 h.
+
+    Longer than the 2 x 3 arms it replaces would suggest: `conformal_mode != "none"` makes each
+    run predict the VALIDATION split as well, pooled over the same B*T passes, which is roughly
+    a 13% wall-clock surcharge on top of the ~2.0 h a full arm already costs.
+
+    WHY city_season AND NOT THE (city x horizon) GRID ABLATION.md 6.5 PROPOSED. Measured over the
+    16 finished runs that have prediction dumps, via scripts/07_conformal_diagnostic.py, as the
+    mean worst per-province |CP - 0.95| under a calibration geometry that mimics the validation
+    split's missing April and May:
+
+        uncorrected  0.2052        per_city      0.0136
+        global       0.0314        city_horizon  0.0131
+        per_season   0.0282        city_season   0.0099
+
+    Three things follow. The horizon axis is null -- adding it to per_city buys 0.0005 for 24x
+    the cells, and the same holds under every other calibration geometry tested. The city axis
+    is what fixes conditional coverage (0.0314 -> 0.0136): a scalar reaches nominal coverage in
+    aggregate by over-covering four provinces and under-covering Rize, which is the aggregate
+    trap in its coverage form. And the season axis, which nobody proposed, adds another 27% on
+    top, because refitting k month by month swings it 1.7x-2.0x across the year -- cloud
+    variability is seasonal and the epistemic spread is not.
+
+    That diagnostic fits and scores inside the TEST period, so it selects the geometry rather
+    than reporting a result; each of these runs now saves calibration_predictions.npz so the same
+    comparison can be redone on the validation split, where the selection is honest. It is also
+    all at B=1, and fidelity changes what the interval is -- only the structure carries over,
+    not the k values.
+    """
+    configs = []
+    for seed in ABLATION_SEEDS:
+        for transform, tag in (("raw", "raw"), ("clearsky_index", "kt")):
+            configs.append(ExperimentConfig(
+                experiment_id=f"abl_conformal_{tag}_s{seed}_full",
+                target_transform=transform,
+                conformal_mode=CONFORMAL_MODE,
+                seed=seed,
+                **CONFORMAL_BASE,
+            ))
+    # Each arm must differ from its already-measured uncorrected twin in conformal_mode alone,
+    # so the pair isolates the layer. abl_rize_all5_s*_full is the raw twin,
+    # abl_target_kt_s*_full the kt one.
+    for cfg in configs:
+        seed = cfg.seed
+        twin_id = (f"abl_rize_all5_s{seed}_full" if cfg.target_transform == "raw"
+                   else f"abl_target_kt_s{seed}_full")
+        twin = ExperimentConfig(experiment_id=twin_id, seed=seed,
+                                target_transform=cfg.target_transform, **CONFORMAL_BASE)
+        differing = {
+            f.name for f in fields(ExperimentConfig)
+            if f.name != "experiment_id" and getattr(cfg, f.name) != getattr(twin, f.name)
+        }
+        assert differing == {"conformal_mode"}, differing
+    return configs
+
+
+def _conformal_grid_configs() -> list:
+    """The grid-geometry ablation at full fidelity: one seed, one formulation, five modes.
+
+    5 arms, ~3.8 h. This is what turns "a scalar factor cannot work" from an argument into a
+    measured claim at the fidelity the paper reports, rather than at the B=1 fidelity of the
+    diagnostic that chose the default. `none` is not included: abl_rize_all5_s42_full IS that
+    arm, already measured, and rerunning it would only add a duplicate row.
+
+    Optional. If Mac time is short, run `conformal` alone -- the design conclusion is already
+    supported by 16 runs and the effect table inside each conformal run reports its own
+    before/after.
+    """
+    return [
+        ExperimentConfig(
+            experiment_id=f"abl_conformal_mode_{mode}_s42",
+            conformal_mode=mode,
+            seed=42,
+            **CONFORMAL_BASE,
+        )
+        for mode in ("global", "per_horizon", "per_city", "city_horizon", "per_season")
+    ]
+
+
+def _conformal_smoke_configs() -> list:
+    """Minutes, not hours: proves the calibration pass, the grid fit and the three CSVs before
+    any full-fidelity run. Interval metrics from B=1 x T=10 are meaningless and must never reach
+    a table -- what is being checked here is the code path."""
+    return [
+        ExperimentConfig(
+            experiment_id=f"smoke_conformal_{tag}",
+            target_transform=transform,
+            conformal_mode=CONFORMAL_MODE,
+            **{**CONFORMAL_BASE, **ABLATION_SMOKE},
+        )
+        for transform, tag in (("raw", "raw"), ("clearsky_index", "kt"))
+    ]
+
+
 EXPERIMENT_GROUPS = {
     "smoke": _smoke_configs,
     "main": _main_configs,
@@ -790,6 +896,9 @@ EXPERIMENT_GROUPS = {
     "sens_scaler_l1": _sens_scaler_l1_configs,
     "device_parity": _device_parity_configs,
     "rize_curve_smoke": _rize_curve_smoke_configs,
+    "conformal_smoke": _conformal_smoke_configs,
+    "conformal": _conformal_configs,
+    "conformal_grid": _conformal_grid_configs,
 }
 
 

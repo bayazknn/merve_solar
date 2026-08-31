@@ -102,6 +102,12 @@ LOSS_FUNCTIONS = ("mse", "mae", "huber")
 # clipping or threshold is applied, and none is needed.
 TARGET_TRANSFORMS = ("raw", "clearsky_index")
 
+# Split-conformal recalibration of the predictive interval; the vocabulary lives in
+# conformal.py (imported lazily in __post_init__ because that module imports this one).
+# Default "none" is what every ledger row before the layer existed was produced under, and it
+# is also the only mode that costs nothing: any other value makes the run predict the
+# VALIDATION split as well, which is roughly a 13% wall-clock surcharge.
+
 NUMERIC_FEATURE_COLUMNS = [
     "ALLSKY_SFC_SW_DWN",  # own-lag, autoregressive
     "T2M",
@@ -226,6 +232,11 @@ class ExperimentConfig:
     # every existing ledger row was produced under.
     target_transform: str = "raw"
 
+    # Granularity of the split-conformal correction: "none" | "global" | "per_horizon" |
+    # "per_city" | "city_horizon". See conformal.py for the method and its two stated threats
+    # (the calibration split is the same one early stopping used, and it misses April and May).
+    conformal_mode: str = "none"
+
     def __post_init__(self) -> None:
         # Validate here rather than at use: from_json() runs this too, so a typo'd
         # "per-city" fails at load instead of three hours into a sweep.
@@ -237,6 +248,9 @@ class ExperimentConfig:
             raise ValueError(f"loss_function must be one of {LOSS_FUNCTIONS}, got {self.loss_function!r}")
         if self.target_transform not in TARGET_TRANSFORMS:
             raise ValueError(f"target_transform must be one of {TARGET_TRANSFORMS}, got {self.target_transform!r}")
+        from merve_solar.conformal import CONFORMAL_MODES  # local: conformal.py imports this module
+        if self.conformal_mode not in CONFORMAL_MODES:
+            raise ValueError(f"conformal_mode must be one of {CONFORMAL_MODES}, got {self.conformal_mode!r}")
         if not 0.0 < self.dropout_rate < 1.0:
             raise ValueError("dropout_rate must be in (0, 1): it is the only source of MC-Dropout randomness")
 

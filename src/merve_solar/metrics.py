@@ -243,14 +243,21 @@ def compute_metric_subsets(
     city_id: np.ndarray,
     cities: list,
     daylight: np.ndarray | None = None,
+    dist: dict | None = None,
 ) -> dict:
     """Both reporting subsets: {'all_hours': ..., 'daylight': ...}.
 
     The predictive distribution is summarised ONCE and shared, so the two subsets are
     guaranteed to come from bit-identical mean/lower/upper and to differ only by the mask.
     `daylight` is the (N, horizon) bool array built from clear-sky irradiance in windows.py.
+
+    `dist` may be supplied already computed. The conformal layer needs that: it derives the
+    rescaled summary analytically from the pre-rescaling one (an affine, increasing map carries
+    percentiles to percentiles), and recomputing here would sort the multi-GB sample a second
+    time to arrive at the same numbers. The caller is responsible for `dist` describing the
+    sample it passes in -- CRPS reads the sample directly and everything else reads `dist`.
     """
-    dist = summarize_predictive_distribution(pooled_preds)
+    dist = summarize_predictive_distribution(pooled_preds) if dist is None else dist
     subsets = {"all_hours": compute_all_metrics(pooled_preds, y_true, city_id, cities, None, dist)}
     if daylight is not None:
         subsets["daylight"] = compute_all_metrics(pooled_preds, y_true, city_id, cities, daylight, dist)
