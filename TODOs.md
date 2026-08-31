@@ -13,12 +13,19 @@ Yalın liste. Gerekçe ve sayılar burada **tekrarlanmaz**, kaynak dosya göster
       sütunu, varsayılan `"none"`. Izgara **`city_season`** (il × mevsim), §6.5'in önerdiği
       il × ufuk **değil**: ufuk ekseni ölçüldü ve null çıktı. → `ABLATION.md` §8,
       `main_methodology.md` §11.6
-- [ ] **Conformal `conformal` grubunu koş** (6 kol, **~5,8 sa**: `raw` × `kt` × 3 tohum). Tam
-      doğrulukta hiç ölçülmedi; §8.5 hâlâ smoke sayılarıyla duruyor. Opsiyonel: `conformal_grid`
-      (5 kol, ~4,0 sa) geometri ablasyonunu tam doğrulukta tekrarlar.
-- [ ] **Izgara geometrisini doğrulama bölmesinde yeniden seç** (T-8.3). Şu anki seçim test
-      döneminin içinde uyarlanıp puanlandı. Her conformal koşu `calibration_predictions.npz`
-      yazıyor; `07_conformal_diagnostic.py` o dosyayı okuyacak biçimde genişletilmeli.
+- [x] ~~**`conformal` grubunu koş**~~ 6 kol tamam. Gündüz agregat $|CP-0{,}95|$: `raw`
+      0,0267 → 0,0096, `kt` 0,0220 → 0,0096; iki kol zıt yönlerde düzeltiliyor. → `ABLATION.md` §8.5
+- [ ] **Mac'te `scripts/08_conformal_mode_selection.py` koş** (saniyeler, yeniden eğitim yok).
+      Izgarayı **doğrulama** bölmesinde uyarlayıp test üzerinde üç koşulluyu puanlar (T-8.3'ü
+      kapatır) ve **oracle** sütunuyla kalan 1 puanlık eksik kapsamayı "yanlış ızgara" ile
+      "kalibrasyon aktarım hatası" arasında ayrıştırır (T-8.7).
+- [ ] **`conformal` grubunu doğru modda yeniden koş** (~5,8 sa, **yeni id'ler**). Koşulan
+      `city_season` ufuk eksenini kaçırıyor: düzeltme sonrası kapsama ufuk boyunca 5,6 puan
+      yayılıyor. → `ABLATION.md` §8.9 (C-1 geri çekildi, C-6). Modu 08'in çıktısı belirler;
+      adaylar `city_horizon` ve `city_season_horizon`.
+- [ ] Opsiyonel: **`conformal_grid`** (5 kol, ~4,0 sa) geometri ablasyonunu $B{=}8$'de doğrudan
+      verir ve §8.6'nın açık bıraktığı "mevsim ekseni tam doğrulukta ne kadar taşıyor" sorusunu
+      kapatır ($k$ salınımı $B{=}1$/test'te 1,67–2,51×, $B{=}8$/doğrulamada 1,18–1,32×).
 - [ ] **Manşet formülasyon kararı: `raw` mı `kt` mi?** `kt` doğrulukta %9–13 önde ve MAE eşiğini
       geçiyor; ama transfer iddiası `kt` altında net kazanç vermiyor, yeniden dağıtıma dönüşüyor.
       → `ABLATION.md` §6, §7, ve §7.8'in üç seçeneği

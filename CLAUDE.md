@@ -363,13 +363,17 @@ Roughly translated, still outstanding:
   target transform, and the transfer claim's robustness to it. Two independent reviews exist
   (`ABLATION_REVIEW.md`, `ABLATION_REVIEW_2.md`); the second one's corrections are applied.
   **Open:** the winning architecture has never been measured at `B=8`.
-- **Conformal interval layer: IMPLEMENTED, not yet run at full fidelity** (`conformal.py`,
-  `ABLATION.md` §8). `conformal_mode` defaults to `"none"`; the `conformal` group (6 arms,
-  ~4.6 h) and the optional `conformal_grid` geometry ablation (5 arms, ~3.8 h) are defined and
-  waiting. §6.5's "per-(city, horizon) grid" proposal was measured and is **wrong** — the horizon
-  axis is null, the right second axis is season. Validated end to end at smoke fidelity: daylight
-  CP 0.823 → 0.943 (`raw`) and 0.768 → 0.946 (`kt`), Rize's CWC 5,022 → 1.04, point accuracy
-  unchanged to the last digit.
+- **Conformal interval layer: RUN at full fidelity, grid geometry still open** (`conformal.py`,
+  `ABLATION.md` §8). Six arms at B=8: aggregate daylight |CP−0.95| goes 0.0267 → 0.0096 (`raw`,
+  by narrowing, MPIW −17.7%) and 0.0220 → 0.0096 (`kt`, by widening, MPIW +4.3%), with the sign
+  differing per arm *and* per province inside `kt` — which is the measured proof a scalar cannot
+  work. **Open:** the mode that ran (`city_season`) has no horizon axis, and coverage still
+  spans 5.6 pp across the 24 steps. Each grid axis fixes only its own conditional and no other
+  (§8.9, C-6); the mode was originally chosen by scoring per-province coverage alone, which is a
+  third form of the K-1/K-5 trap. Next step costs seconds, not hours:
+  `scripts/08_conformal_mode_selection.py` refits every mode on the **validation** split and
+  scores all three conditionals, with an oracle column that separates "wrong grid" from
+  "calibration transfer error".
 - **Metrics table: R² DONE (2026-08-28)** — `metrics.py::r2` feeds the summary, per-horizon and
   ledger outputs alongside MAE/RMSE, for both subsets.
 - **Feature-set work queued from the EDA** (`TODOs.md` §B/§C): `log1p(PRECTOTCORR)` plus a
