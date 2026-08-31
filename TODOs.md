@@ -1,278 +1,95 @@
-## Model Configurations
-- Layer count and neuron sizes?
-- ~~time window lag (24h)?~~ **EDA cevabı (2026-08-28):** 24 saat büyük ölçüde yeterli.
-  Berraklık indeksinin otokorelasyonu (`outputs/eda/tables/autocorrelation_clearness.csv`):
-  saatlik ölçekte kt neredeyse AR(1) (PACF gecikme 1 = 0.93–0.97, gecikme 2 ≈ 0). 24 saat
-  ilerisi tahminde belirleyici olan günlük ölçekte ise PACF 1. günde 0.41–0.56, 2. günde
-  0.006–0.12. Yani 48 saatlik lookback yalnız kısmi korelasyonu ~0.1 olan ikinci günü
-  ekler. **Yapılacak:** tek bir `lookback_hours=48` konfigürasyonu ile ampirik doğrulama
-  (yeni experiment_id). Beklenti: küçük ama sıfır olmayan kazanç.
+# Yapılacaklar
 
-## Dataset Yapılacaklar: (TAMAMLANDI - 2026-08-28)
-- [x] "CLRSKY_SFC_SW_DWN" sütunu silinecek -> `DROPPED_COLUMNS` (src/merve_solar/config.py)
-- [x] "ALLSKY_KT" sütunu silinecek -> `DROPPED_COLUMNS` (src/merve_solar/config.py)
-- [x] "ALLSKY_SFC_SW_DWN" tahmin edilecek sütun -> `TARGET_COLUMN` olarak teyit edildi
-- Not: Sütunlar xlsx dosyasindan fiziksel olarak silinmedi; okuma aninda data.py düşürüyor.
-- Not: Öznitelik sayisi 18 -> 17 düştü. Bu degisiklikten önceki ledger satirlari
-  karsilastirilabilir degil; tarama yeni experiment_id'lerle yeniden kosulmali.
-
-
-## Makale Eklenecekler
-- 5 ili gösteren harita
-- 5 ilin iklim ve coğrafi farklılıkları anlatan paragraf
-- [x] Tüm değişkenlerin solar radiatona (predicted variable) ile scatter diagram
-- [x] Tüm değişkenlerin correlation matris  grafiği
-- [x] Aylık 5 bölgenin solar radiation verisinin montly olarak box plot (her 5 il için)
-- [x] 3D diagram; x ekseninde ay, z ekseninde yıl, y ekseninde solar radiation diagram (her 5 il için)
-- [x] Mevsimlere göre x ekseninde toplam gün y de radiation grafiği
-- [x] Her il ve her sütun için betimsel istatistik tablosu (min/maks/ortalama/SS/çarpıklık/basıklık)
-- Mervenin gönderdiği makalelerden lstm optimal konfigürasyon dosyası oluştur. 
-- MAE, RMSE, R2 performans tablosu ekle
-- SVM, Prophet, GRU (prophet olmazsa random forest regressşon veya mlp) alternatif methodlarla karşılaştırma
-
-
-
-## Betimsel istatistik: TAMAMLANDI (2026-08-28)
-`scripts/02_descriptive_analysis.py` → `outputs/eda/` (tablolar + figürler, Türkçe).
-Ayrıntı ve uyarılar: `outputs/eda/README.md`. Üç karar makaleye yazılmalı:
-- "Gündüz" klimatolojik tanımlı ((il, ay, saat) hücre ortalaması > 0); `ışınım > 0` filtresi
-  gündüz tanımı `CLRSKY_SFC_SW_DWN > 0` (bkz. D maddesi altındaki düzeltme).
-- Aylık kutu grafiği günlük toplam üzerinden; saatlik değerlerle kışın daha stabil görünüyordu.
-- Saat ekseni il-bazlı yerel güneş saati (LST); saatler iller arasında karşılaştırılamaz.
+Yalın liste. Gerekçe ve sayılar burada **tekrarlanmaz**, kaynak dosya gösterilir:
+`ABLATION.md` (ablasyon sonuçları, §0 önce okunur) · `outputs/eda/EDA.md` (betimsel bulgular) ·
+`outputs/eda/README.md` (nasıl üretildi + düzeltme kaydı) · `main_methodology.md` (Yöntem) ·
+`ABLATION_REVIEW_2.md` (son bağımsız review).
 
 ---
 
-## EDA bulgularından çıkan görevler (2026-08-28)
+## 1. Kritik yol — makale sayıları buna bağlı
 
-Kaynak: `outputs/eda/tables/` — hepsi **tam veri** (2019-06-30 → 2026-03-30, 6 yıl 9 ay)
-üzerinde hesaplandı. Tek istisna `monthly_target_stats.csv` (son 12 ay, kutu grafiğinin
-verisi) ve 3B yüzey/anomali (2020–2025 tam takvim yılları).
+- [ ] **Conformal aralık katmanı.** Kalibrasyon üç ayrı eksende bağımsız bozuluyor ve hiçbiri
+      diğerini düzeltmiyor. Katman **il × ufuk ızgarası** olmalı ve düzeltme işareti kola göre
+      değişmeli (`raw` daraltma, `kt` genişletme). Skaler çarpan çalışmaz.
+      → `ABLATION.md` §6.5, `main_methodology.md` §11.5
+      Kod: boru hattı yalnızca test bölmesini tahmin ediyor; conformal bir kalibrasyon kümesi
+      ister (doğrulama bölmesi). Yeni config ekseni + ledger sütunu, varsayılan **kapalı**.
+- [ ] **Manşet formülasyon kararı: `raw` mı `kt` mi?** `kt` doğrulukta %9–13 önde ve MAE eşiğini
+      geçiyor; ama transfer iddiası `kt` altında net kazanç vermiyor, yeniden dağıtıma dönüşüyor.
+      → `ABLATION.md` §6, §7, ve §7.8'in üç seçeneği
+- [ ] **Kazanan mimari tam doğrulukta ölçülmedi** (`abl_arch_h128x64_full_s{42,43,44}`, ~2,0 sa).
+      Grid'de **tanımlı değil**. $B{=}1$'de seçip $B{=}8$'de raporlamak güvenli değil.
+      → `ABLATION.md` §4.8 T-4.2, §4.7
 
-### A. UYARI: gündüz-only eğitim mevcut pencere yapısını kırıyor (ÖNCELİKLİ)
+## 2. Savunulmamış varsayılanlar — tarama yok
 
-Metodoloji paralel session'da "model eğitiminde ve tahminde sadece `TARGET_COLUMN > 0`
-saatler kullanılacak" şeklinde güncelleniyor. **Gece satırları seriden fiziksel olarak
-silinirse `windows.py` hiç pencere üretemez.** Ölçüldü:
+- [ ] **$B$ taraması** ($B \in \{1,2,4,8\}$, `all5`, 3 tohum, ~1,5 sa). $B{=}8$ miras alınmış bir
+      seçim; iki uç nokta dışında hiç taranmadı. → `ABLATION.md` §3.2 (ikame bulgusu)
+- [ ] **`bootstrap_block_length` taraması** ($L \in \{24,48,168,336\}$, ~5,8 sa). Hareketli blok
+      bootstrap'ın tek ayar düğmesi, hiç taranmadı, ölçülen korelasyon ölçeğinin ~7 katına ayarlı.
+- [ ] **Erken durdurma verimliliği.** `best_epoch` 3–9, koşu 19–25 epok; sürenin ~%60-70'i
+      optimumdan sonra. Kazanan mimari seçildikten sonra kendi tek-eksen değişikliği olarak.
 
-- Gündüz satırları bırakıldığında seri il başına **2 466 ayrı bloğa** parçalanıyor
-  (her gün bir blok).
-- Blok uzunlukları: medyan **12 saat**, min 9, maks 15.
-- **24 saat lookback + 24 saat horizon = 48 saatlik kesintisiz pencere gerekiyor.
-  ≥24 saatlik blok oranı: 0.000.** Yani üretilebilecek pencere sayısı sıfır.
+## 3. Analiz altyapısı — yeni koşum gerektirmez
 
-Ayrıca `windows.py` kesintisizliği assert ediyor, `bootstrap.py`'nin 168 saatlik hareketli
-blok uzunluğu da saatlik kesintisiz seri varsayıyor.
+- [ ] **DM / Benjamini–Hochberg anlamlılık testleri.** HAC bant genişliği tabanı **47**
+      (stride-1 pencereler saatleri hem hedef hem girdi olarak paylaşır). `postprocess.py`
+      üzerine oturur; npz'ler yalnız koşumun yapıldığı makinede.
+- [ ] `scripts/make_scope_comparison.py` — karşılaştırma tablosu betiği, hâlâ yazılmadı.
+- [ ] **`ABLATION_REVIEW_2.md`'nin işlenmemiş katkı adayları.** İşlenen: beceri eşitlenmesi
+      (§6.4.1), ufuk kırılımı (§6.4), tekrarlanabilirlik tabanı (§1.10). Bekleyen: yeniden
+      dağıtımın genel bir varyans-azaltma özelliği olması, aralık genişliğinin ilin iklimsel
+      ışınım düzeyine kilitli olması, havuzlama kazancının bulut rejimi *değişkenliğini* takip
+      etmesi, il × ufuk bozulma tablosu.
 
-**Önerilen çözüm — gece satırlarını silmek yerine maskelemek:**
-girdi penceresi ve kronolojik yapı 24 saat kalsın (kesintisizlik, ölçekleyici, bootstrap
-blok mantığı korunur), **kayıp fonksiyonu ve metrikler yalnızca gündüz adımları üzerinden
-hesaplansın** (horizon içindeki gece adımları maskelensin). Bu, "model sadece gündüzü
-öğrenir/skorlanır" amacını karşılar ve mevcut boru hattını bozmaz.
+## 4. Karşılaştırma modelleri (makale için zorunlu)
 
-Alternatifler ve neden daha kötü oldukları:
-- *Değişken uzunlukta gündüz dizileri (10–15 adım) + padding:* mevsime göre değişen dizi
-  uzunluğu, padding maskesi ve horizon tanımının yeniden yazılması gerekir; `lookback_hours`
-  ve `horizon_hours` semantiği bozulur, tüm ledger satırları karşılaştırılamaz hale gelir.
-- *Girdide gece var, çıktıda yok:* maskeleme ile aynı şey, ama horizon tanımı bulanıklaşır.
+- [ ] SVM, GRU, Random Forest / MLP (Prophet bu çerçevede zorsa atlanır).
+      **Aynı pencereler, aynı bölmeler, aynı `metrics.py`, aynı ledger** — `run_experiment`
+      arkasında model varyantı olarak. → CLAUDE.md *Comparability rules*
+- [ ] Merve'nin gönderdiği makalelerden "optimal LSTM konfigürasyonu" dosyası.
 
-Karar ne olursa olsun: bu değişiklik `NUMERIC_FEATURE_COLUMNS`'u değil pencere/kayıp
-semantiğini değiştirdiği için **tüm mevcut ledger satırlarını karşılaştırılamaz yapar**;
-yeni `experiment_id`'lerle yeniden koşulmalı.
+## 5. Ertelenen öznitelik işleri
 
-### B. `PRECTOTCORR` için `log1p` dönüşümü (`scaling.py`)
+Her ikisi de mevcut ledger satırlarını geçersiz kılar; yeni id ile koşulmalı.
 
-**Bulgu.** Yağış, öznitelik setindeki en patolojik dağılım
-(`descriptive_stats_by_city_daylight.csv`, havuzlanmış gündüz satırları):
+- [ ] **`log1p(PRECTOTCORR)` + ikili "yağış var" göstergesi.** → `outputs/eda/EDA.md` §3.4
+      *Not:* TODOs'un eski sürümündeki ikili-gösterge korelasyonları (−0.435…−0.480) ile
+      EDA.md §3.4'ünkiler (−0.097…−0.215) **uyuşmuyor** — farklı koşullandırma; kullanılmadan
+      önce hangisinin hangi tanım olduğu netleştirilmeli.
+- [ ] **Öznitelik kümesi 17 → 15** (`T2MDEW`, `WS50M` çıkar). LSTM için performans değil
+      *gerekçelendirme* adımı; planlanan SVM/RF/MLP için **kritik**. → `outputs/eda/EDA.md` §5.3
+- [ ] **`PRECTOTCORR` birim etiketi teyidi** (mm/saat şüpheli). Modellemeye zararsız, figür
+      ekseni ve makale metni için gerekli. → `outputs/eda/README.md`
 
-| Ölçüt | PRECTOTCORR | Karşılaştırma: diğer öznitelikler |
-|---|---|---|
-| Çarpıklık | **8.22** | −0.65 … +1.14 |
-| Fazlalık basıklık | **101.29** | −1.09 … +2.25 |
-| Ortalama | 1.69 mm/saat | — |
-| Std | 6.28 | — |
-| Maks | 347.72 mm/saat | — |
+## 6. Makale metni ve figürler
 
-İl bazında ortalama: Rize 3.72, Antalya 1.80, Ankara 1.05, Konya 0.97, Van 0.92 mm/saat.
+- [ ] **5 ilin haritası** + iklim/coğrafya farklılıkları paragrafı (dış geoveri gerektirir).
+- [ ] Kısmi korelasyon tablosu ve gerekçesi — öznitelik seçiminin asıl argümanı.
+      → `outputs/eda/EDA.md`
+- [ ] Rize'nin ayrı bir rejim olarak tartışılması (+ "Rize hariç" agregat satırı zaten üretiliyor).
+- [ ] Saat ekseninin il-bazlı yerel güneş saati (LST) olduğu — Yöntem'e bir cümle.
+- [ ] Gündüz tanımının `CLRSKY_SFC_SW_DWN > 0` olduğu ve neden sızıntı olmadığı — dipnot.
+- [ ] Ufuk profili tablosu: naif kurallar ufuk boyunca düz, model bozuluyor. Hakem gün-öncesi
+      satırını hesaplayacak. → `ABLATION.md` §6.4
 
-**Sorun.** `scaling.py` `StandardScaler` kullanıyor; ortalama ve standart sapma birkaç uç
-değer tarafından belirleniyor. Sonuçta ölçeklenmiş sütunun ezici çoğunluğu sıfıra yakın çok
-dar bir aralıkta sıkışıyor, nadir uç değerler ise ±50 mertebesine gidiyor. LSTM'in girdi
-katmanı için bu, fiilen "çoğu zaman sabit, arada bir patlayan" bir sütun demek — yani
-öznitelik bilgisini büyük ölçüde kaybediyor.
+**Alıntılanmayacak sayı:** Van'ın 1215,9 W/m² maksimumu ($k_t = 3{,}28$, geri-çatım artefaktı).
+Savunulabilir maksimum 1068,7. → `outputs/eda/README.md` §1
 
-**Neden ziyan.** Yağış boş bir sütun değil: güneş geometrisi sabitlendiğinde
-(`target_correlation_by_city.csv`, `partial_r_within_hour`) hedefle korelasyonu
-**−0.27 … −0.37** ve bu, ham korelasyonundan (−0.09 … −0.21) **daha güçlü**. Yani gerçek
-bulut sinyali taşıyan az sayıdaki değişkenden biri; ölçekleme yüzünden kaybedilmesi ziyan.
+---
 
-**Öneri.** `scaling.py`'de ölçeklemeden önce `PRECTOTCORR` için `log1p` dönüşümü. Kritik
-kısıt: dönüşüm sabit (parametresiz) olduğu için sızıntı riski yok, ama **`StandardScaler`
-yine yalnızca train satırlarında fit edilmeli** — mevcut train-only sınırı korunmalı.
-`inverse_transform_target` yalnız hedefi ters çevirdiği için etkilenmiyor.
+## Tamamlananlar
 
-**Doğrulama.** Aynı config'i biri log1p'li biri log1p'siz iki `experiment_id` ile koşup
-ledger'da karşılaştırmak yeterli. Not: bu bir ölçekleme değişikliği olduğu için **mevcut
-ledger satırlarını karşılaştırılamaz yapar**; ayrıca ledger satırı config'in bu alanını
-taşımıyor, dolayısıyla eklenecekse `experiment.py`'deki ledger satır sözlüğüne bir sütun
-girmeli (bkz. CLAUDE.md *Comparability rules*).
-
-**Ek bulgu (EDA.md incelemesi, doğrulandı).** Bilgiyi taşıyan şey yağışın *şiddeti* değil,
-yağış olup olmadığı. Gündüz satırlarının **%53.5'i** tam sıfır. (İl, ay, saat) hücre ortalaması
-çıkarıldıktan sonra hedefle korelasyon — ikili bayrak **beş ilin hepsinde** ham miktarı yeniyor:
-
-| | Ankara | Antalya | Konya | Rize | Van |
-|---|---|---|---|---|---|
-| `PRECTOTCORR` (ham) | −0.315 | −0.337 | −0.279 | −0.380 | −0.349 |
-| yağış var/yok (ikili) | **−0.479** | **−0.445** | **−0.480** | **−0.455** | **−0.435** |
-
-Dolayısıyla öneri genişliyor: **`log1p(PRECTOTCORR)` + ayrı bir ikili gösterge sütunu.**
-Öznitelik sayısı 17 → 18 olur; C maddesindeki iki gereksiz sütun da çıkarılırsa 16'da kalır.
-
-**Ayrıca birim etiketi şüpheli.** mm/saat olarak okunursa yıllık toplamlar Ankara 8 184,
-Rize 33 619 mm — imkânsız. 24'e bölününce Türkiye normalleri mertebesine geliyor (Ankara 341,
-Konya 328, Van 344 mm/yıl). Modellemeye zararsız (sabit ölçek çarpanı), ama figür eksenleri ve
-`VARIABLE_LABELS_TR` "mm/saat" yazıyor; makalede birim verilmeden önce NASA POWER
-dokümantasyonundan teyit edilmeli.
-
-**Durum:** yapılacak. Model şu an fine-tune ediliyor, bu görev sıraya alındı.
-
-### C. Öznitelik ablasyonu: 17 → 15 sütun
-
-**Bulgu.** `collinear_pairs.csv` (gündüz satırları, havuzlanmış Pearson):
-
-- `WS10M` ↔ `WS50M`: **r = 0.965** (24 saat üzerinden 0.929)
-- `QV2M` ↔ `T2MDEW`: **r = 0.962**
-
-Bu bir istatistik tesadüfü değil, fizik:
-
-- **`T2MDEW` zaten `T2M` ve `RH2M`'nin deterministik bir fonksiyonu.** Magnus formülüyle
-  ikisinden yeniden hesaplandığında gerçek `T2MDEW` ile **r = 0.9992**, ortalama mutlak
-  fark **0.161 °C**, RMSE **0.31 °C**. Yani sütun, sette hâlihazırda bulunan iki sütunun
-  türevi; bağımsız hiçbir bilgi taşımıyor. Not: `T2MDEW`'i yalnız `QV2M`'den doğrusal
-  regresyonla tahmin etmek ancak r = 0.962'ye ulaşıyor — yani düz korelasyon tablosu bu
-  fazlalığı **olduğundan az** gösteriyor; gerçek gerekçe Magnus ilişkisidir.
-- **`WS50M` ≈ 1.33 × `WS10M`** (oran medyanı 1.330) — aynı sınır tabakasının logaritmik
-  rüzgâr profili üzerinde iki farklı yüksekliği.
-
-**"Çıkarılmış" ne demek.** Sütunlar veriden, xlsx'ten veya EDA tablolarından
-silinmiyor. Yalnızca `src/merve_solar/config.py` içindeki **`NUMERIC_FEATURE_COLUMNS`**
-listesinden — yani modele girdi olarak verilen öznitelik listesinden — çıkarılıyor.
-Liste 17 elemandan 15'e iner; `SolarLSTM` girdi boyutu otomatik olarak
-`len(NUMERIC_FEATURE_COLUMNS)`'tan geldiği için başka kod değişikliği gerekmiyor.
-
-**Hangisi çıkarılmalı (ve neden partneri değil):**
-
-| Çıkarılan | Kalan | Gerekçe |
-|---|---|---|
-| `T2MDEW` | `QV2M` | `QV2M` doğrudan nem *miktarı*; `T2MDEW` ise `T2M`+`RH2M`'den türetilebiliyor (r = 0.9992), yani sette zaten üç kez temsil edilen bir bilgi. |
-| `WS50M` | `WS10M` | Yüzey ışınımı için ilgili yükseklik 10 m; 50 m rüzgârı standart yüzey ölçümü değil ve 10 m'nin sabit katı. |
-
-**Beklenen etki.** LSTM için eşdoğrusallık zararsızdır, dolayısıyla RMSE'de büyük bir
-değişiklik beklenmiyor — bu bir *performans* değil *gerekçelendirme* adımı:
-(a) parametre sayısı ve gürültü azalır, (b) planlanan **SVM / RF / MLP baseline'ları için
-kritik** (bu modeller eşdoğrusallıktan gerçekten etkilenir ve adil karşılaştırma için
-aynı öznitelik setini kullanmak zorundalar), (c) makalede "öznitelik seçimi yapıldı ve
-gerekçelendirildi" cümlesi kurulabilir.
-
-**Nasıl koşulmalı.** Yeni bir `experiment_id` ile, tek eksen değiştirilerek. `n_features`
-zaten ledger'da bir sütun olduğu için karşılaştırma izlenebilir olacak.
-
-### D. Rize ayrı tartışılmalı
-
-**Bulgu.** Beş il aslında iki rejim (`daily_clearness_by_city.csv`):
-
-| | Ankara | Antalya | Konya | **Rize** | Van |
-|---|---|---|---|---|---|
-| Günlük toplam (kWh/m²/gün) | 4.66 | 4.94 | 4.87 | **3.69** | 4.98 |
-| Berraklık oranı | 0.81 | 0.85 | 0.82 | **0.73** | 0.85 |
-| Açık gün payı (>0.9) | %45 | %56 | %48 | **%37** | %52 |
-| Kapalı gün payı (<0.5) | %11 | %8 | %10 | **%24** | %6 |
-| Günlük toplam CV | 0.49 | 0.44 | 0.46 | **0.57** | 0.45 |
-| Gündüz bağıl nem | %52.1 | %48.5 | %48.9 | **%73.3** | %45.5 |
-| Saatin açıkladığı varyans (η², 24s) | 0.730 | 0.778 | 0.756 | **0.664** | 0.768 |
-
-Dört il %6'lık bir bant içinde; Rize hepsinden ayrı bir rejim ve **her ölçütte en az
-öngörülebilir olan**. Dolayısıyla:
-
-- Agregat skor Rize'yi gizler (dört il onu 4'e 1 bastırır).
-- Şehir gömülemesinin (`SolarLSTM.city_embedding`) öğrenmesi gereken asıl ayrım Rize'dir;
-  cross-city transfer iddiasının gücü de Rize'deki performansa bağlıdır.
-
-**Yapılacak.** (a) `results_summary.csv`'ye ek olarak "Rize hariç agregat" satırı — şehir
-gömülemesinin katkısı ancak böyle görünür hale gelir; (b) makale metninde Rize'nin ayrı bir
-paragrafta "en zor il" olarak tartışılması, yukarıdaki tablo ile birlikte.
-
-### E. Referans tahmin zemini (makaleye zorunlu)
-
-`outputs/eda/tables/persistence_baseline.csv` — modelin kullandığı kronolojik test
-penceresinde, gündüz saatleri, 24 saat ilerisi:
-
-| Referans | RMSE (W/m²) | MAE | R² |
-|---|---|---|---|
-| Kalıcılık | 116.4 | 68.2 | 0.829 |
-| Akıllı kalıcılık | 109.3 | 60.4 | 0.850 |
-| **Klimatoloji** | **106.8** | 73.4 | **0.856** |
-
-LSTM'in anlamlı sayılması için gündüz RMSE < 106.8 W/m² ve R² > 0.856 olmalı. Klimatoloji
-RMSE'de, akıllı kalıcılık MAE'de kazanıyor — model ikisini birden geçmeli.
-
-Not: bu tablo bir *tanımlayıcı* referanstır, ledger satırı değildir. Yayınlanabilir
-karşılaştırma için bu üç referansın `run_experiment` içinden model varyantı olarak
-koşulması gerekir (CLAUDE.md, *Comparability rules*) — planlanan SVM/GRU/RF
-karşılaştırmasıyla aynı boru hattından.
-
-Ayrıca gece satırlarının metrikleri ne kadar şişirdiği ölçüldü: aynı klimatoloji referansı
-24 saat üzerinden RMSE 76.7 / R² 0.923, gündüz üzerinden 106.8 / 0.856. Yani gece
-satırları RMSE'yi %28 düşürüyor.
-
-### F. DÜZELTME: gündüz tanımı `CLRSKY_SFC_SW_DWN > 0` oldu (2026-08-28)
-
-Yukarıdaki A–E maddeleri ilk turda klimatolojik bir (il, ay, saat) gündüz maskesiyle
-hesaplanmıştı. **O maske hatalıydı** ve tüm gündüz tabloları yeniden üretildi.
-
-Hata: aylık hücre çok kaba. Bir ay içinde gün doğumu/batımı 30–60 dakika kaydığı için
-hücrenin kenar saati ayın bir kısmında karanlık; hücre ortalaması saatin tamamını gündüz
-sayıyordu. Sonuç: **5 266 gece satırı** gündüz kümesine giriyordu. Bağımsız kanıt: bu
-satırların hepsinde `CLRSKY_SFC_SW_DWN` de tam sıfır — NASA POWER'ın kendi geometrisine
-göre güneş ufkun altında. Ayrıca kenar saatler hariç 132 249 iç gündüz saatinin hiçbirinde
-ışınım tam 0 değil (minimum 3.78 W/m²), yani bu veride sıfır okuma asla "kapalı hava"
-demek değil.
-
-Yeni tanım: **`CLRSKY_SFC_SW_DWN > 0`**. Per-timestamp, saf geometrik (NASA'nın kendi
-ızgara koordinatları ve zaman konvansiyonuyla), hedefe hiç bakmıyor. `ışınım > 0` ile
-birebir aynı 151 643 satırı seçiyor. Aynı tanım metrik kırılımı ve —açılırsa— kayıp
-maskesi için de kullanılmalı; projede tek bir gündüz tanımı olsun.
-
-Not: `CLRSKY_SFC_SW_DWN` **öznitelik olarak kullanılmaya devam etmemeli** (hedefin
-neredeyse deterministik zarfı). Maske olarak kullanılan tek şey `> 0` booleanı, yani
-"güneş doğmuş mu" — kamuya açık astronomik bilgi, hava durumu değil. `config.py`'deki
-guard bu ayrımı korumalı.
-
-Sayısal etki: gündüz satırı 156 909 → 151 643; havuzlanmış gündüz ortalaması
-363.7 → 376.3 W/m²; korelasyonlar ≤ 0.031 kaydı; zemin RMSE 105.0 → 106.8, R² 0.864 →
-0.856. Nitel sonuçların hiçbiri değişmedi.
-
-### G. Kapanış notu (EDA oturumu, 2026-08-28)
-
-**Tamamlananlar.** Betimsel istatistik katmanı bitti: `scripts/02_descriptive_analysis.py`
-→ `outputs/eda/` (28 tablo, 34 figür × PNG+PDF). İki belge eşlik ediyor:
-`outputs/eda/README.md` (nasıl üretildi, kapsam, uyarılar, düzeltme kaydı) ve
-`outputs/eda/EDA.md` (makaleye alıntılanmak üzere yazılmış yorum, iddia–dosya eşlemesiyle).
-
-**Makaleye girmesi gereken, henüz yazılmamış olanlar** — hepsinin dayanağı `EDA.md`'de:
-
-1. Kısmi korelasyon tablosu ve gerekçesi. Ham korelasyonda basınç, 10 m ve 50 m rüzgârının
-   işareti iller arasında **tutarsız**; güneş geometrisi sabitlendikten sonra dokuz
-   değişkenin hepsi beş ilde **aynı işarete** sahip. Öznitelik seçimini gerekçelendiren asıl
-   argüman budur, "sıcaklık en önemli öznitelik" değil.
-2. Referans tahmin zemini (kalıcılık / akıllı kalıcılık / klimatoloji) sonuç tablosunda.
-3. Rize'nin ayrı bir rejim olarak tartışılması + "Rize hariç" agregat satırı.
-4. Saat ekseninin il-bazlı yerel güneş saati (LST) olduğu — yöntem bölümüne bir cümle.
-5. Gündüz tanımının `CLRSKY_SFC_SW_DWN > 0` olduğu ve bunun neden sızıntı olmadığı;
-   `DROPPED_COLUMNS` gerekçesinin yanına bir dipnot.
-
-**Alıntılanmaması gereken sayı:** Van'ın 1215.9 W/m² maksimumu (kt = 3.28, ölçüm artefaktı).
-Savunulabilir maksimum 1068.7. Ayrıntı `outputs/eda/README.md` §1'deki uyarı kutusunda;
-`METHODOLOGY_REVIEW.md` de aynı uyarıyı taşıyor.
-
-**Hâlâ açık:** 5 ilin haritası ve iklim/coğrafya paragrafı (dış geoveri gerektiriyor).
+| iş | tarih | nerede |
+| --- | --- | --- |
+| Veri kümesi kararları (`ALLSKY_KT` düşürüldü, `CLRSKY` maske sütunu, $F = 17$) | 2026-08-28 | `config.py` |
+| Betimsel istatistik katmanı (28 tablo, 34 figür) | 2026-08-28 | `outputs/eda/` |
+| Gündüz tanımı düzeltmesi (klimatolojik hücre → `CLRSKY > 0`) | 2026-08-28 | `outputs/eda/README.md` |
+| Naif referans zemini boru hattından ledger'a | 2026-08-28 | `baselines.py` |
+| R² metrik tablosuna eklendi | 2026-08-28 | `metrics.py` |
+| Geriye bakış 24 saatte sabitlendi (EDA + ampirik doğrulama) | 2026-08-30 | `ABLATION.md` B-2 |
+| Gündüz-only eğitim sorusu: `loss_daylight_only` varsayılan **kapalı** | 2026-08-28 | `ABLATION.md` §0, `main_methodology.md` §10.1.1 |
+| Ablasyonlar §1–§7 (transfer, kriter, tam doğruluk, mimari, uç noktalar, hedef dönüşümü) | 2026-08-31 | `ABLATION.md` |
+| İki bağımsız review; ikincisinin düzeltmeleri uygulandı | 2026-08-31 | `ABLATION_REVIEW*.md` |
+| İl × ufuk metrik tablosu (koşum sonrası, yeniden eğitimsiz) | 2026-08-31 | `postprocess.py` |
