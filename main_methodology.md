@@ -949,9 +949,28 @@ kesin kapsama garantisini veren düzeltme. $k<1$ aralık fazla genişti, $k>1$ d
 | `city_season_horizon` | **0,0084** | **0,0138** |
 
 İlk tam doğruluk koşuları `city_season` ile yapıldı; o ızgaranın ufuk ekseni olmadığı için
-kapsama 24 adım boyunca **5,6 puan** yayılık kaldı. **Izgara geometrisi bu nedenle açık bir
-sorudur** ve `scripts/08_conformal_mode_selection.py` ile — doğrulama bölmesinde uyarlayıp test
-üzerinde üç koşulluyu birden puanlayarak, yeniden eğitim olmadan — kapatılacaktır.
+kapsama 24 adım boyunca **5,6 puan** yayılık kaldı. **Geometri seçimi
+`scripts/08_conformal_mode_selection.py` ile kapatıldı** — dokuz mod, altı $B{=}8$ kolunun
+**doğrulama** bölmesinde uyarlanıp test üzerinde üç koşulluda birden puanlandı, yeniden eğitim
+olmadan (`ABLATION.md` §8.10). **Seçilen ızgara: `city_season_horizon`** (480 hücre, en küçüğü
+276 kalibrasyon elemanı, geri düşen hücre yok); muhafazakâr alternatif `city_horizon`.
+
+Aynı ölçüm üç eksenin **ayrı işlerini** ortaya koydu ve bu, katmanın metodolojik katkısıdır:
+
+| eksen | işi | kanıt (altı $B{=}8$ kolu, gündüz) |
+| --- | --- | --- |
+| il | il koşullu kapsaması | oracle il sapması 0,0322 → **0,0000** |
+| ufuk | ufuk koşullu kapsaması | oracle ufuk yayılımı 0,0501 → **0,0000** |
+| **mevsim** | **kalibrasyon aktarım hatası** | aktarım hatası 0,0115 → **0,0080** (−%30); **hiçbir koşulluyu düzeltmez** |
+
+*Oracle* = aynı ızgara şekli test bölmesinde uyarlanmış, yani aktarım hatası sıfırlanmış hâli;
+geriye yalnız şeklin ifade edebildiği kalır. Buradan iki sonuç çıkar. Birincisi, eksen ayrışması
+bir sıralama değil **yapısal** bir özelliktir: (il, mevsim) hücresine düşen tek bir $k$, 24 ufuk
+adımını inşa gereği birlikte ölçekler. İkincisi ve makale için daha önemlisi: **hiçbir modun
+oracle agregat sapması 0,0011'i aşmıyor, hiçbirinin uygulanan sapması 0,0073'ün altına inmiyor**,
+yani düzeltme sonrası kalan eksik kapsamanın ($CP = 0{,}9404$, nominal 0,95) **tamamı kalibrasyon
+aktarım hatasıdır ve hiçbir ızgara geometrisiyle kapatılamaz.** Çözüm aşağıdaki jackknife+
+yoludur, daha zengin bir ızgara değil.
 
 **Kalibrasyon kümesi = doğrulama bölmesi.** Boru hattı `conformal_mode != "none"` olduğunda
 doğrulama bölmesini de aynı $B \times T$ geçişle tahmin eder (**ölçülen ek süre %13**: altı ikiz
@@ -1188,7 +1207,7 @@ yüklenirken düşer, saatler sonra eğitim ortasında değil.
 | `loss_daylight_only`  | `False`        | Kayıp yalnız gündüz adımları üzerinden hesaplansın mı (raporlama değil, modelleme değişikliği)                                              |
 | `per_city_scaler`     | `True`         | Yalnızca `training_scope="per_city"` iken; her il kendi ölçekleyicisini alır (§7'deki belgelenmiş istisna). `False` havuzlanmış ölçekleyiciyi paylaştırır |
 | `clamp_night_to_zero` | `True`         | Ters ölçeklemeden sonra $\text{CLRSKY} = 0$ elemanlarını sıfıra kırp (§11.3)                                                                |
-| `conformal_mode`      | `"none"`       | Split-conformal yeniden kalibrasyonun ızgara granülerliği: `none` / `global` / `per_horizon` / `per_city` / `city_horizon` / `per_season` / `city_season` (§11.6). `none` dışındaki her değer koşuyu doğrulama bölmesini de tahmin etmeye zorlar (ölçülen %13 ek süre); önerilen mod `city_season` |
+| `conformal_mode`      | `"none"`       | Split-conformal yeniden kalibrasyonun ızgara granülerliği: `none` / `global` / `per_horizon` / `per_city` / `per_season` / `city_horizon` / `city_season` / `season_horizon` / `city_season_horizon` (§11.6). `none` dışındaki her değer koşuyu doğrulama bölmesini de tahmin etmeye zorlar (ölçülen %13 ek süre); **önerilen mod `city_season_horizon`** (§11.6, `ABLATION.md` §8.10) — ilk altı tam doğruluk koşusu `city_season` ile yapılmıştır |
 | `excluded_cities`     | `[]`           | Bu koşudan **tamamen** (eğitim, doğrulama ve test) çıkarılan iller; il kimlikleri yeniden numaralandırılmaz                                 |
 
 ### 13.2 Çıktılar

@@ -246,10 +246,27 @@ the other half, under four calibration geometries (a random half; the
 chronologically first half; alternating months; and a random half with April and
 May removed, which mimics the real validation split's seasonal hole). It writes
 `outputs/tables/conformal_mode_selection.csv` and
-`conformal_month_stability_test.csv`. This is method **selection**, not a result
-— it fits and scores inside the test period — which is why every conformal run
-also saves `calibration_predictions.npz` so the same comparison can be redone on
-the validation split.
+`conformal_month_stability_test.csv`. **Superseded by `08`:** it fits and scores
+inside the test period, which selects a hyperparameter on the test set.
+
+`08` is the honest version and the one to use. It reads a finished conformal
+run's `calibration_predictions.npz` and `test_predictions.npz`, fits every mode
+on the former (the **validation** split, which is what production calibrates on),
+applies it to the latter, and scores three conditionals rather than one —
+aggregate, worst province, worst horizon step — plus the coverage *spread* across
+the 24 steps. Nothing is retrained; both files summarise distributions that
+already exist and the correction is an affine rescaling of them, so it takes
+seconds per run. It also refits each grid shape on the test split itself
+(the **oracle**), which separates what a shape cannot express from calibration
+transfer error. Writes
+`outputs/tables/conformal_mode_selection_validation.csv`.
+
+Two things it must print per run, or it stops: that it undid the correction the
+run had already applied (`test_predictions.npz` stores what was *scored*, so for
+a conformal run it holds the post-correction interval — reading it as a baseline
+applies a second rescaling), and that re-deriving the run's own configured mode
+reproduces the score the pipeline wrote. The npz files are gitignored, so this
+runs on the machine that ran the experiments.
 
 ### 6. Creating your own config
 
@@ -314,7 +331,7 @@ All fields live in the `ExperimentConfig` dataclass
 | `excluded_cities` | `[]` | Provinces dropped from this run **entirely** — train, val and test alike — so the metric table covers only the remainder. City ids are *not* renumbered (the embedding table keeps a row per province; the excluded row simply never receives a gradient), so checkpoints and predictions stay comparable across runs. Split boundaries are computed on the full frame before the exclusion, so every arm splits on identical dates. Leaving a single province is allowed only with `training_scope="per_city"`. |
 | `model_family` | `"lstm"` | Which model produced the row. `"lstm"` is the only value `run_experiment` trains; `"climatology"`, `"persistence"` and `"smart_persistence"` are written by `scripts/03_run_naive_baselines.py` so their rows are identifiable in the ledger. |
 | `clamp_night_to_zero` | `True` | Zero every prediction at hours where `CLRSKY_SFC_SW_DWN = 0`, applied after the inverse transform to W/m². Not a heuristic: below the horizon the target is exactly `0` and this is known from solar geometry alone, without reading the target. It improves all-hours MAE by ~27% at no cost, **but it also inflates all-hours CP by construction** — see [Metrics explained](#metrics-explained). |
-| `conformal_mode` | `"none"` | Granularity of the split-conformal recalibration of the predictive interval: `"none"`, `"global"`, `"per_horizon"`, `"per_city"`, `"city_horizon"`, `"per_season"`, `"city_season"`. Anything but `"none"` makes the run additionally predict the **validation** split, pooled over the same `n_bootstrap × mc_dropout_passes` passes, and fit one factor `k` per grid cell; the predictive distribution is then rescaled about its own mean, `x → m + k(x − m)`. That rescales the interval and CRPS coherently and leaves the mean — hence RMSE/MAE/R² — bit-identical, so a conformal row differs from its uncorrected twin in the interval alone. Costs roughly 13% wall clock. The recommended value is `"city_season"`: measured over 16 finished runs, the horizon axis is null while the season axis is not, because `k` swings 1.7×–2.5× across the year (cloud variability is seasonal, epistemic spread is not). Night is never calibrated and never corrected. Two limitations are real and stated: the calibration set is the same validation split early stopping used, and it covers ten of twelve months — no April, no May. See `ABLATION.md` §8 and `main_methodology.md` §11.6. |
+| `conformal_mode` | `"none"` | Granularity of the split-conformal recalibration of the predictive interval: `"none"`, `"global"`, `"per_horizon"`, `"per_city"`, `"per_season"`, `"city_horizon"`, `"city_season"`, `"season_horizon"`, `"city_season_horizon"`. Anything but `"none"` makes the run additionally predict the **validation** split, pooled over the same `n_bootstrap × mc_dropout_passes` passes, and fit one factor `k` per grid cell; the predictive distribution is then rescaled about its own mean, `x → m + k(x − m)`. That rescales the interval and CRPS coherently and leaves the mean — hence RMSE/MAE/R² — bit-identical, so a conformal row differs from its uncorrected twin in the interval alone. Costs roughly 13% wall clock. The recommended value is `"city_season_horizon"`, selected by `scripts/08_conformal_mode_selection.py` over all six full-fidelity arms — fitted on validation, scored on test, on three conditionals. The three axes have three separate jobs: city fixes the province conditional, horizon fixes the horizon conditional (each axis fixes only its own — a grid is only as good as the conditionals it was scored on), and season reduces the *calibration transfer error* by 30% while fixing neither conditional. The first six full runs used `"city_season"`, whose numbers are valid but whose coverage stays 5.6 pp apart across the 24 horizon steps. Note what no grid can do: the residual gap from CP 0.9404 to nominal 0.95 is entirely transfer error, so a richer grid does not close it — an out-of-bag calibration set is what would. Night is never calibrated and never corrected. Two limitations are real and stated: the calibration set is the same validation split early stopping used, and it covers ten of twelve months — no April, no May. See `ABLATION.md` §8 and `main_methodology.md` §11.6. |
 | `n_bootstrap` | `8` | Number of bootstrap-resampled model replicas trained for the ensemble (the paper recommends 5–10). **Set to `1` for a fast sanity-check run** — with only one replica there's no resampling, just a single trained LSTM, still scored via MC-Dropout alone. |
 | `mc_dropout_passes` | `100` | Number of stochastic forward passes per replica at inference time (the paper recommends 50–100). Total predictions pooled per test point = `n_bootstrap × mc_dropout_passes` (e.g. 8×100=800 by default). |
 | `bootstrap_block_length` | `168` | Block length (in windows) for the moving-block bootstrap resampling — resampling in contiguous blocks (default ≈1 week) rather than individually preserves the data's temporal autocorrelation. Only relevant when `n_bootstrap > 1`. |

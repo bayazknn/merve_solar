@@ -778,7 +778,12 @@ def _rize_curve_smoke_configs() -> list:
 # identical MPIW/RMSE ratio. Built from the same dict as the arms they are matched against, so a
 # conformal row differs from its uncorrected twin in conformal_mode alone.
 CONFORMAL_BASE = {**ABLATION_FULL, "loss_function": "mae"}
+
+# `CONFORMAL_MODE` names eight finished ledger rows (six full arms + two smoke) and must not move:
+# changing it here would redescribe runs that were produced under `city_season`. The mode that
+# ABLATION.md 8.10 actually selected is the second constant, and it gets its own group and ids.
 CONFORMAL_MODE = "city_season"
+CONFORMAL_MODE_SELECTED = "city_season_horizon"
 
 
 def _conformal_configs() -> list:
@@ -800,8 +805,15 @@ def _conformal_configs() -> list:
         global       0.0314        city_horizon  0.0131
         per_season   0.0282        city_season   0.0099
 
-    Three things follow. The horizon axis is null -- adding it to per_city buys 0.0005 for 24x
-    the cells, and the same holds under every other calibration geometry tested. The city axis
+    RETRACTED, and this docstring is left standing because it is what these six ledger rows were
+    produced under. "The horizon axis is null" was read off a table that scored one conditional,
+    worst per-province deviation, and the horizon axis does nothing on THAT criterion by
+    construction. Scored on the horizon conditional it is decisive. See ABLATION.md 8.9 (C-1
+    retracted, C-6) and 8.10, and `_conformal_selected_configs` below for the mode that replaces
+    it. The two remaining paragraphs stand as measured.
+
+    Three things followed AT THE TIME. The horizon axis is null -- adding it to per_city buys
+    0.0005 for 24x the cells [WRONG, see above]. The city axis
     is what fixes conditional coverage (0.0314 -> 0.0136): a scalar reaches nominal coverage in
     aggregate by over-covering four provinces and under-covering Rize, which is the aggregate
     trap in its coverage form. And the season axis, which nobody proposed, adds another 27% on
@@ -840,9 +852,107 @@ def _conformal_configs() -> list:
         assert differing == {"conformal_mode"}, differing
     return configs
 
+def _conformal_selected_configs() -> list:
+    """The conformal layer under the grid ABLATION.md 8.10 selected. 6 arms, ~5.8 h.
+
+    New ids rather than a rerun of `conformal`: those six rows were produced under `city_season`
+    and are valid results, so this is a second geometry measured alongside them, not a correction
+    applied over them.
+
+    WHY city_season_horizon. scripts/08_conformal_mode_selection.py refit all nine modes on the
+    VALIDATION split of each of the six finished B=8 arms and scored them on test -- an honest
+    selection, unlike the diagnostic that chose `city_season` by fitting and scoring inside the
+    test period on one conditional. Means over the six arms, daylight, lower is better:
+
+        mode                  aggregate  worst city  worst step  step spread  cells  min cell
+        uncorrected              0.0244      0.0383      0.0448       0.0493      0         -
+        per_city                 0.0124      0.0210      0.0386       0.0558      5    75,293
+        per_season               0.0073      0.0356      0.0328       0.0541      4    33,325
+        city_season (ran)        0.0096      0.0208      0.0354       0.0538     20     6,660
+        city_horizon             0.0124      0.0213      0.0170       0.0111    120     3,133
+        city_season_horizon      0.0089      0.0198      0.0133       0.0093    480       276
+
+    It wins the aggregate and the horizon deviation on 6 of 6 arms against city_horizon, its
+    smallest cell holds 276 calibration elements (MIN_CELL_N is 200) and no cell falls back. The
+    three axes have three separate, measured jobs: city fixes the province conditional, horizon
+    fixes the horizon conditional (C-6, and the oracle column shows this is structural -- a shape
+    with no horizon axis cannot flatten it however well calibrated), and season reduces the
+    CALIBRATION TRANSFER ERROR, from 0.0115 to 0.0080, without fixing either conditional (C-8).
+
+    WHAT THIS RUN BUYS, AND WHAT IT DOES NOT. Not the headline coverage: every mode's oracle
+    aggregate deviation is <= 0.0011 while no mode's applied deviation drops below 0.0073, so the
+    whole gap from 0.9404 to nominal is transfer error and no geometry closes it (C-7). Predicted
+    aggregate CP is 0.9409 raw / 0.9413 kt, i.e. unchanged. What it buys is the horizon
+    conditional -- coverage spread across the 24 steps goes 0.0558 -> 0.0072 (raw) and
+    0.0517 -> 0.0115 (kt) -- plus the artifacts the script cannot produce: ledger rows,
+    results_summary.csv, conformal_effect.csv, the figures, and CRPS, which needs the pooled S
+    samples rather than their summary (threat T-8.6).
+
+    So the outcome is already measured and the run is artifact work, not discovery. Cost is the
+    same as `conformal`: 10.22 s/epoch and 0.662 s/MC-pass on the Mac's MPS backend, plus the
+    validation prediction pass at 0.732x the test MC stage, i.e. +13%.
+    """
+    configs = []
+    for seed in ABLATION_SEEDS:
+        for transform, tag in (("raw", "raw"), ("clearsky_index", "kt")):
+            configs.append(ExperimentConfig(
+                experiment_id=f"abl_conformal_csh_{tag}_s{seed}_full",
+                target_transform=transform,
+                conformal_mode=CONFORMAL_MODE_SELECTED,
+                seed=seed,
+                **CONFORMAL_BASE,
+            ))
+    # Two matched pairs per arm, both asserted rather than trusted. Against the UNCORRECTED twin
+    # the pair isolates the layer; against the `city_season` twin it isolates the geometry, which
+    # is the contrast this group exists to add and the only one that is a clean single-axis
+    # comparison of two grids at B=8.
+    for cfg in configs:
+        seed, raw = cfg.seed, cfg.target_transform == "raw"
+        uncorrected_id = (f"abl_rize_all5_s{seed}_full" if raw
+                          else f"abl_target_kt_s{seed}_full")
+        city_season_id = f"abl_conformal_{'raw' if raw else 'kt'}_s{seed}_full"
+        for twin_id, mode in ((uncorrected_id, "none"), (city_season_id, CONFORMAL_MODE)):
+            twin = ExperimentConfig(experiment_id=twin_id, seed=seed, conformal_mode=mode,
+                                    target_transform=cfg.target_transform, **CONFORMAL_BASE)
+            differing = {
+                f.name for f in fields(ExperimentConfig)
+                if f.name != "experiment_id" and getattr(cfg, f.name) != getattr(twin, f.name)
+            }
+            assert differing == {"conformal_mode"}, (twin_id, differing)
+    return configs
+
+
+def _conformal_selected_smoke_configs() -> list:
+    """Minutes, on CPU. The one thing 08 does NOT exercise before the 5.8 h run.
+
+    08 proved the three-axis FIT on the real validation split of all six arms (480 cells, smallest
+    276, no fallback), but it reads npz summaries -- it never touches experiment.py's own path:
+    _conformalize writing conformal_grid.csv / conformal_month_stability.csv / conformal_effect.csv
+    at 480 rows instead of 20, and _rescaled_summary feeding the metrics stage. A crash there
+    lands after the training, which is the expensive failure mode this repo keeps guarding against.
+    Interval metrics from B=1 x T=10 are meaningless and must never reach a table.
+    """
+    return [
+        ExperimentConfig(
+            experiment_id=f"smoke_conformal_csh_{tag}",
+            target_transform=transform,
+            conformal_mode=CONFORMAL_MODE_SELECTED,
+            **{**CONFORMAL_BASE, **ABLATION_SMOKE},
+        )
+        for transform, tag in (("raw", "raw"), ("clearsky_index", "kt"))
+    ]
+
+
+
 
 def _conformal_grid_configs() -> list:
-    """The grid-geometry ablation at full fidelity: one seed, one formulation, five modes.
+    """SUPERSEDED, DO NOT RUN. The grid-geometry ablation at full fidelity: five modes, one seed.
+
+    scripts/08_conformal_mode_selection.py answered what this group was built to ask, on all six
+    B=8 arms rather than one, in seconds rather than four hours: it refits every mode on the
+    validation split and scores it on test, which is also the honest selection this group could
+    not perform (it fits inside the run it scores). ABLATION.md 8.10 has the result. Kept as a
+    definition because the ids are unused and the group documents what was considered.
 
     5 arms, ~4.0 h. This is what turns "a scalar factor cannot work" from an argument into a
     measured claim at the fidelity the paper reports, rather than at the B=1 fidelity of the
@@ -902,6 +1012,8 @@ EXPERIMENT_GROUPS = {
     "conformal_smoke": _conformal_smoke_configs,
     "conformal": _conformal_configs,
     "conformal_grid": _conformal_grid_configs,
+    "conformal_csh_smoke": _conformal_selected_smoke_configs,
+    "conformal_csh": _conformal_selected_configs,
 }
 
 
