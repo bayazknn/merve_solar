@@ -29,11 +29,16 @@ anything else runs.
 Nothing is retrained: both files are summaries of distributions that already exist, and the
 correction is an affine rescaling of them. Seconds per run.
 
-It also reports the ORACLE factor -- k refitted on the test split itself. The applied-to-oracle
-gap is exactly the calibration transfer error, i.e. how much of the residual miscalibration is
-the validation split being a different ten months of a different year rather than the grid being
-the wrong shape. That decomposition is what says whether a rerun under a different mode would
-help, or whether the layer has reached what this calibration set can deliver.
+It also reports the ORACLE factor -- the same grid shape refitted on the test split itself -- and
+scores it on ALL THREE conditionals, because the aggregate one alone cannot answer the question.
+Any grid containing a cell fitted on the target split hits marginal coverage almost exactly by
+construction, so an aggregate-only oracle reads ~0 for every mode and says nothing. The
+conditional oracles are the ones that discriminate: a shape with no horizon axis applies a single
+k to all 24 steps, so it CANNOT flatten a horizon-shaped miscalibration however well calibrated
+it is, and that residual survives into its oracle row. So, per conditional: what survives in the
+oracle is geometry (a rerun under a richer mode fixes it), and the gap from the oracle up to the
+applied score is calibration transfer error -- the validation split being a different ten months
+of a different year (no mode fixes that).
 
 CRPS is out of scope here as everywhere in postprocess.py: it is the one metric that needs the
 S pooled samples rather than their summary.
@@ -132,6 +137,12 @@ def _score(run: dict, lower: np.ndarray, upper: np.ndarray) -> dict:
         "aggregate_dev": abs(cp - TARGET_CI_COVERAGE),
         "worst_city_dev": max(abs(v - TARGET_CI_COVERAGE) for v in per_city.values()),
         "worst_step_dev": max(abs(v - TARGET_CI_COVERAGE) for v in per_step),
+        # Spread, not deviation. A grid fitted on its own split has the LEVEL right by
+        # construction, so its max|CP-0.95| collapses toward half the spread and understates what
+        # the shape cannot express; the spread is the part that survives recentring, and it is the
+        # quantity ABLATION.md 8 already quotes ("5.6 pp across the 24 steps").
+        "city_spread": max(per_city.values()) - min(per_city.values()),
+        "step_spread": max(per_step) - min(per_step),
         "CP_step_1": per_step[0],
         "CP_step_last": per_step[-1],
         **{f"CP_{name}": value for name, value in per_city.items()},
@@ -150,7 +161,9 @@ def evaluate_run(experiment_id: str) -> pd.DataFrame:
         if mode == "none":
             lower, upper = test["lower"], test["upper"]
             extra = {"n_cells": 0, "min_cell_n": np.nan, "n_fallback": 0,
-                     "k_min": 1.0, "k_max": 1.0, "oracle_dev": np.nan}
+                     "k_min": 1.0, "k_max": 1.0, "oracle_dev": np.nan,
+                     "oracle_city_dev": np.nan, "oracle_step_dev": np.nan,
+                     "oracle_step_spread": np.nan}
         else:
             grid = fit_conformal_grid(
                 cal["y_true"], cal["mean"], cal["lower"], cal["upper"], cal["city_id"],
@@ -168,14 +181,16 @@ def evaluate_run(experiment_id: str) -> pd.DataFrame:
             )
             o_lower, o_upper = _rescale(
                 test, oracle.factor_array(test["city_id"], test["daylight"], test["window_start"]))
-            day = test["daylight"]
+            o = _score(test, o_lower, o_upper)
             extra = {
                 "n_cells": len(frame),
                 "min_cell_n": int(frame["n_calibration"].min()),
                 "n_fallback": int(frame["fell_back"].sum()),
                 "k_min": float(day_k.min()), "k_max": float(day_k.max()),
-                "oracle_dev": abs(coverage_probability(
-                    test["y_true"][day], o_lower[day], o_upper[day]) - TARGET_CI_COVERAGE),
+                "oracle_dev": o["aggregate_dev"],
+                "oracle_city_dev": o["worst_city_dev"],
+                "oracle_step_dev": o["worst_step_dev"],
+                "oracle_step_spread": o["step_spread"],
             }
         rows.append({"experiment_id": experiment_id, "mode": mode,
                      **extra, **_score(test, lower, upper)})
@@ -236,17 +251,28 @@ def main() -> None:
     print(f"\nwrote {TABLES_DIR / OUT_NAME} ({len(table)} rows)")
 
     order = [m for m in CONFORMAL_MODES]
+    applied = ["aggregate_dev", "worst_city_dev", "worst_step_dev", "step_spread"]
+    oracle = ["oracle_dev", "oracle_city_dev", "oracle_step_dev", "oracle_step_spread"]
     summary = (table.groupby("mode", as_index=False)
-               [["aggregate_dev", "worst_city_dev", "worst_step_dev", "oracle_dev",
-                 "n_cells", "min_cell_n", "n_fallback"]].mean()
+               [applied + oracle + ["n_cells", "min_cell_n", "n_fallback"]].mean()
                .set_index("mode").loc[order])
     print(f"\nmean over {len(ids)} run(s), calibrated on VALIDATION, scored on test; "
           "lower is better:")
-    print(summary.to_string(float_format=lambda v: f"{v:.4f}"))
+    print(summary[applied + ["n_cells", "min_cell_n", "n_fallback"]]
+          .to_string(float_format=lambda v: f"{v:.4f}"))
+    print("\nsame grid shapes fitted on the TEST split itself (oracle) -- what each shape could "
+          "achieve with zero transfer error:")
+    print(summary[oracle].to_string(float_format=lambda v: f"{v:.4f}"))
     print(f"\nMIN_CELL_N = {MIN_CELL_N}; a mode whose min_cell_n falls below it is thinning "
           "cells into the pooled fallback.")
-    print("`oracle_dev` is the same grid shape fitted on the test split itself: the gap between "
-          "it and aggregate_dev is the calibration transfer error, not a defect of the geometry.")
+    print("Read the two blocks as a decomposition, one conditional at a time: the oracle column "
+          "is what the SHAPE can express, and the gap up to the applied column is calibration "
+          "transfer error. A residual that survives in the oracle is geometry and a rerun under a "
+          "richer mode fixes it; one that appears only in the applied column is the validation "
+          "split being a different ten months of a different year, and no mode fixes that.")
+    print("`step_spread` (max-min coverage over the 24 steps) is the honest horizon number: a "
+          "grid fitted on its own split gets the LEVEL right for free, so max|CP-0.95| flatters "
+          "every oracle row while the spread does not.")
 
 
 if __name__ == "__main__":
