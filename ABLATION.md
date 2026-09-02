@@ -102,8 +102,8 @@ hangilerinin **taşındığı varsayılamayacağı** buradan okunur. Sütun "kan
 | **`lookback` / `horizon` / `stride`** | her şey — pencere sayısı ve `n_elements` değişir | ÖLÇÜLDÜ (B-2, §4.5): 48/72 saat referansı iyileştirmiyor, ama eğitim süresini iki katına çıkarıyor. |
 | **cihaz** (`MERVE_DEVICE`) | hiçbiri — ama **tek koşu farkları** okunamaz hâle gelir | ÖLÇÜLDÜ (§1.10): MPS determinist değildir. Çok tohumlu ortalamalar tek bir arka uçtan gelmelidir. |
 | **`clamp_night_to_zero`, gündüz maskesi** | tüm-saat metriklerinin tamamı; gündüz metrikleri etkilenmez | Gece elemanları tanım gereği kapsanır; tüm-saat CP yapısal olarak şişer. |
-| **`conformal_mode`** | tüm aralık metrikleri (CP/PINW/MPIW/CWC/Reliability) **ve CRPS**; nokta metrikleri (RMSE/MAE/R²) tanım gereği **etkilenmez** | ÖLÇÜLDÜ, $B{=}8$ (§8.5). Varsayılan `"none"`; ledger sütunu. **Mod değişirse yalnız aralık metrikleri yeniden ölçülür** ve bu yeniden eğitim gerektirmez (`08_conformal_mode_selection.py`). Izgaranın hangi eksenleri taşıması gerektiği **açık sorudur** (§8.9: her eksen yalnız kendi koşullusunu düzeltir). |
-| **mevsimsel bileşim** (bölme oranları, veri penceresi) | conformal ızgaranın **tamamı**; kalibrasyon kümesinin hangi ayları kapsadığı doğrudan $k$'yi belirler | ÖLÇÜLDÜ (C-5, §8.4): $k$ yıl içinde 1,67–2,51 kat oynuyor. `train_ratio`/`val_ratio` değişirse doğrulama bölmesinin ay kapsaması ve dolayısıyla ızgara yeniden ölçülmelidir. |
+| **`conformal_mode`** | tüm aralık metrikleri (CP/PINW/MPIW/CWC/Reliability) **ve CRPS**; nokta metrikleri (RMSE/MAE/R²) tanım gereği **etkilenmez** | ÖLÇÜLDÜ, $B{=}8$ (§8.5). Varsayılan `"none"`; ledger sütunu. **Mod değişirse yalnız aralık metrikleri yeniden ölçülür** ve bu yeniden eğitim gerektirmez (`08_conformal_mode_selection.py`). Izgara **§8.10'da seçildi**: `city_season_horizon`. Her eksenin ayrı bir işi var (C-6, C-8) ve manşet kapsama ızgaradan bağımsızdır (C-7). |
+| **mevsimsel bileşim** (bölme oranları, veri penceresi) | conformal ızgaranın **tamamı**; kalibrasyon kümesinin hangi ayları kapsadığı doğrudan $k$'yi belirler | ÖLÇÜLDÜ (C-5 §8.4, daraltıldı §8.6; **C-7/C-8 §8.10**): kalibrasyon kümesinin ay kapsaması **manşet kapsamadaki tek kaldıraçtır** — sapmanın tamamı aktarım hatasıdır ve mevsim ekseni onu %30 azaltır. `train_ratio`/`val_ratio` değişirse ızgara **ve** C-7 yeniden ölçülmelidir. |
 
 ### 0.4 Bölüm haritası
 
@@ -116,7 +116,7 @@ hangilerinin **taşındığı varsayılamayacağı** buradan okunur. Sütun "kan
 | §5 | beş il uç nokta ablasyonu | $B{=}8$ | mae | raw | tamam |
 | §6 | hedef dönüşümü | $B{=}8$ | mae | **raw vs kt** | tamam |
 | §7 | transferin formülasyona dayanıklılığı | $B{=}8$ | mae | kt | tamam; §1–§5'i koşullu kılar |
-| §8 | conformal aralık katmanı | **$B{=}8$** | mae | raw **ve** kt | katman kabul edildi; **ızgara geometrisi açık (§8.9)** |
+| §8 | conformal aralık katmanı | **$B{=}8$** | mae | raw **ve** kt | katman kabul edildi; geometri **§8.10'da seçildi** (`city_season_horizon`), kalan sapma aktarım hatası (C-7) |
 
 ## 1. İl havuzlama (cross-city transfer) — Rize transfer eğrisi
 
@@ -2102,16 +2102,16 @@ doğrulukta gösterilmemiştir.**
   döneminin içinde uyarlanıp puanlanıyor (hiperparametreyi test kümesinde seçmek), ve üstelik
   yalnızca il koşullusunu puanlıyordu — §8.9'un düzelttiği hata. Araç artık var:
   `scripts/08_conformal_mode_selection.py` her modu **doğrulama bölmesinde** uyarlayıp test
-  üzerinde üç koşulluyu birden puanlar, yeniden eğitim gerektirmez. Koşulana kadar bu tehdit
-  **açıktır.**
+  üzerinde üç koşulluyu birden puanlar, yeniden eğitim gerektirmez. **KAPANDI (§8.10):** altı tam
+  doğruluk kolunda koşuldu, geometri artık test kümesinde seçilmiyor.
 - **T-8.4 — geometri teşhisi $B{=}1$'de yapıldı, koşular $B{=}8$'de.** Doğruluk aralığın ne
   olduğunu değiştirir (§0.3) ve §8.6 bunun bir örneğini ölçtü: $k$'nin mevsimsel salınımı
   $B{=}1$/test'te 1,67–2,51×, $B{=}8$/doğrulamada 1,18–1,32×. §8.5'in **sonuçları** $B{=}8$'dir
   ve bu tehdide tabi değildir; **geometri seçimi** tabidir.
-- **T-8.7 — kalan 1 puanlık eksik kapsama ayrıştırılmadı.** Düzeltme sonrası toplulaştırılmış
-  CP 0,9404, nominal 0,95. İki aday: ızgaranın ufuk eksenini kaçırması (§8.9) ve doğrulama
-  bölmesinin başka bir yılın on ayı olması (T-8.2). `08_conformal_mode_selection.py`'ın
-  **oracle** sütunu tam olarak bu ayrımı ölçer.
+- **T-8.7 — kalan 1 puanlık eksik kapsama. KAPANDI (§8.10, C-7):** iki adaydan ızgara elendi.
+  Her modun oracle agregatı ≤ 0,0011 iken hiçbirinin uygulanan agregatı 0,0073'ün altına inmiyor,
+  yani sapmanın **tamamı** kalibrasyon aktarım hatasıdır (T-8.2) ve **hiçbir ızgara geometrisi
+  onu kapatamaz**. Çözüm ızgarada değil kalibrasyon kümesindedir.
 - **T-8.5 — pencereler örtüşüyor.** Stride-1'de bir hücrenin ~3.200 elemanı kabaca 3.200/24
   bağımsız gözlem eder; sonlu-örnek yüzdeliği ham sayının önerdiğinden gürültülüdür.
   `MIN_CELL_N`=200 bu yüzden biçimsel olarak gereken ~19'un çok üstündedir.
@@ -2133,12 +2133,12 @@ $|CP-0{,}95|$ `raw`'da 0,0267 → 0,0096, `kt`'de 0,0220 → 0,0096; il başına
 değişmiyor. İki kol **zıt yönlerde** ve `kt` kolu **il içinde de zıt yönlerde** düzeltiliyor —
 skaler bir çarpanın veremeyeceği bir davranış (C-2).
 
-**Geometri açık.** Koşulan mod `city_season` idi; §8.9 onun ufuk eksenini kaçırdığını ve bunun
-benim seçim ölçütü hatam olduğunu kaydeder. Kararı verecek ölçüm **yeniden eğitim
-gerektirmiyor**: `scripts/08_conformal_mode_selection.py`, bitmiş bir koşunun
-`calibration_predictions.npz`'sinden her modu **doğrulama bölmesinde** uyarlayıp test üzerinde
-puanlar (T-8.3'ü kapatır) ve üç koşulluyu birden raporlar. Saniyeler sürer, npz'ler yalnız
-Mac'te olduğu için orada koşulur.
+**Geometri artık açık değil — §8.10 ölçtü.** Koşulan mod `city_season` idi; §8.9 onun ufuk
+eksenini kaçırdığını ve bunun benim seçim ölçütü hatam olduğunu kaydeder. §8.10 dokuz modu altı
+tam doğruluk kolunda doğrulama bölmesinde uyarlayıp test üzerinde puanladı ve
+**`city_season_horizon`**'u seçti (muhafazakâr alternatif `city_horizon`). Aynı ölçüm kalan
+sapmayı da ayrıştırdı: **manşet kapsamadaki eksiklik ızgara kaynaklı değil** (C-7), yeniden
+koşumun satın aldığı tek şey ufuk koşullusudur (yayılım 4–7 kat daralır).
 
 ### 8.9 Düzeltme — C-1 geri çekildi: ızgara üç koşulluya birden puanlanmalı
 
@@ -2183,17 +2183,161 @@ kontrol listesine eklendi.
 
 **Yapılacak, sırayla:**
 
-1. `scripts/08_conformal_mode_selection.py`'ı Mac'te koş (saniyeler). Doğrulama üzerinde uyarlar,
-   test üzerinde üç koşulluyu puanlar, ve **oracle** sütunuyla kalan sapmayı "yanlış ızgara" ile
-   "kalibrasyon aktarım hatası" arasında ayrıştırır.
-2. Sonucuna göre `conformal` grubunu doğru modda yeniden koş (~5,8 sa, **yeni id'lerle**).
-   `conformal_grid` grubu geometri ablasyonunu $B{=}8$'de doğrudan verir (~4,0 sa) ve §8.6'nın
-   açık bıraktığı "mevsim ekseni $B{=}8$'de ne kadar taşıyor" sorusunu da kapatır.
+1. ~~`scripts/08_conformal_mode_selection.py`'ı Mac'te koş.~~ **YAPILDI — §8.10.**
+2. `conformal` grubunu **`city_season_horizon`** modunda yeniden koş (~5,8 sa, **yeni id'lerle**).
+   §8.10 ne çıkacağını zaten ölçtüğü için koşum keşif değil **yapıt** üretir: ledger satırları,
+   `conformal_effect.csv`, şekiller ve CRPS (bu betiğin hesaplayamadığı tek metrik, T-8.6).
+3. `conformal_grid` grubu (~4,0 sa) artık **büyük ölçüde gereksizdir**: §8.10 mevsim ekseninin
+   $B{=}8$'deki ağırlığını doğrudan ölçtü (C-8 — işi aktarım hatasını azaltmak, koşullu kapsama
+   değil), ki §8.6'nın açık bıraktığı soru buydu.
 
 Süreler ölçülmüştür: altı ikiz kola `süre = epok × c_epok + B{\cdot}T × c_mc` uydurulduğunda
 Mac/MPS'te epok başına 10,22 s ve MC geçişi başına 0,662 s çıkıyor (en büyük artık 9 s);
 kalibrasyon geçişi bunun 32.315/44.155 = 0,732 katı, yani **+%13** — ama koşular arası epok
 değişkenliğinin altında kaldığı için duvar saatinden okunamaz.
+
+### 8.10 Mod seçimi tam doğrulukta — kalan sapmanın ayrıştırılması, C-7…C-9
+
+`scripts/08_conformal_mode_selection.py`, altı tam doğruluk kolunun her birinde dokuz modun
+hepsini **doğrulama bölmesinde** uyarlayıp **test** üzerinde puanladı. Yeniden eğitim yok;
+`calibration_predictions.npz` ve `test_predictions.npz` zaten var olan dağılımların özetleridir
+ve düzeltme onların afin bir yeniden ölçeklemesidir. **T-8.3 kapandı:** geometri artık test
+kümesinde seçilmiyor.
+
+> **Bu alt bölümün künyesi §8'inkinden bir alanda ayrılır:** ızgaralar **doğrulama** bölmesinde
+> uyarlanır (§8.3–§8.4'ün $B{=}1$/test teşhisinin aksine) ve altı $B{=}8$ kolunda puanlanır.
+> Yani §8.5'in koşularıyla aynı doğruluktadır ve T-8.4'e tabi **değildir**.
+> Çıktı: `outputs/tables/conformal_mode_selection_validation.csv` (54 satır).
+
+**Betiğin iki kendi kendini doğrulaması geçti**, ve ikincisi bağımsız bir kanıttır: geri alınan
+temel, düzeltilmemiş koşuyu **dört haneye kadar** yeniden üretiyor — `none` satırı `raw`'da
+$CP = 0{,}9767$ / MPIW 438,60 ve `kt`'de $0{,}9280$ / 397,91 okuyor, ki bunlar §8.5'in
+düzeltme-öncesi değerlerinin tam kendisidir. `city_season` satırı da §8.5'in düzeltme-sonrası
+ufuk uçlarını ($0{,}9663 \to 0{,}9105$) birebir veriyor.
+
+#### Uygulanan puanlar — altı kolun ortalaması, gündüz
+
+| mod | agregat | il başına en kötü | ufuk başına en kötü | **ufuk yayılımı** | hücre | en küçük hücre |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| düzeltilmemiş | 0,0244 | 0,0383 | 0,0448 | 0,0493 | 0 | — |
+| `global` | 0,0107 | 0,0395 | 0,0367 | 0,0569 | 1 | 379.475 |
+| `per_horizon` | 0,0107 | 0,0393 | **0,0155** | **0,0107** | 24 | 15.787 |
+| `per_city` | 0,0124 | **0,0210** | 0,0386 | 0,0558 | 5 | 75.293 |
+| `per_season` | **0,0073** | 0,0356 | 0,0328 | 0,0541 | 4 | 33.325 |
+| `city_horizon` | 0,0124 | **0,0213** | **0,0170** | **0,0111** | 120 | 3.133 |
+| `city_season` *(koşulan)* | 0,0096 | **0,0208** | 0,0354 | 0,0538 | 20 | 6.660 |
+| `season_horizon` | **0,0075** | 0,0358 | **0,0134** | **0,0103** | 96 | 1.380 |
+| **`city_season_horizon`** | **0,0089** | **0,0198** | **0,0133** | **0,0093** | 480 | 276 |
+
+**Ufuk yayılımı** = 24 adımın en yüksek ve en düşük kapsaması arasındaki fark. Sapma değil
+yayılım, çünkü kendi bölmesinde uyarlanan bir ızgara **seviyeyi** bedavaya tutturur ve
+$\max|CP-0{,}95|$ her oracle satırını kayırır; yayılım kayırmaz.
+
+#### Oracle — aynı ızgara şekli **test** bölmesinde uyarlanmış
+
+Oracle, aktarım hatasını sıfırlar: geriye yalnız **şeklin ifade edebildiği** kalır.
+
+| mod | agregat | il başına | ufuk başına | **ufuk yayılımı** |
+| --- | ---: | ---: | ---: | ---: |
+| `global` | 0,0000 | 0,0322 | 0,0274 | 0,0501 |
+| `per_horizon` | 0,0001 | 0,0319 | **0,0001** | **0,0000** |
+| `per_city` | 0,0000 | **0,0000** | 0,0271 | 0,0488 |
+| `per_season` | 0,0000 | 0,0329 | 0,0272 | 0,0496 |
+| `city_horizon` | 0,0002 | **0,0003** | **0,0003** | **0,0001** |
+| `city_season` | 0,0000 | **0,0001** | 0,0280 | 0,0492 |
+| `season_horizon` | 0,0002 | 0,0324 | **0,0003** | **0,0001** |
+| `city_season_horizon` | 0,0011 | **0,0014** | **0,0013** | **0,0004** |
+
+**C-6 artık ampirik bir sıralama değil, yapısal bir özellik.** Oracle satırı "bu şekil, sonsuz
+kalibrasyon verisiyle bile ne yapamaz"ı ölçer: il ekseni olmayan her mod il sapmasını 0,032'de
+bırakır, ufuk ekseni olmayan her mod ufuk yayılımını 0,049'da bırakır, ve eksen eklenince ilgili
+sayı 0,000'e düşer. Eksenler birbirinin yerine geçmiyor **çünkü geçemezler** — (il, mevsim)
+hücresine düşen tek bir $k$, 24 ufuk adımını birlikte ölçekler.
+
+#### C-7 — agregat sapmanın **tamamı** kalibrasyon aktarım hatasıdır
+
+Hiçbir modun oracle agregatı 0,0011'i aşmıyor, hiçbirinin uygulanan agregatı 0,0073'ün altına
+inmiyor. Yani $CP = 0{,}9404$'ün nominal $0{,}95$'e olan uzaklığı **ızgara geometrisiyle
+kapatılamaz**; ızgara şekli marjinal kapsamayı zaten tutturabiliyor, tutturamadığı şey doğrulama
+bölmesinin **başka bir yılın on ayı** olmasıdır (T-8.2). **T-8.7 kapandı:** iki adaydan biri
+elendi, kalan tek neden aktarım hatasıdır.
+
+Sonuç, doğrudan makaleye giren bir cümledir: *kalan eksik kapsama ızgaranın değil kalibrasyon
+kümesinin özelliğidir; çözümü daha zengin bir ızgara değil, eğitim dönemi içinde torba-dışı
+pencerelerden kurulan bir kalibrasyon kümesidir (jackknife+-after-bootstrap).*
+
+#### C-8 — mevsim ekseninin işi koşullu kapsama değil, **aktarım hatasını azaltmak**
+
+`per_season`'ın oracle'ı **iki koşullunun da hiçbirini** düzeltmiyor (il 0,0329, ufuk yayılımı
+0,0496 — `global`'inkiyle aynı), buna rağmen uygulanan agregatta **en iyi** mod. Çelişki değil:
+aktarım hatası = uygulanan − oracle, ve mevsim ekseni tam olarak onu azaltıyor.
+
+| | mevsim ekseni **yok** | mevsim ekseni **var** |
+| --- | ---: | ---: |
+| agregat aktarım hatası | 0,0115 | **0,0080** |
+
+Mekanizma T-8.2'nin tersidir: doğrulama on ay, test on iki ay: havuzlanmış tek bir $k$ bu
+mevsimsel bileşim uyumsuzluğunu miras alır, mevsim başına $k$ ise her mevsimin test elemanlarını
+kendi mevsiminin kalibrasyon verisiyle düzeltir ve uyumsuzluk büyük ölçüde sadeleşir.
+
+**Bu, C-3'ü doğru mekanizmayla yeniden ifade eder ve C-5'in gerekçesini emekliye ayırır.** C-5
+mevsim eksenini "$k$ yıl içinde oynuyor, o hâlde koşullu kapsama için gerekli" diye
+savunuyordu; §8.6 o salınımın $B{=}8$'de 1,18–1,32×'e indiğini ölçtü ve şimdi oracle mevsim
+ekseninin **hiçbir koşulluyu** düzeltmediğini gösteriyor. Eksen doğruydu, gerekçesi yanlıştı.
+İl ekseni ise aktarım hatasını hafifçe **artırıyor** (0,0107 → 0,0124): daha ince hücrenin
+varyans bedeli.
+
+#### C-9 — `raw` kolunda koşulan düzeltme ufuk koşullusunu **bozdu**
+
+| `raw`, gündüz | $CP(h{=}1)$ | $CP(h{=}24)$ | ufuk yayılımı |
+| --- | ---: | ---: | ---: |
+| düzeltilmemiş | 0,9947 | 0,9533 | 0,0414 |
+| `city_season` *(koşulan)* | 0,9663 | 0,9105 | **0,0558** |
+| `city_horizon` | 0,9467 | 0,9361 | 0,0124 |
+| **`city_season_horizon`** | 0,9444 | 0,9402 | **0,0072** |
+
+Düzeltilmemiş `raw` koşusunda 24 adımın hepsi nominalin **üstünde**, ama farklı yüksekliklerde.
+Tek bir daraltma çarpanı ($k = 0{,}838$) hepsini birlikte aşağı çektiğinde $h{=}1$ nominale
+inerken $h{=}24$ altına geçiyor: yayılım 0,0414'ten 0,0558'e **büyüyor**. Yani ufuk ekseni
+olmayan bir ızgara ufuk koşullusunu yalnızca düzeltmemekle kalmıyor, gördüğü koşullu uğruna
+**görmediğini takas ediyor**.
+
+`kt` kolunda bu olmuyor (0,0572 → 0,0517, hafif iyileşme), çünkü orada adımlar nominalin altından
+başlıyor ve genişletme onları birbirine yaklaştırıyor. **Kola bağlı**, tam da §0.3'ün
+`target_transform` satırının uyardığı gibi.
+
+#### İl kırılımı — `raw`'da zor il **Van**, Rize değil
+
+`city_season_horizon` altında `raw`: Ankara 0,9453 · Antalya 0,9422 · Konya 0,9445 ·
+**Rize 0,9494** · **Van 0,9233**. Rize her modda beş ilin **en iyi kalibre olanı** (0,9469–0,9494),
+Van her modda en kötüsü. Oracle il sapmasını 0,0014'e indirdiği için Van'ın 0,0267'si de
+geometrik değil **aktarım** kaynaklıdır: Van'ın doğrulama dönemi artık ölçeği test dönemininkinden
+farklıdır. K-5'in aynadaki hâli — "zor il Rize'dir" sezgisi bu eksende yanlıştır.
+
+#### Hüküm — `city_season_horizon`, ve yeniden koşumun ne satın aldığı
+
+**Seçim: `city_season_horizon`.** Üç ekseninin her birinin artık **ölçülmüş ve ayrı** bir işi
+var: il ekseni il koşullusunu, ufuk ekseni ufuk koşullusunu, mevsim ekseni aktarım hatasını.
+Altı kolun **6/6'sında** agregatta ve **6/6'sında** ufuk sapmasında `city_horizon`'u geçiyor;
+en küçük hücresi 276 eleman (`MIN_CELL_N`=200 üstü, geri düşen hücre yok).
+
+Karşı argümanlar, açıkça: (i) il koşullusunda `city_horizon`'a üstünlüğünün **işareti kola göre
+değişiyor** — üç `kt` kolunda daha iyi, üç `raw` kolunda daha kötü; (ii) oracle'ı ölçülebilir
+biçimde sıfırdan farklı olan **tek** mod (0,0011–0,0014), çünkü 276 elemanda conformal yüzdelik
+276'nın 264'üncü sırasına oturuyor; (iii) $k$ aralığı en geniş olan (0,712–1,409, `city_horizon`
+0,773–1,209). Muhafazakâr alternatif `city_horizon`'dur ve bedeli agregatta 0,35, ufukta 0,37
+puandır. Mevsim eksenini atmak, aktarım hatasını 0,0078'den 0,0122'ye çıkarmak demektir — ve C-7
+gereği aktarım hatası manşet kapsama sayısındaki **tek** kaldıraçtır.
+
+**Yeniden koşumun ne satın aldığı, ne almadığı.** Öngörülen sonuç zaten elde: manşet kapsama
+`raw`'da 0,9404 → 0,9409, `kt`'de 0,9404 → 0,9413 — yani **pratikte değişmiyor** (C-7). Satın
+alınan tek şey ufuk koşullusudur: yayılım `raw`'da 0,0558 → 0,0072, `kt`'de 0,0517 → 0,0115,
+**4–7 kat**. Bu, §8.8'in "açık" bıraktığı kusuru kapatır.
+
+Yeniden koşum yine de gereklidir, ama **keşif için değil, yapıt için**: ledger satırları,
+`results_summary.csv` / `conformal_effect.csv`, şekiller ve **CRPS** — sonuncusu havuzlanmış $S$
+örneğini gerektirir, bu betik ise yalnız özetleri okur (T-8.6). Bilimsel cevap elde olduğu için
+~5,8 saatlik koşum **risksizdir**: ne çıkacağı biliniyor.
 
 ---
 
@@ -2260,4 +2404,5 @@ Yeni bir eksen eklerken **koddan** gereken değişiklikler:
 | EDA kanıtı | `outputs/eda/tables/`, tartışma `outputs/eda/EDA.md` |
 | Aralık kalibrasyonu sınırı | `METHODOLOGY_REVIEW.md` K3 |
 | Conformal ızgara ve etkisi | `outputs/experiments/<id>/metrics/conformal_{grid,effect,month_stability}.csv` |
-| Conformal geometri seçimi | `outputs/tables/conformal_mode_selection.csv`, `conformal_month_stability_test.csv` (üreten: `scripts/07_conformal_diagnostic.py`) |
+| Conformal geometri seçimi (**geçerli**, §8.10) | `outputs/tables/conformal_mode_selection_validation.csv` (üreten: `scripts/08_conformal_mode_selection.py`; doğrulamada uyarlar, testte üç koşulluyu + oracle'ı puanlar) |
+| Conformal geometri teşhisi (**üstünlendi**, §8.3) | `outputs/tables/conformal_mode_selection.csv`, `conformal_month_stability_test.csv` (üreten: `scripts/07_conformal_diagnostic.py`; testte uyarlayıp testte puanlar — T-8.3) |
