@@ -77,7 +77,7 @@ alanlarıdır; ayrıntı `README.md`'nin konfigürasyon tablosunda.
 | **doğruluk** | `ABLATION_FULL`: $B=8$, $T=100$, `max_epochs=200`, `early_stop_patience=15`<br>`ABLATION_B1`: $B=1$, $T=100$, `max_epochs=100`, `early_stop_patience=15` | `configs/experiment_grid.py` |
 | **kapsam** | beş il havuzlanmış (`training_scope="global"`, `excluded_cities=[]`) | §13.1 |
 | **gece** | `clamp_night_to_zero=True` | §11.3 |
-| **tekrarlanabilirlik** | CPU'da bit-birebir; **MPS'te değil** — havuzlanmışta ±%0,5, il bazında ±%1,5 (§1.10) | §13.3 |
+| **tekrarlanabilirlik** | CPU'da bit-birebir; **MPS'te değil** — havuzlanmışta %1,7'ye kadar, MAE'de %2,4, il bazında ±%1,5 (§1.10 + §8.11, 18 tekrar) | §13.3 |
 
 **Bu tabanın altındaki farklar okunamaz.** MPS tekrar yayılımı ölçülmüş bir çözünürlük
 sınırıdır; ondan küçük bir tek-koşu farkı, kaç tohum koşulursa koşulsun bir bulgu değildir.
@@ -116,7 +116,7 @@ hangilerinin **taşındığı varsayılamayacağı** buradan okunur. Sütun "kan
 | §5 | beş il uç nokta ablasyonu | $B{=}8$ | mae | raw | tamam |
 | §6 | hedef dönüşümü | $B{=}8$ | mae | **raw vs kt** | tamam |
 | §7 | transferin formülasyona dayanıklılığı | $B{=}8$ | mae | kt | tamam; §1–§5'i koşullu kılar |
-| §8 | conformal aralık katmanı | **$B{=}8$** | mae | raw **ve** kt | katman kabul edildi; geometri **§8.10'da seçildi** (`city_season_horizon`), kalan sapma aktarım hatası (C-7) |
+| §8 | conformal aralık katmanı | **$B{=}8$** | mae | raw **ve** kt | **tamam.** Geometri §8.10'da seçildi, §8.11'de koşuldu (`city_season_horizon`, 6 kol); kalan sapma aktarım hatası (C-7) |
 
 ## 1. İl havuzlama (cross-city transfer) — Rize transfer eğrisi
 
@@ -573,12 +573,38 @@ koşu havuzlanmış RMSE'de %0,4–0,6, tek il satırında **%1,47** ayrılıyor
 commit'lerde eğitim yolunu değiştiren bir şey yok, yani bu arka uç kaynaklı determinizm
 eksikliğidir.
 
+> **GENİŞLETME (§8.11).** Conformal katmanın üç geometrisi (`none` / `city_season` /
+> `city_season_horizon`) aynı config'i **üçer kez** koşturdu: `conformal_mode` eğitimi ve test MC
+> geçişlerini etkilemez (`set_seed(seed_base + b)` her replikanın başında; kalibrasyon geçişi
+> döngüden **sonra**), dolayısıyla altı (kol, tohum) üçlüsü **18 gerçek tekrar** demektir — bu
+> tabanın en büyük kümesi. Ölçülen üçlük-içi aralık, gündüz `Aggregate`:
+>
+> | | ortalama | en büyük |
+> | --- | ---: | ---: |
+> | RMSE | %0,91 | **%1,68** (kt s42) |
+> | MAE | %1,17 | **%2,38** (kt s42) |
+>
+> **Havuzlanmış taban ±%0,5 değil, %1,7'ye kadardır** — yukarıdaki tablo bu tabanı olduğundan
+> dar gösteriyordu, çünkü yalnızca dört çift içeriyordu. **Mekanizma da belirlendi ve önemsiz
+> değil:** epok sayıları ayrışıyor. Aynı config'in üç koşusunda sekiz replikanın toplam epoku
+> `kt`'de 42–59, `raw`'da 16–25 epok farklı çıkıyor (176–334 üzerinden). MPS'in küçük sayısal
+> farkları doğrudan RMSE'ye sızmıyor; **erken durdurmanın hangi epokta tetiklendiğini kaydırıyor**
+> ve fark oradan büyüyor. Yani gürültü sürekli değil, **ayrık bir karar üzerinden yükseltilmiş**
+> bir gürültüdür — `kt` daha uzun eğitildiği için daha çok etkileniyor.
+>
+> Sonuç, §5'in uç nokta ablasyonu için doğrudan geçerlidir: oradaki etkiler %0,5–2,3 aralığında,
+> yani **tek koşu çiftinden okunamaz**. Çok tohumlu eşleştirilmiş testler geçerli kalır (gürültü
+> bağımsızdır ve raporlanan tohum s.s.'leri onu zaten içerir), ama tek bir çift asla kanıt
+> değildir. §8.11 bundan bir ölçüm aleti çıkarıyor: conformal katman ortalamayı değiştirmediği
+> için, bir conformal kolu ile ikizi arasındaki **RMSE farkı saf gürültüdür** ve aynı çiftteki
+> her başka farkın tabanını verir — bir **null kanal**.
+
 **Sonuçları, önem sırasıyla:**
 
 1. **`main_methodology.md` §13.3'ün determinizm iddiası yalnızca CPU'yu kapsar.** 126 ledger
    satırının 107'si MPS'tir. Makalede "tohum sabitlendi, sonuçlar tekrarlanabilir" cümlesi bu
    hâliyle yanlış olur; doğru cümle **"CPU'da bit-birebir; MPS'te sabit tohumda havuzlanmış
-   metriklerde ±%0,5, il bazında ±%1,5"**tir.
+   metriklerde %1,7'ye kadar (MAE'de %2,4), il bazında ±%1,5"**tir (§8.11 ölçümüyle güncellendi).
 2. **§1.11'in cihaz eşdeğerliği hükmü geçersizdir** — aşağıda.
 3. **Tek koşu farkları okunamaz.** Bu, ölçülmüş bir çözünürlük alt sınırıdır: bu tabanın
    altındaki bir fark, kaç tohum koşulursa koşulsun tek bir koşu çiftinden okunamaz.
@@ -739,7 +765,7 @@ R² 0,887–0,891 — iklimsel ortalama tabanının (106,86 / 0,8565) **%12 alt�
 - **T-1 (kapandı).** Eğri artık Aşama 1'in seçtiği kriterle koşuyor.
 - **T-9 (kapandı).** §2.5.
 - **T-12 (yeni, GÜNCELLENDİ).** Bu 18 kol MPS'te, §1'in 12 kolu CPU'da koştu. §1.10'un
-  ölçümüne göre **MPS determinist değildir** (havuzlanmışta ±%0,5, il bazında ±%1,5), ve
+  ölçümüne göre **MPS determinist değildir** (havuzlanmışta %1,7'ye kadar, il bazında ±%1,5), ve
   §1.11'in CPU↔MPS eşdeğerlik hükmü geri çekilmiştir — o fark bu gürültünün altında kalır.
   Bölümler arası tek-koşu karşılaştırması bu nedenle yapılamaz; çok tohumlu eşleştirilmiş
   testler geçerliliğini korur. *(Eski gerekçe — geri çekildi:* ~~nokta metrikleri arka uçtan
@@ -2338,6 +2364,97 @@ Yeniden koşum yine de gereklidir, ama **keşif için değil, yapıt için**: le
 `results_summary.csv` / `conformal_effect.csv`, şekiller ve **CRPS** — sonuncusu havuzlanmış $S$
 örneğini gerektirir, bu betik ise yalnız özetleri okur (T-8.6). Bilimsel cevap elde olduğu için
 ~5,8 saatlik koşum **risksizdir**: ne çıkacağı biliniyor.
+
+### 8.11 Seçilen ızgara koşuldu — öngörü tuttu, C-10…C-12
+
+Altı kol, `abl_conformal_csh_{raw,kt}_s{42,43,44}_full`, $B{=}8 \times T{=}100$, mod
+`city_season_horizon`, hepsi `hit_max_epochs=0`, mps, toplam 5,1 saat. Izgara her kolda
+**480 hücre, geri düşen hücre yok, en küçük hücre 276 kalibrasyon elemanı** — §8.10'un
+uygulanabilirlik öngörüsü aynen gerçekleşti.
+
+**§8.10 bir ön-kayıtlı öngörüydü ve tuttu.** Mod, *eski* koşuların npz'lerinden seçilmişti;
+yeni koşular bağımsız eğitimlerdir ve MPS determinist değildir, yani öngörünün tutması
+gerekmiyordu:
+
+| | §8.10 öngörüsü | ölçülen (3 tohum) |
+| --- | ---: | ---: |
+| `raw` agregat CP | 0,9409 | **0,9409 ± 0,0001** |
+| `kt` agregat CP | 0,9413 | **0,9418 ± 0,0006** |
+| `raw` ufuk yayılımı | 0,0072 | **0,0070** |
+| `kt` ufuk yayılımı | 0,0115 | **0,0117** |
+
+#### C-10 — ufuk koşullusu düzeldi, ve C-9 replike oldu
+
+Koşu içi `conformal_effect.csv`, gündüz, 24 adımın kapsama yayılımı (max − min):
+
+| kol | düzeltilmemiş | `city_season` | **`city_season_horizon`** |
+| --- | ---: | ---: | ---: |
+| `raw` | 0,0418 | 0,0558 | **0,0070** |
+| `kt` | 0,0548 | 0,0517 | **0,0117** |
+
+`raw` s42, adım adım: düzeltilmemiş $0{,}9947 \to 0{,}9532$; `city_season` $0{,}9651 \to 0{,}9120$;
+`city_season_horizon` $0{,}9435 \to 0{,}9370$ — **neredeyse düz**. En kötü adım sapması `raw`'da
+0,0395 → 0,0124, `kt`'de 0,0313 → 0,0138.
+
+**C-9 bağımsız koşularda doğrulandı:** `raw`'da ufuk ekseni olmayan ızgara yayılımı 0,0418'den
+0,0558'e **büyütüyor**. Bu artık tek bir koşu kümesinin özelliği değil.
+
+#### C-11 — işaret heterojenliği hücre düzeyinde, ve **iki kolda da**
+
+C-2 il düzeyinde ölçülmüştü. 480 hücrede:
+
+| kol | daraltan hücre | genişleten hücre | $k$ aralığı |
+| --- | ---: | ---: | --- |
+| `raw` | 424 | **56** | 0,659–1,434 |
+| `kt` | 167 | 313 | 0,718–1,548 |
+
+(hücre sayıları üç tohumun ortalaması: `raw` 433/413/425 daraltan, `kt` 149/169/182.)
+
+Toplulaştırılmış olarak %17 **daralan** bir kolda hücrelerin **%12'si genişletme istiyor**, ve
+toplulaştırılmış olarak genişleyen kolda **%35'i daraltma**. Skaler bir çarpanın —
+hatta tek eksenli bir ızgaranın — veremeyeceği davranış, ve C-2'nin bugüne kadarki en güçlü hâli.
+
+#### C-12 — kalan sapma C-7'nin dediği yerde kaldı
+
+Gündüz, il başına $CP$, 3 tohum:
+
+| il | `raw` düzeltilmemiş | `raw` `city_season` | **`raw` csh** | **`kt` csh** |
+| --- | ---: | ---: | ---: | ---: |
+| Ankara | 0,9847 | 0,9443 | 0,9453 | 0,9381 |
+| Antalya | 0,9840 | 0,9409 | 0,9416 | 0,9412 |
+| Konya | 0,9812 | 0,9455 | 0,9441 | 0,9382 |
+| **Rize** | 0,9518 | 0,9490 | **0,9496** | **0,9500** |
+| **Van** | 0,9829 | 0,9223 | **0,9240** | 0,9416 |
+
+Van `raw`'da 0,9223'ten 0,9240'a kıpırdadı, yani **üç eksenli ızgara onu düzeltmedi** — C-7 tam
+olarak bunu öngörmüştü: Van'ın sapması geometrik değil aktarım kaynaklıdır ve hiçbir ızgara
+kapatamaz. Buna karşılık **Rize iki kolda da nominale oturuyor** (0,9496 / 0,9500), ki makalenin
+en çok önemsediği il odur. CWC `kt` Rize'de 3,00 → 0,71.
+
+#### CRPS — `raw`'da ölçülebildi, `kt`'de ölçülemedi
+
+CRPS koşu içi etki tablosunda yoktur (T-8.6), yani yalnızca çapraz-koşu okunabilir — ve MPS
+gürültüsüne tabidir. **Gürültü ölçüsü hazır: RMSE.** Conformal katman ortalamayı tanım gereği
+değiştirmediği için, bir conformal kolu ile düzeltilmemiş ikizi arasındaki RMSE farkı **saf
+arka uç gürültüsüdür**; aynı çiftte ölçülen bu fark, aynı çiftteki her başka farkın gürültü
+tabanıdır. Bu, değişmezliği bir **null kanala** çeviren ve makalede kullanılması gereken bir
+kontroldür.
+
+| kol | ΔCRPS % (3 tohum) | $p$ | **ΔRMSE % (null kanal)** | $p$ | etki/gürültü |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `raw` | **−3,71** | **0,001** | −0,06 | 0,795 | **14,9×** |
+| `kt` | −0,32 | 0,426 | −0,84 | 0,205 | 0,4× |
+
+`raw`'da CRPS kazancı gürültünün 15 katı ve 3/3 tohumda tutarlı. **`kt`'de gürültü etkiden
+büyüktür: o kolun CRPS'i bu tasarımla ölçülemez** ve öyle raporlanmalıdır. MPIW ise iki kolda da
+gürültünün çok üstünde (−%17,2 ve +%4,9) ve koşu içi tabloyla (−%17,3, +%5,0) uyuşuyor.
+
+#### Hüküm
+
+**Katman, seçilen ızgarayla makaleye girer.** İki eksende düzeltiyor (il ve ufuk), üçüncüsü
+(mevsim) aktarım hatasını azaltıyor, nokta doğruluğu tanım gereği değişmiyor. Kalan iki sapma
+C-7'nin adresinde: agregat 0,941 (nominal değil) ve Van 0,924. İkisi de **kalibrasyon kümesinin**
+özelliğidir; sıradaki adım jackknife+-after-bootstrap'tır, daha zengin bir ızgara değil.
 
 ---
 
