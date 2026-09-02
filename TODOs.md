@@ -10,22 +10,24 @@ Yalın liste. Gerekçe ve sayılar burada **tekrarlanmaz**, kaynak dosya göster
 ## 1. Kritik yol — makale sayıları buna bağlı
 
 - [x] ~~**Conformal aralık katmanı — kod.**~~ `conformal.py`, `conformal_mode` ekseni + ledger
-      sütunu, varsayılan `"none"`. Izgara **`city_season`** (il × mevsim), §6.5'in önerdiği
-      il × ufuk **değil**: ufuk ekseni ölçüldü ve null çıktı. → `ABLATION.md` §8,
-      `main_methodology.md` §11.6
+      sütunu, varsayılan `"none"`. Koşulan ızgara **`city_season`** idi; "ufuk ekseni null"
+      hükmü **geri çekildi** (§8.9, C-1) ve §8.10 `city_season_horizon`'u seçti.
+      → `ABLATION.md` §8, `main_methodology.md` §11.6
 - [x] ~~**`conformal` grubunu koş**~~ 6 kol tamam. Gündüz agregat $|CP-0{,}95|$: `raw`
       0,0267 → 0,0096, `kt` 0,0220 → 0,0096; iki kol zıt yönlerde düzeltiliyor. → `ABLATION.md` §8.5
-- [ ] **Mac'te `scripts/08_conformal_mode_selection.py` koş** (saniyeler, yeniden eğitim yok).
-      Izgarayı **doğrulama** bölmesinde uyarlayıp test üzerinde üç koşulluyu puanlar (T-8.3'ü
-      kapatır) ve **oracle** sütunuyla kalan 1 puanlık eksik kapsamayı "yanlış ızgara" ile
-      "kalibrasyon aktarım hatası" arasında ayrıştırır (T-8.7).
-- [ ] **`conformal` grubunu doğru modda yeniden koş** (~5,8 sa, **yeni id'ler**). Koşulan
-      `city_season` ufuk eksenini kaçırıyor: düzeltme sonrası kapsama ufuk boyunca 5,6 puan
-      yayılıyor. → `ABLATION.md` §8.9 (C-1 geri çekildi, C-6). Modu 08'in çıktısı belirler;
-      adaylar `city_horizon` ve `city_season_horizon`.
-- [ ] Opsiyonel: **`conformal_grid`** (5 kol, ~4,0 sa) geometri ablasyonunu $B{=}8$'de doğrudan
-      verir ve §8.6'nın açık bıraktığı "mevsim ekseni tam doğrulukta ne kadar taşıyor" sorusunu
-      kapatır ($k$ salınımı $B{=}1$/test'te 1,67–2,51×, $B{=}8$/doğrulamada 1,18–1,32×).
+- [x] ~~**`scripts/08_conformal_mode_selection.py` koş**~~ altı $B{=}8$ kolunda koşuldu. T-8.3 ve
+      T-8.7 **kapandı**. Seçim **`city_season_horizon`**. Üç bulgu → `ABLATION.md` §8.10:
+      **C-7** agregat sapmanın tamamı kalibrasyon aktarım hatası (ızgarayla kapatılamaz);
+      **C-8** mevsim ekseninin işi koşullu kapsama değil aktarım hatasını azaltmak (−%30);
+      **C-9** `raw`'da koşulan düzeltme ufuk koşullusunu bozdu (yayılım 0,0414 → 0,0558).
+- [ ] **`conformal` grubunu `city_season_horizon` modunda yeniden koş** (~5,8 sa, **yeni grup +
+      yeni id'ler**; mevcut `conformal` grubu `city_season` modunda ve id'leri kullanılmış).
+      **Keşif değil yapıt:** ne çıkacağını §8.10 ölçtü — manşet kapsama pratikte değişmez
+      (0,9404 → ~0,941, C-7), ufuk yayılımı `raw`'da 0,0558 → 0,0072 / `kt`'de 0,0517 → 0,0115.
+      Koşum ledger satırlarını, `conformal_effect.csv`'yi, şekilleri ve **CRPS**'i üretir —
+      sonuncusu havuzlanmış $S$ örneğini gerektirdiği için betikten alınamaz (T-8.6).
+- [ ] ~~Opsiyonel: `conformal_grid` (5 kol, ~4,0 sa)~~ — **gereksizleşti.** §8.10 mevsim ekseninin
+      $B{=}8$'deki ağırlığını doğrudan ölçtü (C-8); grubun cevaplayacağı soru buydu.
 - [ ] **Manşet formülasyon kararı: `raw` mı `kt` mi?** `kt` doğrulukta %9–13 önde ve MAE eşiğini
       geçiyor; ama transfer iddiası `kt` altında net kazanç vermiyor, yeniden dağıtıma dönüşüyor.
       → `ABLATION.md` §6, §7, ve §7.8'in üç seçeneği
