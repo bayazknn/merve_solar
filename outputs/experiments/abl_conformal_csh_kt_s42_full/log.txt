@@ -1,0 +1,22 @@
+device=mps
+training_scope=global model_family=lstm
+loss_function=mae
+active_cities=['Ankara', 'Antalya', 'Konya', 'Rize', 'Van'] excluded=[]
+train_end=2024-06-27 19:00:00 val_end=2025-03-26 01:00:00
+test daylight elements: 546130 of 1059720
+train: 218745 windows
+val: 32315 windows
+test: 44155 windows
+replica 0: best_val_loss=0.2774 best_epoch=21 last_val_loss=0.2874 epochs=37
+replica 1: best_val_loss=0.2811 best_epoch=8 last_val_loss=0.2904 epochs=24
+replica 2: best_val_loss=0.2813 best_epoch=18 last_val_loss=0.2900 epochs=34
+replica 3: best_val_loss=0.2868 best_epoch=5 last_val_loss=0.2937 epochs=21
+replica 4: best_val_loss=0.2809 best_epoch=10 last_val_loss=0.2836 epochs=26
+replica 5: best_val_loss=0.2784 best_epoch=21 last_val_loss=0.2850 epochs=37
+replica 6: best_val_loss=0.2831 best_epoch=9 last_val_loss=0.2862 epochs=25
+replica 7: best_val_loss=0.2778 best_epoch=12 last_val_loss=0.2874 epochs=28
+calibration pass: 32315 validation windows x 800 pooled predictions
+target_transform=clearsky_index
+clamped 513590 night elements to zero
+conformal_mode=city_season_horizon alpha=0.050000000000000044 pooled_k=1.0381 (n=379475) daylight k in [0.7180, 1.5479] mean 1.0645; 0 calibration elements dropped for a degenerate half-width
+total_training_time_sec=3135.6
