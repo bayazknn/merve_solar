@@ -20,12 +20,16 @@ Yalın liste. Gerekçe ve sayılar burada **tekrarlanmaz**, kaynak dosya göster
       **C-7** agregat sapmanın tamamı kalibrasyon aktarım hatası (ızgarayla kapatılamaz);
       **C-8** mevsim ekseninin işi koşullu kapsama değil aktarım hatasını azaltmak (−%30);
       **C-9** `raw`'da koşulan düzeltme ufuk koşullusunu bozdu (yayılım 0,0414 → 0,0558).
-- [ ] **`conformal` grubunu `city_season_horizon` modunda yeniden koş** (~5,8 sa, **yeni grup +
-      yeni id'ler**; mevcut `conformal` grubu `city_season` modunda ve id'leri kullanılmış).
-      **Keşif değil yapıt:** ne çıkacağını §8.10 ölçtü — manşet kapsama pratikte değişmez
-      (0,9404 → ~0,941, C-7), ufuk yayılımı `raw`'da 0,0558 → 0,0072 / `kt`'de 0,0517 → 0,0115.
-      Koşum ledger satırlarını, `conformal_effect.csv`'yi, şekilleri ve **CRPS**'i üretir —
-      sonuncusu havuzlanmış $S$ örneğini gerektirdiği için betikten alınamaz (T-8.6).
+- [x] ~~**`conformal_csh` grubunu koş**~~ 6 kol tamam, `city_season_horizon`, 5,1 sa.
+      **§8.10'un ön-kayıtlı öngörüsü tuttu** (agregat CP öngörü 0,9409 → ölçülen 0,9409; ufuk
+      yayılımı öngörü 0,0072 → ölçülen 0,0070). Ufuk yayılımı `raw` 0,0558 → **0,0070**, `kt`
+      0,0517 → **0,0117**; Rize iki kolda da nominalde (0,9496/0,9500). → `ABLATION.md` §8.11,
+      C-10/C-11/C-12. **Conformal katman kapandı.**
+- [ ] **Jackknife+-after-bootstrap** — C-7'nin işaret ettiği tek kaldıraç. Kalan sapma (agregat
+      0,941; Van `raw` 0,924) tamamen kalibrasyon aktarım hatasıdır ve ızgarayla kapatılamaz;
+      torba-dışı pencereler kalibrasyon kümesini beş yıllık eğitim dönemine taşır ve mevsimsel
+      deliği kapatır. Tasarım kararı gerektirir: tek-replika aralığını kalibre eder, topluluk
+      aralığını değil.
 - [ ] ~~Opsiyonel: `conformal_grid` (5 kol, ~4,0 sa)~~ — **gereksizleşti.** §8.10 mevsim ekseninin
       $B{=}8$'deki ağırlığını doğrudan ölçtü (C-8); grubun cevaplayacağı soru buydu.
 - [ ] **Manşet formülasyon kararı: `raw` mı `kt` mi?** `kt` doğrulukta %9–13 önde ve MAE eşiğini
