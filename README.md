@@ -111,8 +111,8 @@ per-variable scatter plots against irradiance, monthly box plots, the 3-D
 month × year × irradiance surface (plus its 2-D anomaly companion), the two
 seasonal views, clearness-index and ramp statistics, autocorrelation of the
 clearness index, and a naive forecast floor. Figure and table labels are in
-Turkish. This reads the cached parquet only; it does not touch any
-experiment.
+English, matching the manuscript. This reads the cached parquet only; it does
+not touch any experiment.
 
 Two documents come with the outputs:
 
@@ -132,7 +132,7 @@ makes winter look *less* variable than summer, which is backwards. And the
 hourly clock is NASA POWER's **per-site Local Solar Time**, so hours are never
 compared across cities. Figures and tables name variables by their raw NASA
 POWER column (`T2M`, `RH2M`, …) with the unit in parentheses, so an axis can be
-matched to the dataset documentation; the surrounding prose stays Turkish.
+matched to the dataset documentation; the rest of the figure furniture is English.
 
 ### 3. Run a single experiment
 

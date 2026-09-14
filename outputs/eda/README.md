@@ -1,256 +1,285 @@
-# Betimsel istatistik çıktıları (EDA) — nasıl üretildi
+# Descriptive-statistics outputs (EDA) — how they were produced
 
-Bu belge `outputs/eda/` altındaki her çıktının **nasıl** üretildiğini, hangi veriyi
-kapsadığını ve hangi tuzaklara karşı hangi kararın alındığını anlatır.
+This document records **how** each output under `outputs/eda/` was produced, what data it
+covers, and which decision was taken against which pitfall.
 
-**Bulguların ne anlama geldiği bu belgede değil, yanındaki `EDA.md`'dedir.** İkisi
-bilinçli olarak ayrılmıştır: önceki turda bulgu anlatısı iki belgede birden tutuluyordu ve
-sonuç, CSV dosyalarıyla README arasında **15 ayrı tutarsızlık** oldu. Artık sayı yorumu tek
-bir yerde (EDA.md), üretim yöntemi tek bir yerde (burada). Her ikisinde de bir sayı ile
-`tables/` altındaki dosya çelişirse **dosya esastır**.
+**What the findings mean is not here; it is in `EDA.md` next to it.** The two are deliberately
+separated: in an earlier round the findings narrative was kept in both documents and the result
+was **15 separate inconsistencies** between the README and the CSV files. Interpretation now
+lives in one place (`EDA.md`), production method in one place (here). In either document, if a
+number and a file under `tables/` disagree, **the file wins**.
 
-Yeniden üretmek için:
+To reproduce:
 
 ```bash
-uv run python scripts/01_prepare_base_data.py     # base_features.parquet (bir kez)
-uv run python scripts/02_descriptive_analysis.py  # tüm tablolar ve figürler
+uv run python scripts/01_prepare_base_data.py     # base_features.parquet (once)
+uv run python scripts/02_descriptive_analysis.py  # every table and figure
 ```
 
-## Girdi
+## Input
 
 | | |
 |---|---|
-| Kaynak dosya | `SolarData_Merve(140926_V2).xlsx` (14 Eylül 2026, V2) — **deponun tek veri dosyası** |
-| Ara ürün | `outputs/processed/base_features.parquet` |
-| Kapsam | 2019-06-30 00:00 → 2026-05-30 23:00 |
-| İl başına satır | 60.648 kesintisiz saatlik satır (2.527 gün) |
-| Havuzlanmış | 303.240 satır; gündüz alt kümesi **152.893** (%50.42) |
-| Öznitelik | 13 |
+| Source file | `SolarData_Merve(140926_V2).xlsx` (14 September 2026, V2) — **the repository's only data file** |
+| Intermediate | `outputs/processed/base_features.parquet` |
+| Span | 2019-06-30 00:00 → 2026-05-30 23:00 |
+| Rows per province | 60,648 uninterrupted hourly rows (2,527 days) |
+| Pooled | 303,240 rows; daylight subset **152,893** (50.42%) |
+| Features | 13 |
 
-**Bu dosya 16 Temmuz sürümünden farklı ayarlarla alınmıştır** — birimler, parametre seçimi ve
-kayıt uzunluğu değişti, `CLRSKY_SFC_SW_DWN` artık yok, ve V2 ile 10 m rüzgâr da çıkarıldı. Hepsinin ayrıntısı `EDA.md` §0'dadır;
-okumadan buradaki hiçbir sayı eskisiyle kıyaslanmamalıdır.
+**This file was taken with different settings from the July export** — units, parameter
+selection and record length all changed, `CLRSKY_SFC_SW_DWN` is gone, and V2 additionally
+dropped the 10 m wind. The full account is in `EDA.md` §0; no number here should be compared
+with an earlier version without reading it.
 
-**Berrak gökyüzü sütununun yerini güneş geometrisi aldı** (`src/merve_solar/solar.py`). Depoda
-başka hiçbir veri dosyası yoktur; her şey bu excelden ve astronomiden türer.
+**Solar geometry replaced the clear-sky column** (`src/merve_solar/solar.py`). There is no other
+data file in the repository; everything derives from this Excel file and from astronomy.
 
-- `solar_elevation` — her saatin orta noktasındaki görünür güneş yüksekliği (derece), il
-  koordinatlarından ve zaman damgasından NREL algoritmasıyla. `> 0` gündüz demektir ve
-  `clamp_night_to_zero` bunun işaretine bakar.
-- `toa_horizontal` — atmosfer üstü yatay ışınım (W/m²), berraklık indeksinin paydası.
+- `solar_elevation` — apparent solar elevation at each hour's midpoint (degrees), computed from
+  the province coordinates and the timestamp with the NREL algorithm. `> 0` means daylight, and
+  `clamp_night_to_zero` acts on the same sign.
+- `toa_horizontal` — top-of-atmosphere horizontal irradiance (W/m²), the denominator of the
+  clearness index.
 
-İkisi de frame'de **maske** olarak durur, modele asla öznitelik olarak girmez.
-
----
-
-## Makaleye yazarken dikkat edilecek yedi yöntem noktası
-
-**1. "Gündüz" hesaplanmış güneş yüksekliğiyle tanımlıdır: `solar_elevation > 0`.** Saatin orta
-noktasında güneşin ufkun üzerinde olması. Yalnız (il, zaman damgası) fonksiyonudur; hiçbir
-ölçümü, özellikle hedefi okumaz.
-
-İki alternatif denendi, ikisi de reddedildi:
-
-- *`ışınım > 0` değer eşiği.* Bu veride 303.240 satırın 303.204'ünde aynı sonucu verir, yine de
-  kabul edilemez: (a) başlık metriklerinin paydasını sonuca göre seçer — bulutlu bir
-  alacakaranlık saati sıfır okur ve modelin en kötü olduğu yerden elenir; (b) **24 saat ilerisi
-  için hesaplanamaz**, oysa `clamp_night_to_zero` tam da orada karar vermek zorundadır. İkinci
-  madde belirleyicidir: geometriye zaten mecburuz, ve elde geometri varken metrik için başka
-  bir tanım kullanmak tutarsızlık olur. Gerekçenin tamamı `solar.py`'nin başındadır.
-- *Klimatolojik (il, ay, saat) hücre ortalaması > 0* ilk EDA turunda kullanıldı ve **çok kaba
-  olduğu için hatalıydı** — ayrıntı en alttaki *Düzeltme kaydı*'nda.
-
-**Eşik ayarlanmamıştır.** Tarayınca hedefe daha iyi uyan bir değer bulunabiliyor (−2.0°,
-uyumsuzluğu 3.034'ten 587 satıra düşürüyor), ama geometrik bir maskeyi hedefe göre ayarlamak
-maskenin var olma nedenini ortadan kaldırır. Bedeli ölçüldü: klimatoloji zemini gündüz RMSE
-108.78 → 109.86.
-
-**2. Aylık kutu grafiği saatlik değil, günlük toplam üzerindendir.** Gündüz *saatlik*
-değerlerle çizilen bir kutunun genişliğinin büyük kısmı gün içi güneş geometrisidir ve
-kışın kutu daralır — okuyucu "kış daha stabil" sonucuna varır. Gerçek tersidir (bkz.
-`EDA.md` §3.4). Günlük toplam ayrıca gündüz filtresinden bağımsızdır, çünkü gece tam 0
-katar.
-
-**3. Saat ekseni il-bazlı yerel güneş saatidir (LST), ortak bir saat dilimi değil.**
-Doğrulaması ve sonuçları `EDA.md` §2.1'de. Pratik kurallar:
-
-- `HR=11` Rize'de ve Ankara'da farklı fiziksel andır; **saatler iller arasında
-  karşılaştırılmaz**, her il kendi paneline bakılır.
-- Saat etiketi ilgili saat aralığının **başlangıcıdır**; figürlerde aralık ortasına
-  (`HR + 0.5`) çizilir.
-- Eksenler "yerel saat (LST)" olarak etiketlenir.
-
-**4. p-değeri ve anlamlılık yıldızı bilinçli olarak yoktur.** n ≈ 156.000 otokorelasyonlu
-saatlik satırda her |r| > 0.01 "p < 0.001" çıkar; etkin örneklem büyüklüğü bunun kat kat
-altındadır. Anlamlılık yerine etki büyüklüğü ve `partial_r_within_hour` raporlanır.
-
-**5. Kısmi korelasyon (`partial_r_within_hour`) ham korelasyondan önce okunmalıdır.**
-(İl, ay, saat) hücre ortalaması çıkarıldıktan sonraki korelasyondur; hava sinyalini güneş
-geometrisinden ayırır. Fark yalnız büyük değil, **işaret değiştirecek kadar** büyüktür
-(`EDA.md` §6.1).
-
-**6. Değişken adları ham sütun adlarıdır, çeviri değil.** Figür eksenleri ve tablo satırları
-`ALLSKY_SFC_SW_DWN`, `T2M`, `RH2M`, … der; birim parantez içinde durur. Gerekçe: okuyucunun bir
-eksen etiketini NASA POWER dokümantasyonuyla ve yöntem bölümündeki öznitelik listesiyle birebir
-eşleştirebilmesi gerekir, Türkçe bir gloss bu zinciri koparır. Başlıklar, açıklamalar, mevsim
-adları ve tablo sütun başlıkları Türkçe kalır. Eşleme `paper_style.VARIABLE_LABELS` (birimli) ve
-`VARIABLE_SHORT` (çıplak) içindedir; betimsel tablolardaki sütunun adı `variable_label`'dır.
-
-**7. Kısmi yıllar 3B yüzeye girmez.** 2019 (30 Haziran'da başlıyor) ve 2026 (30 Mayıs'ta
-bitiyor) kısmidir; `month_year_surface_*` ve `month_year_anomaly_panel` yalnız tam takvim
-yıllarını (2020–2025) kullanır.
+Both sit in the frame as **masks** and never enter the model as features.
 
 ---
 
-## Tablolar (`tables/`)
+## Seven method points to keep in mind when writing the paper
 
-**Kapsam kuralı: bir istisna dışında her tablo verinin tamamını kullanır** — 2019-06-30 →
-2026-05-30, il başına 60.648 saat / 2.527 gün, havuzlanmış 303.240 satır (gündüz alt kümesi
-152.893). Tek istisna `monthly_target_stats.csv`'dir: son 12 ayın kutu grafiğinin verisidir
-ve bilerek 2025-06 → 2026-05 ile sınırlıdır. Figürlerde iki istisna vardır:
-`monthly_boxplot_last12m_*` (son 12 ay) ve `month_year_surface_*` /
-`month_year_anomaly_panel` (yalnız 2020–2025).
+**1. "Daylight" is defined by computed solar elevation: `solar_elevation > 0`,** taken at the
+midpoint of the hour. It is a function of (province, timestamp) only; it reads no measurement,
+and in particular not the target.
 
-| Dosya | İçerik | Kapsam |
-|---|---|---|
-| `descriptive_stats_by_city_daylight.csv/.md/.tex` | **Birincil tablo.** Gündüz saatleri, il bazında + havuzlanmış. | tam veri (gündüz, n = 152.893) |
-| `descriptive_stats_by_city_24h.csv/.md/.tex` | Aynı tablo 24 saat üzerinden — modelin eğitildiği dağılım budur. | tam veri (n = 303.240) |
-| `temporal_coverage_by_city.csv` | Kapsam, saat/gün sayısı, gündüz payı, mevsime göre ortalama günlük gündüz süresi, hedefin mevsimsel özetleri. | tam veri |
-| `target_by_hour_by_city.csv` | Hedefin (il, mevsim, LST saati) dağılımı — günlük profil figürünün verisi. | tam veri |
-| `time_feature_explained_variance.csv` | Saat ve yılın günü için η² ve harmonik R². Sin/cos sütunlarına karşı Pearson *r* yerine bu raporlanır: deterministik bir saat fonksiyonuna karşı korelasyon yorumlanamaz. | tam veri (hem 24 saat hem gündüz) |
-| `wind_direction_circular_stats.csv` | Rüzgâr yönü dairesel istatistiği (aşağıda). | tam veri (24 saat, hız > 1 m/s) |
-| `correlation_pearson_<il>.csv`, `correlation_spearman_<il>.csv`, `..._pooled.csv` | 7 fiziksel değişkenin korelasyon matrisleri. | tam veri (gündüz) |
-| `target_correlation_by_city.csv` | Hedefle ham korelasyon + `partial_r_within_hour`. | tam veri (gündüz) |
-| `collinear_pairs.csv` | \|r\| > 0.9 çiftler. **V2'den beri boştur** (tek böyle çift `WS2M`–`WS10M` idi); boş bir tablo burada bir sonuçtur, hata değil, ve başlık satırı korunur. | tam veri (gündüz) |
-| `seasonal_target_stats.csv` | Mevsim bazında saatlik ve günlük toplam özetleri. | tam veri (2.527 gün/il) |
-| `daily_clearness_by_city.csv` | **Ampirik** berraklık oranı (günlük toplam ÷ aynı yılın-günü için gözlenen 95. persentil) ve açık/kapalı gün payları — illeri enlemden bağımsız kıyaslar. | tam veri (2.525 gün/il; 29 Şubat'lar hizalama için düşülür) |
-| `monthly_target_stats.csv` | Son 12 ayın günlük toplam özetleri — kutu grafiğinin verisi. | **SADECE 2025-06 → 2026-05** |
-| `clearness_index_by_city.csv` | **Standart** berraklık indeksi kt = GHI / (I₀ cos θz), saatlik ve günlük, il × mevsim. Saatlik değerler `toa_horizontal > 20 W/m²` ile sınırlıdır (alacakaranlıkta bölme patlar). Gökyüzü durumu eşikleri literatürün bantlarıdır: berrak kt > 0.65, kapalı kt < 0.35. | tam veri |
-| `autocorrelation_clearness.csv` | kt'nin ACF ve PACF'i, saatlik (gecikme 1–72) ve günlük (1–30). `lookback_hours` kararının dayanağı. | tam veri |
-| `ramp_stats_by_city.csv` | Saatlik \|ΔIşınım\| ve \|Δkt\| dağılımı, il × mevsim. | tam veri (gündüz) |
-| `daylight_block_structure.csv` | Gece satırları silinseydi oluşacak kesintisiz blok uzunlukları. | tam veri (gündüz) |
-| `persistence_baseline.csv` | Referans zemin: kalıcılık ve klimatoloji için RMSE/MAE/R²/yanlılık. Akıllı kalıcılık kaldırıldı (`EDA.md` §0.3). Bu tablo betimsel bir ikizdir; makaleye girecek sayılar `scripts/03_run_naive_baselines.py`'nin boru hattından geçen çıktısıdır ve payda farkı yüzünden birkaç ondalık ayrışır. | **modelin test penceresi** (val_end sonrası, 9.097 saat/il) |
+Two alternatives were tried and rejected:
 
-Üç okuma notu:
+- *A `target > 0` threshold.* It agrees with the geometry on 303,204 of 303,240 rows here, and
+  is still inadmissible: (a) it selects the denominator of the headline metrics using the
+  answer — an overcast twilight hour reads zero and drops out exactly where the model is worst;
+  (b) **it cannot be computed 24 h ahead**, which is precisely where `clamp_night_to_zero` has
+  to decide. The second point is decisive: geometry is required regardless, and with geometry in
+  hand a second definition for the metric would be incoherent. The full argument is at the top
+  of `solar.py`.
+- *A climatological (province, month, hour) cell mean > 0* was used in the first EDA round and
+  **was wrong because it is too coarse** — see the *Correction log* at the bottom.
 
-**Basıklık Fisher (fazlalık) tanımıdır** — normal dağılım için 0, 3 değil.
+**The threshold is untuned.** Sweeping it finds a value that fits the target better (−2.0°, which
+cuts disagreement from 3,034 rows to 587), but tuning a geometric mask against the target
+destroys the reason the mask exists. The cost was measured: the climatology floor's daylight
+RMSE moves 108.78 → 109.86.
 
-**Havuzlanmış ("Tümü") satırın standart sapması** iller-içi ve iller-arası varyansın
-karışımıdır; iller-arası bileşen `between_city_sd` sütununda ayrıca verilir.
+**2. Monthly boxplots use daily totals, not hourly values.** Most of the width of a box drawn
+from daylight *hourly* values is the within-day solar geometry, and the box narrows in winter —
+so a reader concludes "winter is more stable". The truth is the opposite (see `EDA.md` §3.4).
+Daily totals are also independent of the daylight filter, since night contributes exactly 0.
 
-**Rüzgâr yönü ana tablodan çıkarılmıştır:** dairesel bir değişkenin aritmetik ortalaması
-anlamsızdır. Ayrı tabloda hız-ağırlıklı dairesel ortalama, bileşke uzunluk *R*
-(0 = yönsüz, 1 = tek yön) ve dairesel SD verilir; ilgili hız sütunu ≤ 1 m/s olan sakin
-saatler dışlanır ve dışlanan saat sayısı tabloda yazılıdır. Yön klimatolojisi gündüzle
-sınırlı değil, 24 saat üzerinden hesaplanır.
+**3. The hour axis is per-province local solar time (LST), not a shared time zone.** Verification
+and consequences are in `EDA.md` §2.1. Practical rules:
 
-## Figürler (`figures/`)
+- Hour 11 is a different physical instant in Rize and in Ankara; **hours are never compared
+  across provinces** — each province is read from its own panel.
+- The hour label is the **start** of its interval; figures plot it at the interval centre
+  (`HR + 0.5`).
+- Axes are labelled "Local solar time (LST)".
 
-Her figür hem `.png` (300 dpi) hem `.pdf` (vektör, Type 42 yazı tipi) olarak yazılır.
-Arka plan her yerde beyazdır; mevsimler renk **ve** çizgi tipiyle ayrışır, böylece
-siyah-beyaz baskıda ve renk körlüğünde kimlik korunur.
+**4. There are deliberately no p-values and no significance stars.** With n ≈ 153,000
+autocorrelated hourly rows every |r| > 0.01 comes out "p < 0.001", while the effective sample
+size is far smaller. Effect sizes and `partial_r_within_hour` are reported instead.
 
-| Dosya | Ne gösterir | Filtre |
-|---|---|---|
-| `correlation_heatmap_<il>`, `_pooled` | 7 değişkenin korelasyon matrisi | gündüz |
-| `target_correlation_panel` | Değişken × il, hedefle korelasyon | gündüz |
-| `scatter_vs_target_<il>` | Her değişkenin hedefe karşı saçılımı + binlenmiş medyan eğrisi | gündüz |
-| `monthly_boxplot_last12m_<il>`, `_panel` | Son 12 ayın günlük toplamları | 24 saat (toplam) |
-| `month_year_surface_<il>`, `_panel` | 3B ay × yıl × ışınım yüzeyi, 2020–2025 | 24 saat (toplam) |
-| `month_year_anomaly_panel` | Aynı verinin 2B anomali görünümü | 24 saat (toplam) |
-| `seasonal_diurnal_profile` | Mevsimlere göre günlük profil, LST saati | **24 saat** |
-| `seasonal_dayofyear` | Yıl içi gün × günlük toplam, mevsim bantlı | 24 saat (toplam) |
-| `target_histogram` | Gündüz ışınımının il bazında dağılımı | gündüz |
-| `monthly_boxplot_all_years` | Ay bazında kutu grafiği, tüm yıllar havuzlanmış | 24 saat (toplam) |
-| `autocorrelation_hourly`, `autocorrelation_daily` | kt'nin ACF/PACF'i, il bazında | gündüz (kt tanımlı saatler) |
-| `ramp_distribution` | \|Saatlik değişim\| birikimli dağılımı, mevsim bazında | gündüz |
-| `persistence_baseline` | Modelin aşması gereken RMSE ve R² zemini | gündüz |
-| `rize_comparison` | Rize'yi diğer dört ile karşı dört eksende toplayan panel | karışık (alt panellerde yazılı) |
+**5. The partial correlation (`partial_r_within_hour`) should be read before the raw one.** It is
+the correlation after removing the (province, month, hour) cell mean, which separates the
+weather signal from solar geometry. The difference is not merely large, it is **large enough to
+flip signs** (`EDA.md` §6.1).
 
-**Saçılım paneli ızgarası öznitelik setinden türetilir.** Ham meteorolojik değişken sayısı iki
-kez değişti (8 → 7 → 6). Izgara artık `RAW_METEO_COLUMNS`'tan hesaplanır: sütun sayısı boş
-hücreyi en aza indirecek biçimde 4 veya 3 seçilir ve artan eksenler kapatılır.
+**6. Variable names are the raw column identifiers, not translations.** Figure axes and table
+rows read `ALLSKY_SFC_SW_DWN`, `T2M`, `RH2M`, … with the unit in parentheses. The reason: a
+reader has to be able to match an axis one-to-one with the NASA POWER documentation and with the
+methods section's feature list, and a gloss breaks that chain. The mapping lives in
+`paper_style.VARIABLE_LABELS` (with unit) and `VARIABLE_SHORT` (bare); in the descriptive tables
+the column is called `variable_label`.
 
-**Günlük profil figüründe gündüz filtresi bilinçli olarak uygulanmaz:** gece sıfırları
-fiziksel bilgidir; filtrelenirse eğri sıfırdan yükselip sıfıra dönmez ve kış sabahı gibi az
-örnekli saatlerde yapay sıçrama oluşur. IQR bandı yalnız Kış ve Yaz için çizilir (dört bant
-üst üste binince okunmaz oluyor) ve **güven aralığı değil, günler arası IQR**'dir.
-
-**3B yüzey tek başına yanıltıcıdır** ve `month_year_anomaly_panel` ile birlikte
-değerlendirilmelidir: yüzeyin kabartmasının büyük kısmı mevsim eğrisinin altı kez
-tekrarıdır; yıllar arası sinyali gerçekten gösteren figür anomali haritasıdır.
-
-`seasonal_dayofyear`'da **29 Şubat düşürülür** ve artık yıllarda Mart'tan sonraki günler bir
-gün geri kaydırılır; aksi hâlde 2020 ve 2024 diğer yıllara göre kayar ve klimatoloji
-bulanıklaşır. Düzleştirme, per-gün klimatolojik ortalamanın 7 günlük merkezli hareketli
-ortalamasıdır ve seri 3× döşenerek hesaplanır, böylece 31 Aralık/1 Ocak dikişinde kopukluk
-olmaz.
-
-## Mevsim tanımı
-
-Meteorolojik mevsimler: **Kış** = Aralık, Ocak, Şubat · **İlkbahar** = Mart, Nisan, Mayıs ·
-**Yaz** = Haziran, Temmuz, Ağustos · **Sonbahar** = Eylül, Ekim, Kasım.
+**7. Partial years do not enter the 3-D surface.** 2019 (starting 30 June) and 2026 (ending
+30 May) are partial; `month_year_surface_*` and `month_year_anomaly_panel` use complete calendar
+years only (2020–2025).
 
 ---
 
-## Düzeltme kaydı
+## Tables (`tables/`)
 
-### 2026-09-14 — veri seti değişti; tüm EDA yeniden üretildi
+**Scope rule: with one exception every table uses the whole record** — 2019-06-30 → 2026-05-30,
+60,648 hours / 2,527 days per province, 303,240 rows pooled (daylight subset 152,893). The one
+exception is `monthly_target_stats.csv`, which is the data behind the last-12-months boxplot and
+is deliberately limited to 2025-06 → 2026-05. Two exceptions exist among the figures:
+`monthly_boxplot_last12m_*` (last 12 months) and `month_year_surface_*` /
+`month_year_anomaly_panel` (2020–2025 only).
 
-Kaynak dosya `SolarData_Merve_All(16July).xlsx` → `SolarData_Merve(140926_V2).xlsx`. Aynı NASA
-POWER kaydı, farklı dışa aktarım ayarları. Üç eksende değişiklik var ve **bu klasördeki
-her sayı yeniden üretilmiştir**; eski sürümden alıntılanmış hiçbir rakam geçerli değildir.
-
-| | Eski | Yeni |
+| File | Contents | Scope |
 |---|---|---|
-| Hedef birimi | W/m² | MJ/m²/saat → okurken W/m²'ye çevriliyor |
-| Yağış birimi | mm/gün | mm/saat |
-| Öznitelik sayısı | 17 | **13** (`QV2M`, 50 m ve 10 m rüzgâr gitti; 2 m rüzgâr geldi) |
-| Gündüz tanımı | `CLRSKY_SFC_SW_DWN > 0` | **`solar_elevation > 0`** (hesaplanmış) |
-| Berraklık indeksi | `ALLSKY / CLRSKY` | **`GHI / (I₀ cos θz)`** (standart tanım) |
-| Kayıt sonu | 2026-03-30 | 2026-05-30 (+61 gün) |
-| İl başına satır | 59.184 | 60.648 |
-| Gündüz satırı / payı | 151.643 / %51.2 | 152.893 / %50.42 |
-| Test penceresi | 8.878 saat / 370 gün | 9.097 saat / 379 gün |
-| Değişken etiketleri | Türkçe ("Sıcaklık, 2 m (°C)") | **ham sütun adı** (`T2M (°C)`) |
-| Naif zemin (gündüz) | klim. 106.8 / kal. 116.4 | klim. **109.86** / kal. **121.56** |
+| `descriptive_stats_by_city_daylight.csv/.md/.tex` | **Primary table.** Daylight hours, per province + pooled. | full record (daylight, n = 152,893) |
+| `descriptive_stats_by_city_24h.csv/.md/.tex` | The same table over 24 hours — this is the distribution the model is trained on. | full record (n = 303,240) |
+| `temporal_coverage_by_city.csv` | Coverage, hour/day counts, daylight share, mean daylight duration by season, seasonal summaries of the target. | full record |
+| `target_by_hour_by_city.csv` | The target's (province, season, LST hour) distribution — the data behind the diurnal-profile figure. | full record |
+| `time_feature_explained_variance.csv` | η² and harmonic R² for hour and day of year. Reported instead of a Pearson *r* against the sin/cos columns, because a correlation against a deterministic function of the hour is not interpretable. | full record (both 24 h and daylight) |
+| `wind_direction_circular_stats.csv` | Circular statistics for wind direction (see below). | full record (24 h, speed > 1 m/s) |
+| `correlation_pearson_<province>.csv`, `correlation_spearman_<province>.csv`, `..._pooled.csv` | Correlation matrices of the 7 physical variables. | full record (daylight) |
+| `target_correlation_by_city.csv` | Raw correlation with the target plus `partial_r_within_hour`. | full record (daylight) |
+| `collinear_pairs.csv` | Pairs with \|r\| > 0.9. **Empty since V2** (the only such pair was `WS2M`–`WS10M`); an empty table is a finding here, not an error, and the header row is preserved. | full record (daylight) |
+| `seasonal_target_stats.csv` | Hourly and daily-total summaries by season. | full record (2,527 days/province) |
+| `daily_clearness_by_city.csv` | **Empirical** clearness ratio (daily total ÷ the observed 95th percentile for that day of year) and clear/overcast day shares — compares provinces on cloudiness rather than latitude. | full record (2,525 days/province; 29 February dropped for alignment) |
+| `monthly_target_stats.csv` | Daily-total summaries for the last 12 months — the boxplot's data. | **2025-06 → 2026-05 ONLY** |
+| `clearness_index_by_city.csv` | **Standard** clearness index kt = GHI / (I₀ cos θz), hourly and daily, province × season. Hourly values are restricted to `toa_horizontal > 20 W/m²` (the division blows up at twilight). Sky-condition cut-offs are the literature's bands for this index: clear kt > 0.65, overcast kt < 0.35. | full record |
+| `autocorrelation_clearness.csv` | ACF and PACF of kt, hourly (lags 1–72) and daily (1–30). The evidence behind `lookback_hours`. | full record |
+| `ramp_stats_by_city.csv` | Distribution of hourly \|Δirradiance\| and \|Δkt\|, province × season. | full record (daylight) |
+| `daylight_block_structure.csv` | Lengths of the uninterrupted blocks that would remain if night rows were deleted. | full record (daylight) |
+| `persistence_baseline.csv` | Reference floor: RMSE/MAE/R²/bias for persistence and climatology. Smart persistence was removed (`EDA.md` §0.3). This table is a descriptive twin; the numbers destined for the paper come from `scripts/03_run_naive_baselines.py`, which runs through the pipeline and therefore differs in the last decimals (it counts scored elements where this counts hours). | **the model's test window** (after val_end, 9,097 hours/province) |
 
-**Eski excel (`SolarData_Merve_All(16July).xlsx`) depodan silinmiştir.** Bir ara sürümde
-`CLRSKY_SFC_SW_DWN` oradan yeniden inşa ediliyordu; o köprü kaldırıldı ve yerini güneş
-geometrisi aldı, böylece proje tek bir veri dosyasına bağlı. Bunun iki bedeli var ve ikisi de
-ölçülerek kabul edildi: gündüz maskesi %1 kayıyor (klimatoloji RMSE 108.78 → 109.86) ve berrak
-gökyüzü **büyüklüğüne** dayanan iki analiz — akıllı kalıcılık referansı ile `clearsky_index`
-hedef dönüşümü — kaldırıldı. Gerekçeler `EDA.md` §0.2 ve §0.3'te.
+Three reading notes:
 
-Ayrıntılı gerekçe, ölçümler ve sonuçları `EDA.md` §0'dadır. Bu turda ayrıca **daha önce
-bu belgede yazılı olan iki ifade düzeltildi**:
+**Kurtosis is Fisher's excess definition** — 0 for a normal distribution, not 3.
 
-1. *"Açık-hava ışınımı saf geometrik bir büyüklüktür."* Ölçüldü ve fazla güçlü bulundu:
-   güneşin konumu sabitken bile NASA POWER'ın değeri yıllar arasında %4–8 geziyor. Yalnız
-   **işareti** geometrikti. Bu artık tarihsel bir not: sütun tamamen kullanımdan kalktı ve
-   yerine gerçekten saf geometri olan hesaplanmış güneş yüksekliği geçti.
-2. *"`PRECTOTCORR`'un birim etiketi şüpheli."* Çözüldü: eski dosya mm/gün, yeni dosya
-   mm/saat. `VARIABLE_LABELS_TR`'deki "mm/saat" etiketi eski veride yanlıştı, yeni veride
-   doğrudur. `EDA.md` §0.1 ve §4.1.
+**The pooled ("All") row's standard deviation** mixes within-province and between-province
+variance; the between-province component is given separately in the `between_city_sd` column.
 
-Önceki turda README ile CSV dosyaları arasında bulunan 15 tutarsızlık, bulgu anlatısının iki
-belgede birden tutulmasından kaynaklanıyordu. Bu tur anlatı tek bir yere (`EDA.md`) taşındı
-ve bu belge yalnız üretim yöntemini anlatıyor.
+**Wind direction is kept out of the main table:** the arithmetic mean of a circular variable is
+meaningless. A separate table gives the speed-weighted circular mean, the resultant length *R*
+(0 = no preferred direction, 1 = a single direction) and the circular SD; calm hours with the
+corresponding speed column ≤ 1 m/s are excluded and the excluded count is recorded in the table.
+The direction climatology is not restricted to daylight; it is computed over all 24 hours.
 
-### 2026-08-28 — gündüz tanımı değişti
+## Figures (`figures/`)
 
-İlk EDA turunda gündüz, klimatolojik bir (il, ay, saat) hücre ortalaması ile tanımlanmıştı.
-Gerekçe, `ışınım > 0` eşiğinin bağımlı değişkene koşullama yapmasıydı. Bu gerekçe doğruydu
-ama seçilen çözüm yanlıştı: hücre **çok kabaydı.**
+Every figure is written both as `.png` (300 dpi) and `.pdf` (vector, Type 42 fonts). The
+background is white everywhere; seasons are distinguished by colour **and** line style, so
+identity survives greyscale printing and colour-vision deficiency.
 
-Bir ay içinde gün doğumu/batımı 30–60 dakika kayar, bu yüzden hücrenin kenar saati ayın bir
-kısmında aydınlık, kalanında karanlıktır; hücre ortalaması saatin tamamını gündüz sayıyordu.
-Sonuç: berrak gökyüzü değeri tam 0 olan — yani gece olan — **5.266 satır** gündüz kümesine
-giriyor ve her ilin gündüz ortalamasını 10–14 W/m² aşağı çekiyordu.
+| File | What it shows | Filter |
+|---|---|---|
+| `correlation_heatmap_<province>`, `_pooled` | Correlation matrix of the 7 variables | daylight |
+| `target_correlation_panel` | Variable × province, correlation with the target | daylight |
+| `scatter_vs_target_<province>` | Each variable against the target plus a binned-median trend | daylight |
+| `monthly_boxplot_last12m_<province>`, `_panel` | Daily totals over the last 12 months | 24 h (totals) |
+| `month_year_surface_<province>`, `_panel` | 3-D month × year × irradiance surface, 2020–2025 | 24 h (totals) |
+| `month_year_anomaly_panel` | The same data as a 2-D anomaly view | 24 h (totals) |
+| `seasonal_diurnal_profile` | Diurnal profile by season, LST hour | **24 h** |
+| `seasonal_dayofyear` | Day of year × daily total, banded by season | 24 h (totals) |
+| `target_histogram` | Distribution of daylight irradiance per province | daylight |
+| `monthly_boxplot_all_years` | Boxplot by month, all years pooled | 24 h (totals) |
+| `autocorrelation_hourly`, `autocorrelation_daily` | ACF/PACF of kt, per province | daylight (hours where kt is defined) |
+| `ramp_distribution` | Cumulative distribution of \|hour-to-hour change\|, by season | daylight |
+| `persistence_baseline` | The RMSE and R² floor the model has to clear | daylight |
+| `rize_comparison` | Four-panel summary of Rize against the other four provinces | mixed (stated per panel) |
 
-Yeni tanım `CLRSKY_SFC_SW_DWN > 0`: per-timestamp, geometrik, hedefe hiç bakmıyor — hem
-koşullama itirazını hem de kabalık sorununu birlikte çözüyor. Aynı tanım metrik kırılımı ve
-(açılırsa) kayıp maskesi için de kullanılır, böylece projede tek bir gündüz tanımı olur.
+**The scatter panel's grid is derived from the feature set.** The number of raw meteorological
+variables has changed twice (8 → 7 → 6). The grid is now computed from `RAW_METEO_COLUMNS`: the
+column count is chosen from 4 or 3 to minimise empty cells, and any surplus axes are switched
+off.
 
-Nitel sonuçların hiçbiri o turda değişmedi. Bu kaydın sayıları 16 Temmuz veri sürümüne
-aittir ve yalnızca tarihsel kayıt olarak durur.
+**The diurnal-profile figure deliberately does not apply the daylight filter:** the night zeros
+are physical information, and filtering them makes the curve start and end away from zero and
+produces an artificial jump in sparsely-sampled hours such as winter mornings. The IQR band is
+drawn for Winter and Summer only (four overlapping bands are unreadable) and it is the
+**between-day IQR, not a confidence interval**.
+
+**The 3-D surface is misleading on its own** and must be read together with
+`month_year_anomaly_panel`: most of the surface's relief is the seasonal curve repeated six
+times, and the figure that actually shows the between-year signal is the anomaly map.
+
+In `seasonal_dayofyear`, **29 February is dropped** and days after March in leap years are
+shifted back by one; otherwise 2020 and 2024 slip by a day against the other years and the
+climatology blurs. The smoothing is a 7-day centred moving average of the per-day climatological
+mean, computed on the series tiled 3×, so there is no discontinuity at the 31 December /
+1 January seam.
+
+## Season definition
+
+Meteorological seasons: **Winter** = December, January, February · **Spring** = March, April,
+May · **Summer** = June, July, August · **Autumn** = September, October, November.
+
+---
+
+## Correction log
+
+### 2026-09-14 (c) — figures, tables and EDA.md switched to English
+
+The manuscript will be written in English, so the artifacts follow. Figure titles, axis labels,
+legend titles and the Turkish values inside tables are all translated, and `EDA.md` is rewritten
+in English.
+
+**Table values changed, not only labels.** Anything reading these CSVs must know:
+
+| Column | Before | After |
+|---|---|---|
+| pooled row label | `Tümü` | `All` |
+| `scope` | `24 saat`, `gündüz` | `24h`, `daylight` |
+| `reference` | `kalıcılık`, `klimatoloji` | `persistence`, `climatology` |
+| `resolution` | `saatlik`, `günlük` | `hourly`, `daily` |
+| `factor` | `saat (LST)`, `yılın günü` | `hour (LST)`, `day of year` |
+| `season` | `Kış`, `İlkbahar`, `Yaz`, `Sonbahar` | `Winter`, `Spring`, `Summer`, `Autumn` |
+| `ym_label` | `Haz 25` | `Jun 25` |
+
+In the code, `SEASONS_TR` / `MONTH_TO_SEASON_TR` / `MONTH_ABBR_TR` became `SEASONS` /
+`MONTH_TO_SEASON` / `MONTH_ABBR`, and the season colour/linestyle dictionaries were re-keyed to
+match. No number moved.
+
+### 2026-09-14 (b) — the V2 export: 10 m wind removed, 13 features
+
+`SolarData_Merve(140926).xlsx` → `SolarData_Merve(140926_V2).xlsx`. Every shared column is
+bit-identical and the `-999` tail is the same 744 hours, so nothing about the target, the
+geometry or the splits moves. V2 simply drops `WS10M` and `WD10M`.
+
+This is the reduction the EDA had been arguing for. Measured on V1: `WS2M`–`WS10M` r = 0.987,
+`WD2M` vs `WD10M` agreeing to a median 0.30° with sin/cos correlations of 0.996. The naive floor
+is unchanged to the decimal after the drop, which is the cleanest possible evidence that the
+dropped columns carried nothing.
+
+Side effect worth knowing: `collinear_pairs.csv` is now empty, because that pair was the only
+one above |r| = 0.9.
+
+### 2026-09-14 (a) — the dataset changed and the whole EDA was regenerated
+
+Source file `SolarData_Merve_All(16July).xlsx` → the 14 September export. Same NASA POWER record,
+different export settings. Every number in this folder was regenerated; no figure quoted from an
+earlier version is valid.
+
+| | Before | After |
+|---|---|---|
+| Target unit | W/m² | MJ/m²/hour → converted to W/m² at read time |
+| Precipitation unit | mm/day | mm/hour |
+| Feature count | 17 | **13** (`QV2M`, the 50 m and 10 m wind gone; 2 m wind added) |
+| Daylight definition | `CLRSKY_SFC_SW_DWN > 0` | **`solar_elevation > 0`** (computed) |
+| Clearness index | `ALLSKY / CLRSKY` | **`GHI / (I₀ cos θz)`** (the standard definition) |
+| Record end | 2026-03-30 | 2026-05-30 (+61 days) |
+| Rows per province | 59,184 | 60,648 |
+| Daylight rows / share | 151,643 / 51.2% | 152,893 / 50.42% |
+| Test window | 8,878 hours / 370 days | 9,097 hours / 379 days |
+| Naive floor (daylight) | clim. 106.8 / pers. 116.4 | clim. **109.86** / pers. **121.56** |
+
+**The old Excel file (`SolarData_Merve_All(16July).xlsx`) was deleted from the repository.** An
+intermediate version reconstructed `CLRSKY_SFC_SW_DWN` from it; that bridge was removed and solar
+geometry took its place, so the project depends on a single data file. This has two costs, both
+measured and accepted: the daylight mask shifts by 1% (climatology RMSE 108.78 → 109.86), and the
+two analyses that needed the clear-sky **magnitude** — the smart-persistence reference and the
+`clearsky_index` target transform — were removed. The reasoning is in `EDA.md` §0.2 and §0.3.
+
+Two statements previously written in this document were also corrected:
+
+1. *"Clear-sky irradiance is a purely geometric quantity."* Measured and found too strong: even
+   at a fixed solar position NASA POWER's value moves 4–8% across years. Only its **sign** was
+   geometric. This is now a historical note — the column is out of use entirely, replaced by
+   computed solar elevation, which really is pure geometry.
+2. *"The unit label on `PRECTOTCORR` is suspect."* Resolved: the old file was mm/day, the new one
+   is mm/hour. The "mm/hour" label was wrong for the old data and is correct for the new.
+
+### 2026-08-28 — the daylight definition changed
+
+In the first EDA round daylight was defined by a climatological (province, month, hour) cell
+mean. The stated reason — that an `irradiance > 0` threshold conditions on the dependent
+variable — was correct, but the chosen remedy was not: **the cell was far too coarse.**
+
+Sunrise and sunset shift 30–60 minutes within a single month, so the cell's edge hour is lit for
+part of the month and dark for the rest; the cell mean counted the whole hour as daylight. The
+result was that **5,266 rows** whose clear-sky value was exactly zero — i.e. night — entered the
+daylight subset and pulled every province's daylight mean down by 10–14 W/m².
+
+None of the qualitative conclusions changed in that round. The numbers in this entry belong to
+the 16 July data version and stand only as a historical record.

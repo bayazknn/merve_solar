@@ -316,7 +316,8 @@ available). New plots should follow the same pattern: a function taking an expli
 creating parent dirs, closing the figure. The per-horizon plots are emitted once per metric
 subset — unsuffixed is `all_hours`, `_daylight` is the one to read.
 
-**`ABLATION.md` (Turkish) is, with `outputs/eda/EDA.md`, the project's primary results
+**`ABLATION.md` (Turkish; predates the switch to English and not yet translated) is, with
+`outputs/eda/EDA.md`, the project's primary results
 reference** — read its §0 before using any number from it. One `## N. …` section per axis,
 appended rather than rewritten, with every number traced to a `results_summary.csv` / ledger
 row. Three structural rules make it survive changes to the model or the data, and they are
@@ -344,9 +345,10 @@ are driven by `scripts/02_descriptive_analysis.py`, writing to `outputs/eda/{fig
 never inside `run_experiment`. Two hand-written documents sit beside them and must be kept in
 step with the numbers: `outputs/eda/README.md` (how each output was produced, its span and its
 caveats, plus a correction log) and `outputs/eda/EDA.md` (the manuscript-facing discussion, with
-a claim-to-file mapping). They share a separate style contract in `paper_style.py` (Turkish labels, always
-a white background, PNG at 300 dpi + vector PDF with Type 42 fonts, validated season palette with
-linestyle as a second channel). `paper_style.py` deliberately never mutates global rcParams — it
+a claim-to-file mapping); **both are in English, because the manuscript is.** They share a
+separate style contract in `paper_style.py` (English labels, always a white background, PNG at
+300 dpi + vector PDF with Type 42 fonts, validated season palette with linestyle as a second
+channel). `paper_style.py` deliberately never mutates global rcParams — it
 exposes `PAPER_RC` for `plt.rc_context`, because a `sns.set_theme()` at import would silently
 restyle the `utils.py` experiment figures whenever both modules load in one process.
 
@@ -354,8 +356,12 @@ For anything destined for the manuscript, prefer vector output (`.pdf`/`.svg`) a
 readable axis labels with units (W/m²), and a caption-ready title. **Variables are labelled by
 their raw NASA POWER column name** (`T2M (°C)`, `RH2M (%)`, …) via `paper_style.VARIABLE_LABELS`
 / `VARIABLE_SHORT`, not translated: a reader has to be able to match an axis to the dataset
-documentation and the methods section's feature list. Everything else on a figure — titles,
-legends, season names, table headers — stays Turkish.
+documentation and the methods section's feature list. **Everything else on a figure and in the
+tables is English** — titles, legends, season names, table headers, and the string VALUES inside
+tables (`scope` is `24h`/`daylight`, `reference` is `persistence`/`climatology`, `resolution` is
+`hourly`/`daily`, the pooled row is `All`, seasons are Winter/Spring/Summer/Autumn). Those values
+are join keys for anything reading the CSVs, so changing them again is a breaking change;
+`outputs/eda/README.md`'s correction log carries the old→new mapping.
 
 ## Open work (from `TODOs.md`, Turkish)
 
