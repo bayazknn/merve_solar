@@ -559,149 +559,13 @@ def _percity_endpoints_configs() -> list:
     ]
 
 
-def _target_transform_configs() -> list:
-    """Regress the clearness index instead of the irradiance. 3 arms, ~2.0 h.
-
-    ABLATION.md 3.6 measured the gap this asks about: the LSTM wins daylight RMSE in all five
-    provinces and LOSES daylight MAE in four of them, to smart persistence. The mechanism is
-    that the naive rules are handed the target hour's clear-sky envelope for free -- smart
-    persistence multiplies the carried-forward kt by CLRSKY(t+h), the climatology cell memorises
-    the same geometry -- while the model has to infer the geometry from hour_sin/cos and the
-    day-of-year encoding. This arm hands the model the same thing without making CLRSKY a
-    feature: it regresses kt = ALLSKY / CLRSKY and the transform multiplies the envelope back.
-
-    CLRSKY is pure astronomy with no weather term, computable from latitude, longitude and time,
-    so admitting it through the transform is not leakage. Measured before implementing: daylight
-    CLRSKY has a floor of 2.40 W/m^2 so the division never blows up, and kt has median 0.885 and
-    p99 = 1.000 with exactly one value above 1.5 (the documented Van back-fill artefact). No
-    clipping is applied.
-
-    THE MATCHED RAW ARM ALREADY EXISTS and is not rebuilt here: abl_rize_all5_s{42,43,44}_full
-    is this same dict with target_transform="raw", which was the only behaviour available when
-    it ran. The assertion below proves the pair differs in that one field and nothing else,
-    which is what the comparability rules actually require -- rerunning an identical config
-    under a new id to satisfy the letter of "build both from one dict" would cost two hours and
-    add a duplicate row.
-
-    Two effects travel together on this axis and cannot be separated by adding an arm, because
-    they are the same change: the target definition, and the loss weighting it implies (in kt
-    space a cloudy noon hour and a clear morning hour carry comparable weight, where in W/m^2
-    the high-irradiance hours dominate). State it; do not pretend the arm isolates one of them.
-    """
-    return _target_kt_pooled(ABLATION_SEEDS)
-
-
-TARGET_KT_BASE = {**ABLATION_FULL, "loss_function": "mae", "target_transform": "clearsky_index"}
-
-
-def _target_kt_pooled(seeds) -> list:
-    """The pooled (all5) kt arms, at the given seeds. Split out so stage 2 can extend the seed
-    axis under the same ids rather than duplicating the definition."""
-    base = {**ABLATION_FULL, "loss_function": "mae"}
-    configs = [
-        ExperimentConfig(
-            experiment_id=f"abl_target_kt_s{seed}_full",
-            target_transform="clearsky_index",
-            seed=seed,
-            **base,
-        )
-        for seed in seeds
-    ]
-    for cfg, seed in zip(configs, seeds):
-        raw = ExperimentConfig(experiment_id=f"abl_rize_all5_s{seed}_full", seed=seed, **base)
-        differing = {
-            f.name for f in fields(ExperimentConfig)
-            if f.name != "experiment_id" and getattr(cfg, f.name) != getattr(raw, f.name)
-        }
-        assert differing == {"target_transform"}, differing
-    return configs
-
-
-def _target_kt_h1_configs() -> list:
-    """Stage 1: does the pooling result survive the target transform? 3 arms, ~0.7 h.
-
-    MEASURED (target_transform group, ABLATION.md 6): regressing kt beats raw at full fidelity
-    in every province, aggregate daylight RMSE -9.2% and MAE -12.9%, p <= 0.008 throughout. That
-    makes it a candidate for the headline configuration -- and the entire transfer result
-    (sections 1-5, H1 and the endpoint ablation) was measured under target_transform="raw".
-
-    It cannot be assumed to carry over, and the direction of the doubt is specific: a large part
-    of what a "raw" model must learn is the solar-geometry envelope, which is the structure most
-    obviously SHARED across the five provinces -- i.e. plausibly the very thing pooling was
-    helping with. Handing that envelope to the model for free could shrink the transfer gain, or
-    remove it. That would be a genuine threat to the paper's headline claim, so it gets measured
-    before anything is rewritten, not after.
-
-    Only the solo arm is built: abl_target_kt_s{42,43,44}_full is already the matched pooled arm
-    at the same seeds. Three seeds is enough to see whether the effect survives; extending to the
-    six the primary endpoint uses is stage 2, and only worth paying for if it does.
-    """
-    return [
-        ExperimentConfig(
-            experiment_id=f"abl_target_kt_solo_s{seed}_full",
-            training_scope="per_city",
-            excluded_cities=[c for c in CITIES if c != RIZE],
-            seed=seed,
-            **TARGET_KT_BASE,
-        )
-        for seed in ABLATION_SEEDS
-    ]
-
-
-def _target_kt_endpoints_configs() -> list:
-    """Stage 2: the five-province endpoint ablation under kt. 12 arms, ~2.7 h.
-
-    Stage 1 answered its question and the answer was the risk it was written to catch: on Rize,
-    the POINT-forecast pooling gain largely goes away under kt (RMSE -2.05 -> -0.79, MAE
-    -1.58 -> -0.01). The predicted mechanism holds -- a large part of what pooling bought was
-    the shared clear-sky envelope, and the transform hands it over for free.
-
-    What survived, and got much stronger, is the UNCERTAINTY side: pooling moves Rize's daylight
-    coverage 0.8800 -> 0.9107, 3/3 seeds, p = 0.0001, against no detectable coverage effect at
-    all under raw (p = 0.84). So under the better formulation the transfer moves from the mean
-    to the interval, which is consistent with Rize being noise-limited in the mean (section 4.8,
-    B-7) while the epistemic spread still benefits from more data.
-
-    THIS group, not more seeds on Rize. Measured from stage 1, Rize's kt RMSE effect is -0.795
-    with a paired sd of 1.132, so six seeds would be expected to return p ~ 0.15 and ~20 seeds
-    would be needed for p ~ 0.005 -- 12 h to buy one province's point estimate. The five-province
-    clustered test used in section 5 gets far more power per hour: it reached p = 0.0146 at three
-    seeds, and these twelve arms complete the same design under kt in 2.7 h.
-
-    The pooled kt arms at these seeds already exist (abl_target_kt_s{42,43,44}_full), as does the
-    Rize solo arm from stage 1, so only the other four provinces are built here.
-    """
-    return [
-        ExperimentConfig(
-            experiment_id=f"abl_target_kt_percity_{city.lower()}_s{seed}_full",
-            training_scope="per_city",
-            excluded_cities=[c for c in CITIES if c != city],
-            seed=seed,
-            **TARGET_KT_BASE,
-        )
-        for city in PERCITY_ENDPOINT_CITIES
-        for seed in ABLATION_SEEDS
-    ]
-
-
-def _target_kt_seeds_configs() -> list:
-    """Stage 3, LOW PRIORITY: H1 under kt at the primary endpoint's six seeds. 6 arms, ~3.7 h.
-
-    Only worth running if the paper ends up needing the Rize contrast stated at the same seed
-    count as the raw primary endpoint. It is NOT expected to reach significance: the measured
-    effect is -0.795 with a paired sd of 1.132, so six seeds gives an expected p of about 0.15.
-    Run it to report a well-powered-for-its-size null with its effect size, not to find a result.
-    """
-    return _target_kt_pooled(EXTRA_SEEDS) + [
-        ExperimentConfig(
-            experiment_id=f"abl_target_kt_solo_s{seed}_full",
-            training_scope="per_city",
-            excluded_cities=[c for c in CITIES if c != RIZE],
-            seed=seed,
-            **TARGET_KT_BASE,
-        )
-        for seed in EXTRA_SEEDS
-    ]
+# The target_transform axis (raw vs clearness index) and its four groups
+# -- target_transform, target_kt_h1, target_kt_endpoints, target_kt_seeds -- were removed with
+# the 14-Sep-2026 export, which no longer carries CLRSKY_SFC_SW_DWN. Regressing kt needs a
+# clear-sky MAGNITUDE, not just the sun's position, and no substitute model reproduces it well
+# enough here to build a paper arm on (see MODEL_FAMILIES in config.py for the measurement).
+# ABLATION.md 6 and 7 are the findings those groups produced; they stand as results about the
+# superseded dataset and are not re-measurable without a re-export.
 
 
 def _sens_scaler_l1_configs() -> list:
@@ -826,25 +690,21 @@ def _conformal_configs() -> list:
     all at B=1, and fidelity changes what the interval is -- only the structure carries over,
     not the k values.
     """
-    configs = []
-    for seed in ABLATION_SEEDS:
-        for transform, tag in (("raw", "raw"), ("clearsky_index", "kt")):
-            configs.append(ExperimentConfig(
-                experiment_id=f"abl_conformal_{tag}_s{seed}_full",
-                target_transform=transform,
-                conformal_mode=CONFORMAL_MODE,
-                seed=seed,
-                **CONFORMAL_BASE,
-            ))
+    configs = [
+        ExperimentConfig(
+            experiment_id=f"abl_conformal_raw_s{seed}_full",
+            conformal_mode=CONFORMAL_MODE,
+            seed=seed,
+            **CONFORMAL_BASE,
+        )
+        for seed in ABLATION_SEEDS
+    ]
     # Each arm must differ from its already-measured uncorrected twin in conformal_mode alone,
-    # so the pair isolates the layer. abl_rize_all5_s*_full is the raw twin,
-    # abl_target_kt_s*_full the kt one.
+    # so the pair isolates the layer. abl_rize_all5_s*_full is that twin.
     for cfg in configs:
         seed = cfg.seed
-        twin_id = (f"abl_rize_all5_s{seed}_full" if cfg.target_transform == "raw"
-                   else f"abl_target_kt_s{seed}_full")
-        twin = ExperimentConfig(experiment_id=twin_id, seed=seed,
-                                target_transform=cfg.target_transform, **CONFORMAL_BASE)
+        twin_id = f"abl_rize_all5_s{seed}_full"
+        twin = ExperimentConfig(experiment_id=twin_id, seed=seed, **CONFORMAL_BASE)
         differing = {
             f.name for f in fields(ExperimentConfig)
             if f.name != "experiment_id" and getattr(cfg, f.name) != getattr(twin, f.name)
@@ -892,28 +752,25 @@ def _conformal_selected_configs() -> list:
     same as `conformal`: 10.22 s/epoch and 0.662 s/MC-pass on the Mac's MPS backend, plus the
     validation prediction pass at 0.732x the test MC stage, i.e. +13%.
     """
-    configs = []
-    for seed in ABLATION_SEEDS:
-        for transform, tag in (("raw", "raw"), ("clearsky_index", "kt")):
-            configs.append(ExperimentConfig(
-                experiment_id=f"abl_conformal_csh_{tag}_s{seed}_full",
-                target_transform=transform,
-                conformal_mode=CONFORMAL_MODE_SELECTED,
-                seed=seed,
-                **CONFORMAL_BASE,
-            ))
+    configs = [
+        ExperimentConfig(
+            experiment_id=f"abl_conformal_csh_raw_s{seed}_full",
+            conformal_mode=CONFORMAL_MODE_SELECTED,
+            seed=seed,
+            **CONFORMAL_BASE,
+        )
+        for seed in ABLATION_SEEDS
+    ]
     # Two matched pairs per arm, both asserted rather than trusted. Against the UNCORRECTED twin
     # the pair isolates the layer; against the `city_season` twin it isolates the geometry, which
     # is the contrast this group exists to add and the only one that is a clean single-axis
     # comparison of two grids at B=8.
     for cfg in configs:
-        seed, raw = cfg.seed, cfg.target_transform == "raw"
-        uncorrected_id = (f"abl_rize_all5_s{seed}_full" if raw
-                          else f"abl_target_kt_s{seed}_full")
-        city_season_id = f"abl_conformal_{'raw' if raw else 'kt'}_s{seed}_full"
-        for twin_id, mode in ((uncorrected_id, "none"), (city_season_id, CONFORMAL_MODE)):
+        seed = cfg.seed
+        for twin_id, mode in ((f"abl_rize_all5_s{seed}_full", "none"),
+                              (f"abl_conformal_raw_s{seed}_full", CONFORMAL_MODE)):
             twin = ExperimentConfig(experiment_id=twin_id, seed=seed, conformal_mode=mode,
-                                    target_transform=cfg.target_transform, **CONFORMAL_BASE)
+                                    **CONFORMAL_BASE)
             differing = {
                 f.name for f in fields(ExperimentConfig)
                 if f.name != "experiment_id" and getattr(cfg, f.name) != getattr(twin, f.name)
@@ -934,12 +791,10 @@ def _conformal_selected_smoke_configs() -> list:
     """
     return [
         ExperimentConfig(
-            experiment_id=f"smoke_conformal_csh_{tag}",
-            target_transform=transform,
+            experiment_id="smoke_conformal_csh_raw",
             conformal_mode=CONFORMAL_MODE_SELECTED,
             **{**CONFORMAL_BASE, **ABLATION_SMOKE},
         )
-        for transform, tag in (("raw", "raw"), ("clearsky_index", "kt"))
     ]
 
 
@@ -980,12 +835,10 @@ def _conformal_smoke_configs() -> list:
     a table -- what is being checked here is the code path."""
     return [
         ExperimentConfig(
-            experiment_id=f"smoke_conformal_{tag}",
-            target_transform=transform,
+            experiment_id="smoke_conformal_raw",
             conformal_mode=CONFORMAL_MODE,
             **{**CONFORMAL_BASE, **ABLATION_SMOKE},
         )
-        for transform, tag in (("raw", "raw"), ("clearsky_index", "kt"))
     ]
 
 
@@ -1002,10 +855,6 @@ EXPERIMENT_GROUPS = {
     "arch_sweep_x": _arch_sweep_x_configs,
     "arch_frontier": _arch_frontier_configs,
     "percity_endpoints": _percity_endpoints_configs,
-    "target_transform": _target_transform_configs,
-    "target_kt_h1": _target_kt_h1_configs,
-    "target_kt_endpoints": _target_kt_endpoints_configs,
-    "target_kt_seeds": _target_kt_seeds_configs,
     "sens_scaler_l1": _sens_scaler_l1_configs,
     "device_parity": _device_parity_configs,
     "rize_curve_smoke": _rize_curve_smoke_configs,

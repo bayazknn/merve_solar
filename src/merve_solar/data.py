@@ -7,7 +7,6 @@ per-experiment windowing/split step).
 import numpy as np
 import pandas as pd
 
-from merve_solar.clearsky import CLEARSKY_COLUMN, load_clearsky_reference
 from merve_solar.config import (
     CIRCULAR_COLUMNS,
     CITIES,
@@ -21,6 +20,7 @@ from merve_solar.config import (
     MJ_M2_HOUR_TO_W_M2,
     RAW_XLSX_PATH,
 )
+from merve_solar.solar import apparent_elevation, extraterrestrial_horizontal
 
 
 def _build_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
@@ -92,22 +92,19 @@ def load_city_sheet(city: str) -> pd.DataFrame:
         raise ValueError(f"{city}: expected columns are not in the sheet: {missing}")
     df = df.drop(columns=list(DROPPED_COLUMNS))
 
-    # MASK_COLUMNS are metadata, never features (see config.py). CLRSKY_SFC_SW_DWN is no
-    # longer exported, so it is merged in from the reconstruction rather than read; without
-    # it there is no daylight subset and no night clamp.
-    reference = load_clearsky_reference()
-    df = df.merge(
-        reference.loc[reference["city"] == city, ["datetime", CLEARSKY_COLUMN]],
-        on="datetime", how="left", validate="one_to_one",
-    )
-    if df[CLEARSKY_COLUMN].isna().any():
-        raise ValueError(
-            f"{city}: clear-sky reference does not cover {int(df[CLEARSKY_COLUMN].isna().sum())} "
-            "hours of the trimmed record."
-        )
+    # MASK_COLUMNS are metadata, never features (see config.py). `solar_elevation` is computed
+    # from the site coordinates and the timestamp alone -- it reads no column of this sheet, and
+    # in particular not the target. It is what defines the daylight subset and what
+    # clamp_night_to_zero acts on; see solar.py for the conventions and what they cost.
+    df["solar_elevation"] = apparent_elevation(city, df["datetime"]).astype(np.float32)
+    df["toa_horizontal"] = extraterrestrial_horizontal(city, df["datetime"]).astype(np.float32)
     absent = [col for col in MASK_COLUMNS if col not in df.columns]
     if absent:
-        raise ValueError(f"{city}: mask columns missing after the merge: {absent}")
+        raise ValueError(f"{city}: mask columns missing: {absent}")
+    if not np.isfinite(df[MASK_COLUMNS]).all().all():
+        raise ValueError(f"{city}: a geometry column is not finite for every hour.")
+    if (df["toa_horizontal"] < 0).any():
+        raise ValueError(f"{city}: negative top-of-atmosphere irradiance.")
 
     if (df.drop(columns=["datetime"]) == MISSING_SENTINEL).any().any():
         raise ValueError(f"{city}: -999 sentinel remains after trimming.")

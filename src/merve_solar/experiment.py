@@ -15,7 +15,6 @@ from merve_solar.config import (
     BASE_FEATURES_PATH,
     CITIES,
     CITY_TO_ID,
-    DAYLIGHT_REFERENCE_COLUMN,
     LEDGER_PATH,
     NUMERIC_FEATURE_COLUMNS,
     TARGET_COLUMN,
@@ -54,7 +53,7 @@ LEDGER_COLUMNS: tuple[str, ...] = (
     "batch_size", "learning_rate", "lr_reduce_factor", "lr_reduce_patience",
     "max_epochs", "early_stop_patience",
     "loss_function", "huber_delta", "nonneg_penalty_weight",
-    "target_transform", "loss_daylight_only", "per_city_scaler",
+    "loss_daylight_only", "per_city_scaler",
     "clamp_night_to_zero", "conformal_mode", "seed", "device",
     "RMSE", "MAE", "R2", "CP", "PINW", "MPIW", "Reliability", "CWC", "CRPS",
     "n_samples", "n_elements",
@@ -186,7 +185,6 @@ def _ledger_row(config, subsets: dict, run_stats: dict, training_time_sec: float
         "loss_function": config.loss_function,
         "huber_delta": config.huber_delta,
         "nonneg_penalty_weight": config.nonneg_penalty_weight,
-        "target_transform": config.target_transform,
         "loss_daylight_only": config.loss_daylight_only,
         "per_city_scaler": config.per_city_scaler,
         "clamp_night_to_zero": config.clamp_night_to_zero,
@@ -210,11 +208,9 @@ def _ledger_row(config, subsets: dict, run_stats: dict, training_time_sec: float
         "CP_daylight": day.get("CP"),
         "n_elements_daylight": day.get("n_elements"),
         # The model-selection criterion, in SCALED target space. Comparable ONLY between runs
-        # that share loss_function/huber_delta, loss_daylight_only, target_transform, and the
-        # same pooled provinces (which fix the scaler): it is the right instrument for "same
-        # data, same criterion, different architecture" and meaningless across anything else.
-        # target_transform matters most of all -- a clearsky_index run's loss is in units of the
-        # clearness index, so its 0.28 and a raw run's 0.14 are not on the same axis at all. Never a substitute for
+        # that share loss_function/huber_delta, loss_daylight_only and the same pooled provinces
+        # (which fix the scaler): it is the right instrument for "same data, same criterion,
+        # different architecture" and meaningless across anything else. Never a substitute for
         # the test metrics next to it -- it exists so architecture can be chosen without them.
         "best_val_loss": _mean_best_val_loss(run_stats),
         "hit_max_epochs": run_stats.get("hit_max_epochs"),
@@ -377,56 +373,6 @@ def _save_test_predictions(exp_dir, dist, y_true, city_id, daylight, window_star
     if conformal_factors is not None:
         payload["conformal_k"] = conformal_factors
     np.savez_compressed(exp_dir / "metrics" / "test_predictions.npz", **payload)
-
-
-def apply_target_transform(base_df: pd.DataFrame, config) -> pd.DataFrame:
-    """The frame the MODEL is fitted on. The layout frame is never transformed.
-
-    Under target_transform="clearsky_index" the target column becomes the clearness index
-    kt = ALLSKY / CLRSKY, so the scaler, the windows, the loss and every early-stopping decision
-    downstream all happen in kt space with no further changes. Night (CLRSKY = 0) is defined to
-    0 rather than left undefined; it is multiplied back by CLRSKY = 0 anyway, which makes the
-    night output exactly zero by construction -- a stronger statement than clamp_night_to_zero,
-    which is then a no-op rather than a correction.
-
-    Returns base_df itself under "raw", so the default path allocates nothing.
-    """
-    if config.target_transform == "raw":
-        return base_df
-    clear = base_df[DAYLIGHT_REFERENCE_COLUMN].to_numpy()
-    day = clear > 0
-    out = base_df.copy()
-    out[TARGET_COLUMN] = np.where(day, base_df[TARGET_COLUMN].to_numpy() / np.where(day, clear, 1.0), 0.0)
-    return out
-
-
-def invert_target_transform(pooled_preds: np.ndarray, config, clearsky_test: np.ndarray) -> np.ndarray:
-    """Bring predictions back to W/m^2, in place.
-
-    The scope runners already undid the StandardScaler, so under "clearsky_index" what arrives
-    here is kt and the remaining step is the multiplication by the target hour's clear-sky
-    value. clearsky_test is (N, horizon), broadcast over the S pooled samples.
-    """
-    if config.target_transform == "raw":
-        return pooled_preds
-    if clearsky_test.shape != pooled_preds.shape[1:]:
-        raise ValueError(
-            f"clear-sky array is {clearsky_test.shape}, expected {pooled_preds.shape[1:]}"
-        )
-    pooled_preds *= clearsky_test[None, :, :]
-    return pooled_preds
-
-
-def invert_summary_transform(summary: dict, config, clearsky: np.ndarray) -> dict:
-    """invert_target_transform for a (N, horizon) distribution SUMMARY rather than the sample.
-
-    Valid for every key because the clear-sky multiplication is affine with a non-negative
-    factor: it maps the mean to the transformed mean and each percentile to the transformed
-    percentile. `std` scales by the same factor and is kept only for diagnostics.
-    """
-    if config.target_transform == "raw":
-        return summary
-    return {k: v * clearsky for k, v in summary.items()}
 
 
 def _predict_replicas(splits, config, n_cities, device, exp_dir, checkpoint_stem,
@@ -685,11 +631,7 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
     # mask and window identities. Taking y_true from here rather than inverse-transforming the
     # scaled targets keeps exact night zeros (a float32 round-trip through StandardScaler
     # returns them as +-1e-5 noise) and gives every arm a byte-identical truth to score against.
-    # CLRSKY at the target hours is gathered on every run, not only the clearsky_index ones:
-    # it is an additive (N, horizon) output that changes no other array, ~4 MB, and gathering it
-    # unconditionally means the layout is provably identical across target_transform arms.
-    layout = build_experiment_windows(base_df, config, train_end, val_end, include_X=False,
-                                      extra_target_columns=(DAYLIGHT_REFERENCE_COLUMN,))
+    layout = build_experiment_windows(base_df, config, train_end, val_end, include_X=False)
     y_true = layout["test"]["y"]
     daylight = layout["test"]["daylight"]
     city_id_test = layout["test"]["city_id"]
@@ -705,23 +647,16 @@ def run_experiment(config, base_df: pd.DataFrame | None = None) -> dict:
     ]
 
     pooled_preds, calibration, run_stats = SCOPE_RUNNERS[config.training_scope](
-        apply_target_transform(base_df, config), config, train_end, val_end, layout,
-        device, exp_dir, log_lines
+        base_df, config, train_end, val_end, layout, device, exp_dir, log_lines
     )
-    pooled_preds = invert_target_transform(
-        pooled_preds, config, layout["test"]["extras"][DAYLIGHT_REFERENCE_COLUMN]
-    )
-    if calibration is not None:
-        calibration = invert_summary_transform(
-            calibration, config, layout["val"]["extras"][DAYLIGHT_REFERENCE_COLUMN]
-        )
-    log_lines.append(f"target_transform={config.target_transform}")
 
     if config.clamp_night_to_zero:
         # Applied once here rather than inside each scope runner, so every arm gets it
-        # identically. `daylight` is CLRSKY > 0, i.e. pure solar geometry, so this asserts a
-        # known physical fact rather than fitting anything: below the horizon the target is
-        # exactly 0. Done in place to avoid duplicating a multi-GB array.
+        # identically. `daylight` is solar_elevation > 0, i.e. pure geometry computed from the
+        # site and the timestamp, so this asserts a known physical fact rather than fitting
+        # anything: below the horizon the target is exactly 0. It is also the only form of this
+        # rule that is available 24 h ahead, when the realised target is not. Done in place to
+        # avoid duplicating a multi-GB array.
         night = ~daylight
         pooled_preds[:, night] = 0.0
         log_lines.append(f"clamped {int(night.sum())} night elements to zero")

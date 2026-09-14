@@ -6,9 +6,9 @@ the ledger, or ExperimentConfig. Driven by scripts/02_descriptive_analysis.py.
 Three data-handling decisions drive most of this module; the reasoning is in
 outputs/eda/README.md and repeated briefly at each function:
 
-1. "Daylight" is defined geometrically, from NASA POWER's own clear-sky column
-   (CLRSKY_SFC_SW_DWN > 0), not from the realised target and not from a monthly cell mean.
-   See daylight_mask() for why both alternatives are wrong.
+1. "Daylight" is defined geometrically, from the sun's computed elevation
+   (solar_elevation > 0), not from the realised target and not from a monthly cell mean.
+   See daylight_mask() and solar.py for why both alternatives are wrong.
 2. Anything month-to-month is computed on DAILY TOTALS, not on hourly values. A box of
    daylight-hourly values is ~91% solar geometry, and it makes winter look *less* variable
    than summer -- the opposite of the truth.
@@ -22,13 +22,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from merve_solar.clearsky import (  # noqa: F401  (re-exported for callers/tests)
-    build_clearsky_reference,
-    load_clearsky_reference,
-    reconstruction_summary,
-)
 from merve_solar.config import (
     CIRCULAR_COLUMNS,
+    DAYLIGHT_REFERENCE_COLUMN,
     CITIES,
     RAW_METEO_COLUMNS,
     TARGET_COLUMN,
@@ -60,34 +56,27 @@ CALM_WIND_MIN = 1.0  # m/s; direction of near-calm hours is noise
 
 
 # ---------------------------------------------------------------------------------------
-# clear-sky reference (descriptive use only)
+# clearness index (descriptive use only)
 # ---------------------------------------------------------------------------------------
-# The 14-Sep-2026 export no longer contains CLRSKY_SFC_SW_DWN; it is reconstructed in
-# clearsky.py, which also documents the reconstruction's measured accuracy. This module used
-# to build the reference itself by re-reading the workbook -- that logic moved wholesale so
-# there is exactly one clear-sky source for the EDA, data.py and the metrics.
-
-
 def attach_clearness(df: pd.DataFrame) -> pd.DataFrame:
-    """Add CLRSKY_SFC_SW_DWN and the clearness index kt = ALLSKY / CLRSKY.
+    """Add the clearness index kt = GHI / (I0 cos theta_z).
 
-    kt is defined only where the clear-sky reference is positive (i.e. astronomical
-    daylight); elsewhere it is NaN rather than 0/0.
+    This is the solar literature's standard definition, with the TOP-OF-ATMOSPHERE irradiance
+    in the denominator. It replaced `ALLSKY / CLRSKY` when the 14-Sep-2026 export dropped
+    NASA POWER's clear-sky column; solar.py explains why that is an upgrade rather than a
+    fallback. The scale is different and the two must never be mixed: a cloudless hour reads
+    kt ~ 0.75-0.80 here where the clear-sky index read ~1.0.
+
+    kt is defined only where the sun is up; elsewhere it is NaN rather than 0/0.
     """
-    if "CLRSKY_SFC_SW_DWN" in df.columns:
-        # base_features.parquet now carries the column as metadata (never a model feature),
-        # so prefer it: one source of truth rather than two.
-        out = df.copy()
-    else:
-        out = df.merge(
-            load_clearsky_reference()[["datetime", "city", "CLRSKY_SFC_SW_DWN"]],
-            on=["datetime", "city"], how="left", validate="one_to_one",
+    if "toa_horizontal" not in df.columns:
+        raise ValueError(
+            "frame has no 'toa_horizontal' column -- rebuild base_features.parquet with "
+            "scripts/01_prepare_base_data.py."
         )
-        if out["CLRSKY_SFC_SW_DWN"].isna().any():
-            raise ValueError("clear-sky reference does not cover every (datetime, city) row.")
-    out["kt"] = np.where(
-        out["CLRSKY_SFC_SW_DWN"] > 0, out[TARGET_COLUMN] / out["CLRSKY_SFC_SW_DWN"], np.nan
-    )
+    out = df.copy()
+    toa = out["toa_horizontal"]
+    out["kt"] = np.where(toa > 0, out[TARGET_COLUMN] / toa.where(toa > 0, 1.0), np.nan)
     return out
 
 
@@ -95,45 +84,27 @@ def attach_clearness(df: pd.DataFrame) -> pd.DataFrame:
 # data helpers
 # ---------------------------------------------------------------------------------------
 def daylight_mask(df: pd.DataFrame) -> pd.Series:
-    """Geometric daylight: NASA POWER's clear-sky reference is positive.
+    """Geometric daylight: the sun is above the horizon at the hour's midpoint.
 
-    Reads CLRSKY_SFC_SW_DWN from the frame when it is present (base_features.parquet now
-    carries it as metadata that is never a model feature) and falls back to the standalone
-    EDA cache otherwise.
+    Reads the `solar_elevation` column that data.py computes from the site coordinates and the
+    timestamp -- see solar.py for the conventions, why `target > 0` is not admissible in its
+    place, and what the untuned threshold costs.
 
-    Clear-sky irradiance is a purely geometric quantity, so CLRSKY > 0 means exactly "the
-    sun is above the horizon at this site and hour" -- computed by the data provider with
-    the real grid coordinates and its own time convention, which is why this is preferable
-    to re-deriving solar elevation ourselves.
-
-    Only the boolean is used. A sun-up flag carries public astronomical information, not
-    weather, so it is not the leakage that putting CLRSKY itself in NUMERIC_FEATURE_COLUMNS
-    would be (see DROPPED_COLUMNS in config.py).
-
-    Two alternatives were tried and are wrong:
-
-    - `target > 0` looks like it conditions on the dependent variable. On this dataset it
-      does not: it selects exactly the same 151,643 rows as CLRSKY > 0, to the row. No
-      interior daylight hour is ever exactly 0 (minimum 3.78 W/m^2), so a zero reading
-      always means "sun down", never "overcast". The geometric form is preferred anyway
-      because it stays correct by construction rather than by coincidence.
-    - A climatological (city, month, hour) cell mean > 0 was used in the first EDA round
-      and is too coarse. Within one month sunrise and sunset shift 30-60 minutes, so the
-      edge hour of the cell is lit for part of the month and dark for the rest; the cell
-      mean marks the whole hour as daylight and admits 5,266 rows whose clear-sky value is
-      exactly 0 -- i.e. night. That pulled every city's daylight mean down by 10-14 W/m^2.
+    A climatological (city, month, hour) cell mean > 0 was used in the first EDA round and is
+    also wrong: within one month sunrise shifts 30-60 minutes, so the cell's edge hour is lit
+    for part of the month and dark for the rest, and the cell mean marks the whole hour as
+    daylight. That admitted 5,266 rows of genuine night and pulled every province's daylight
+    mean down by 10-14 W/m^2.
     """
-    if "CLRSKY_SFC_SW_DWN" in df.columns:
-        clrsky = df["CLRSKY_SFC_SW_DWN"]
-    else:
-        merged = df[["datetime", "city"]].merge(
-            load_clearsky_reference()[["datetime", "city", "CLRSKY_SFC_SW_DWN"]],
-            on=["datetime", "city"], how="left", validate="one_to_one",
+    from merve_solar.solar import is_daylight
+
+    if DAYLIGHT_REFERENCE_COLUMN not in df.columns:
+        raise ValueError(
+            f"frame has no {DAYLIGHT_REFERENCE_COLUMN!r} column -- rebuild "
+            "base_features.parquet with scripts/01_prepare_base_data.py."
         )
-        if merged["CLRSKY_SFC_SW_DWN"].isna().any():
-            raise ValueError("clear-sky reference does not cover every (datetime, city) row.")
-        clrsky = merged["CLRSKY_SFC_SW_DWN"]
-    return pd.Series((clrsky > 0).to_numpy(), index=df.index, name="daylight")
+    return pd.Series(is_daylight(df[DAYLIGHT_REFERENCE_COLUMN].to_numpy()),
+                     index=df.index, name="daylight")
 
 
 def add_season(df: pd.DataFrame) -> pd.DataFrame:
@@ -883,22 +854,22 @@ def plot_seasonal_dayofyear(daily: pd.DataFrame, save_path: Path) -> None:
 # ---------------------------------------------------------------------------------------
 # predictability analyses (added after the first EDA round)
 # ---------------------------------------------------------------------------------------
-CLEARSKY_MIN_FOR_KT = 20.0  # W/m^2; below this, ALLSKY/CLRSKY is a twilight division blow-up
+TOA_MIN_FOR_KT = 20.0  # W/m^2; below this, GHI/TOA is a twilight division blow-up
 
 
 def clearness_index_table(df_kt: pd.DataFrame) -> pd.DataFrame:
-    """Physical clearness index kt = ALLSKY / CLRSKY, per (city, season).
+    """Standard clearness index kt = GHI / (I0 cos theta_z), per (city, season).
 
-    Reported both hourly (restricted to CLRSKY > CLEARSKY_MIN_FOR_KT, since near sunrise and
+    Reported both hourly (restricted to TOA > TOA_MIN_FOR_KT, since near sunrise and
     sunset the ratio is a division of two near-zero numbers) and daily (ratio of the two
     daily sums, which needs no threshold and is the quantity solar-resource papers report).
     """
     work = add_season(df_kt.assign(_date=df_kt["datetime"].dt.normalize()))
-    hourly = work[work["CLRSKY_SFC_SW_DWN"] > CLEARSKY_MIN_FOR_KT]
+    hourly = work[work["toa_horizontal"] > TOA_MIN_FOR_KT]
     daily = (
-        work.groupby(["city", "_date"], observed=True)[[TARGET_COLUMN, "CLRSKY_SFC_SW_DWN"]]
+        work.groupby(["city", "_date"], observed=True)[[TARGET_COLUMN, "toa_horizontal"]]
         .sum()
-        .assign(kt_daily=lambda d: d[TARGET_COLUMN] / d["CLRSKY_SFC_SW_DWN"])
+        .assign(kt_daily=lambda d: d[TARGET_COLUMN] / d["toa_horizontal"])
         .reset_index()
     )
     daily["season"] = pd.Categorical(
@@ -985,7 +956,7 @@ def autocorrelation_table(df_kt: pd.DataFrame, max_hourly_lag: int = 72,
     persist".
     """
     work = df_kt.copy()
-    work.loc[work["CLRSKY_SFC_SW_DWN"] <= CLEARSKY_MIN_FOR_KT, "kt"] = np.nan
+    work.loc[work["toa_horizontal"] <= TOA_MIN_FOR_KT, "kt"] = np.nan
     # The hourly PACF is only reported for short lags. Night masking makes the ACF a
     # pairwise-deleted estimate, which is not guaranteed positive-definite, and past roughly
     # one daylight block the Durbin-Levinson recursion starts producing spurious spikes
@@ -1004,10 +975,10 @@ def autocorrelation_table(df_kt: pd.DataFrame, max_hourly_lag: int = 72,
 
         daily = (
             g.assign(_date=g["datetime"].dt.normalize())
-            .groupby("_date", observed=True)[[TARGET_COLUMN, "CLRSKY_SFC_SW_DWN"]]
+            .groupby("_date", observed=True)[[TARGET_COLUMN, "toa_horizontal"]]
             .sum()
         )
-        kt_daily = (daily[TARGET_COLUMN] / daily["CLRSKY_SFC_SW_DWN"]).asfreq("D").to_numpy()
+        kt_daily = (daily[TARGET_COLUMN] / daily["toa_horizontal"]).asfreq("D").to_numpy()
         acf_d = _acf(kt_daily, max_daily_lag)
         pacf_d = _pacf_from_acf(acf_d)
         for lag in range(1, max_daily_lag + 1):
@@ -1027,7 +998,7 @@ def ramp_table(df_kt: pd.DataFrame) -> pd.DataFrame:
     work["d_ghi"] = work.groupby("city", observed=True)[TARGET_COLUMN].diff()
     work.loc[work.groupby("city", observed=True)["datetime"].diff() != pd.Timedelta("1h"),
              "d_ghi"] = np.nan
-    kt_masked = work["kt"].where(work["CLRSKY_SFC_SW_DWN"] > CLEARSKY_MIN_FOR_KT)
+    kt_masked = work["kt"].where(work["toa_horizontal"] > TOA_MIN_FOR_KT)
     work["d_kt"] = kt_masked.groupby(work["city"], observed=True).diff()
     # align by index, not by position: `work` has been re-sorted above
     work = work[daylight_mask(df_kt).reindex(work.index).to_numpy()]
@@ -1091,15 +1062,18 @@ def daylight_block_table(df: pd.DataFrame) -> pd.DataFrame:
 def persistence_baseline_table(df_kt: pd.DataFrame, config=None) -> pd.DataFrame:
     """Reference forecast floor on the same chronological test window the model uses.
 
-    Three references, all leakage-free (nothing is fitted on test rows):
+    Two references, both leakage-free (nothing is fitted on test rows):
 
     - **Kalıcılık (persistence):** yhat(T) = y(T - 24 h). For a 24 h-ahead forecast this is
       the same number at every horizon step, so its skill is flat across the horizon --
       which is exactly the contrast a learned model has to beat at the far steps.
-    - **Akıllı kalıcılık (smart persistence):** carry yesterday's clearness forward and
-      re-apply today's clear-sky reference: yhat(T) = kt(T - 24 h) * CLRSKY(T). This is the
-      honest floor in solar forecasting -- plain persistence is easy to beat only because it
-      ignores the deterministic geometry.
+    Smart persistence -- yhat(T) = kt(T - 24 h) * CLRSKY(T) -- used to be the third. It needs a
+    clear-sky MAGNITUDE, which the 14-Sep-2026 export no longer supplies. Rebuilt on the
+    top-of-atmosphere denominator it degenerates: measured on this record it scores daylight
+    RMSE 121.93 / MAE 72.42 against plain persistence's 121.85 / 72.38, i.e. it is the same
+    rule, because TOA(T) ~ TOA(T-24h) for consecutive days where CLRSKY carried an air-mass
+    term that did not cancel. A reference that adds nothing is worse than no reference, so it
+    is removed rather than reported.
     - **Klimatoloji:** the (city, month, hour) mean of the TRAINING rows only.
 
     This is a descriptive reference, deliberately NOT a ledger row: the publishable
@@ -1119,14 +1093,6 @@ def persistence_baseline_table(df_kt: pd.DataFrame, config=None) -> pd.DataFrame
 
     grouped = work.groupby("city", observed=True)
     work["persistence"] = grouped[TARGET_COLUMN].shift(lag)
-    # kt is undefined at night (CLRSKY = 0). Carrying that NaN forward would silently drop
-    # every night row from this reference only, making its scope="24 saat" row incomparable
-    # with the others. Yesterday's night carries clearness 0, and CLRSKY(T) = 0 tonight, so
-    # the prediction is 0 either way -- which is the correct forecast.
-    kt_lag = grouped["kt"].shift(lag).clip(upper=1.1).fillna(0.0)
-    work["smart_persistence"] = (kt_lag * work["CLRSKY_SFC_SW_DWN"]).clip(lower=0.0)
-    # ...but a genuinely missing lag (the first 24 h of the record) must stay missing.
-    work.loc[grouped[TARGET_COLUMN].shift(lag).isna(), "smart_persistence"] = np.nan
 
     train_rows = work[work["datetime"] <= val_end]
     clim = train_rows.groupby(["city", "month", "HR"], observed=True)[TARGET_COLUMN].mean()
@@ -1140,7 +1106,6 @@ def persistence_baseline_table(df_kt: pd.DataFrame, config=None) -> pd.DataFrame
             s = sub if city == POOLED_LABEL else sub[sub["city"] == city]
             y = s[TARGET_COLUMN].to_numpy(dtype=float)
             for name, col in (("kalıcılık", "persistence"),
-                              ("akıllı kalıcılık", "smart_persistence"),
                               ("klimatoloji", "climatology")):
                 yhat = s[col].to_numpy(dtype=float)
                 ok = ~(np.isnan(y) | np.isnan(yhat))
@@ -1299,12 +1264,12 @@ def plot_persistence_baseline(baseline: pd.DataFrame, save_path: Path) -> None:
     """The forecast floor the model has to beat, per city, daylight hours only."""
     plt = _plt()
 
-    refs = ["kalıcılık", "akıllı kalıcılık", "klimatoloji"]
-    colors = [SEASON_COLORS["Kış"], SEASON_COLORS["İlkbahar"], SEASON_COLORS["Yaz"]]
+    refs = ["kalıcılık", "klimatoloji"]
+    colors = [SEASON_COLORS["Kış"], SEASON_COLORS["Yaz"]]
     sub = baseline[baseline["scope"] == "gündüz"]
     order = CITIES + [POOLED_LABEL]
     x = np.arange(len(order))
-    width = 0.26
+    width = 0.34
     with plt.rc_context(PAPER_RC):
         fig, axes = plt.subplots(1, 2, figsize=(FULL_WIDTH_IN, 2.9))
         for ax, metric, label in zip(axes, ["RMSE", "R2"],
@@ -1345,10 +1310,10 @@ def plot_rize_comparison(kt_table: pd.DataFrame, seasonal: pd.DataFrame,
     rize_color, other_color = SEASON_COLORS["Yaz"], ACCENT
     daily = (
         df_kt.assign(_date=df_kt["datetime"].dt.normalize())
-        .groupby(["city", "_date"], observed=True)[[TARGET_COLUMN, "CLRSKY_SFC_SW_DWN"]]
+        .groupby(["city", "_date"], observed=True)[[TARGET_COLUMN, "toa_horizontal"]]
         .sum()
     )
-    daily["kt_daily"] = daily[TARGET_COLUMN] / daily["CLRSKY_SFC_SW_DWN"]
+    daily["kt_daily"] = daily[TARGET_COLUMN] / daily["toa_horizontal"]
     daily = daily.reset_index()
     daily["month"] = daily["_date"].dt.month
 
@@ -1400,14 +1365,14 @@ def plot_rize_comparison(kt_table: pd.DataFrame, seasonal: pd.DataFrame,
 
         ax = axes[1, 1]
         sub = baseline[(baseline["scope"] == "gündüz")
-                       & (baseline["reference"] == "akıllı kalıcılık")]
+                       & (baseline["reference"] == "klimatoloji")]
         vals = [sub[sub["city"] == c]["R2"].iloc[0] for c in CITIES]
         ax.bar(range(len(CITIES)), vals,
                color=[rize_color if c == "Rize" else other_color for c in CITIES],
                alpha=0.85, width=0.6)
         ax.set_xticks(range(len(CITIES)))
         ax.set_xticklabels(CITIES, rotation=30, ha="right", fontsize=8)
-        ax.set_ylabel("R² (akıllı kalıcılık)")
+        ax.set_ylabel("R² (klimatoloji)")
         ax.set_ylim(0.6, 1.0)
         ax.set_title("Referans tahmin edilebilirliği")
         grid_y_only(ax)

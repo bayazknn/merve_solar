@@ -12,6 +12,7 @@ dependencies = [
     "tqdm>=4.66",
     "pyarrow>=14.0",
     "seaborn>=0.13,<0.15",
+    "pvlib>=0.15.2",
 ]
 
 # A dependency-group, not an optional-dependency (extra): `uv sync --dev` syncs groups, so

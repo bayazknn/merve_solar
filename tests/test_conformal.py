@@ -42,7 +42,7 @@ def _calibration_arrays(n=4000, horizon=4, seed=0, spread=1.0):
     """A predictive summary whose interval is `spread` times as wide as the truth warrants.
 
     spread > 1 is an over-wide interval (the `raw` arm's failure), spread < 1 an over-narrow one
-    (the `clearsky_index` arm's). The correct factor is therefore ~1/spread, which is what makes
+    (a narrower arm's). The correct factor is therefore ~1/spread, which is what makes
     the direction of the correction testable rather than merely plausible.
     """
     rng = np.random.default_rng(seed)
@@ -142,7 +142,7 @@ def test_calibrating_on_exchangeable_data_delivers_the_nominal_coverage(spread):
 
 
 def test_the_direction_of_the_correction_matches_the_direction_of_the_miscalibration():
-    """`raw` needs narrowing and `clearsky_index` widening -- one number cannot serve both,
+    """One arm needs narrowing and another widening -- one number cannot serve both,
     which is the finding this layer exists to act on."""
     over_wide = fit_conformal_grid(
         *_calibration_arrays(n=3000, seed=3, spread=2.0),
@@ -396,54 +396,6 @@ def test_the_per_city_arm_assembles_its_calibration_predictions_into_the_pooled_
     grid = pd.read_csv(isolated_outputs / "experiments" / "cf_percity" / "metrics" / "conformal_grid.csv")
     assert set(grid["city"]) == set(CITIES)
     assert subsets["daylight"]["aggregate"]["n_elements"] > 0
-
-
-def test_the_calibration_summary_is_brought_back_to_irradiance_before_the_grid_is_fitted():
-    """Under target_transform='clearsky_index' the calibration summary arrives as kt while the
-    truth it is scored against is always W/m^2. The inversion is a multiplication by the target
-    hour's clear-sky value and applies to mean and both percentiles alike -- the map is affine
-    with a non-negative factor, so it carries percentiles to percentiles."""
-    from merve_solar.experiment import invert_summary_transform
-    summary = {k: np.full((2, 3), v, dtype=np.float32)
-               for k, v in (("mean", 0.5), ("std", 0.1), ("lower", 0.3), ("upper", 0.7))}
-    clear = np.array([[0.0, 400.0, 800.0], [100.0, 200.0, 300.0]], dtype=np.float32)
-
-    raw_cfg = _tiny_config("cf_unit_raw")
-    assert invert_summary_transform(summary, raw_cfg, clear) is summary
-
-    kt_cfg = _tiny_config("cf_unit_kt", target_transform="clearsky_index")
-    out = invert_summary_transform(summary, kt_cfg, clear)
-    assert np.allclose(out["mean"], 0.5 * clear)
-    assert np.allclose(out["lower"], 0.3 * clear)
-    assert np.allclose(out["upper"], 0.7 * clear)
-    assert (out["lower"] <= out["mean"]).all() and (out["mean"] <= out["upper"]).all()
-    # Night (clear-sky 0) collapses the whole summary to a point, which conformity_scores then
-    # reports invalid -- the mechanism that keeps night out of every fit.
-    assert out["upper"][0, 0] == out["lower"][0, 0] == 0.0
-
-
-def test_the_clearsky_index_arm_runs_end_to_end_with_a_grid(isolated_outputs):
-    df = make_synthetic_base_df(900)
-    run_experiment(
-        _tiny_config("cf_kt", target_transform="clearsky_index", conformal_mode="global"),
-        base_df=df,
-    )
-    import pandas as pd
-    metrics_dir = isolated_outputs / "experiments" / "cf_kt" / "metrics"
-    grid = pd.read_csv(metrics_dir / "conformal_grid.csv")
-    assert len(grid) == 1 and np.isfinite(grid["k_applied"].iloc[0])
-    effect = pd.read_csv(metrics_dir / "conformal_effect.csv")
-    agg = effect[(effect["group"] == "Aggregate") & (effect["horizon_step"] == "all")].iloc[0]
-    assert agg["CP_before"] != agg["CP_after"]
-
-
-# --- the season axis ------------------------------------------------------------------------
-
-def test_a_season_mode_refuses_to_guess_when_it_is_given_no_timestamps():
-    """Silently falling back to one cell would report a `city_season` grid that is a scalar."""
-    y, mean, lower, upper, city_id, day, _ = _heterogeneous_grid_inputs(n_per_city=300)
-    with pytest.raises(ValueError, match="needs window_start"):
-        fit_conformal_grid(y, mean, lower, upper, city_id, day, "city_season", ALPHA)
 
 
 def test_the_season_cell_follows_the_month_of_the_window_start():

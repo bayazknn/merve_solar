@@ -29,5 +29,6 @@
   "clamp_night_to_zero": true,
   "huber_delta": 1.0,
   "excluded_cities": [],
-  "loss_function": "mse"
+  "loss_function": "mse",
+  "conformal_mode": "none"
 }

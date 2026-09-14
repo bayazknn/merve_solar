@@ -25,10 +25,14 @@ def make_synthetic_base_df(n_hours: int = N_HOURS) -> pd.DataFrame:
         dt = pd.date_range(start, periods=n_hours, freq="h")
         df = pd.DataFrame({col: rng.normal(size=n_hours) for col in NUMERIC_FEATURE_COLUMNS})
         df["datetime"] = dt
-        # Sun up between 06:00 and 17:00; zero otherwise, as NASA POWER reports it.
+        # Sun up between 06:00 and 17:00, negative elevation otherwise -- the shape data.py
+        # computes from real geometry, in the units solar.py produces (degrees).
         hour = dt.hour.to_numpy()
         df[DAYLIGHT_REFERENCE_COLUMN] = np.where(
-            (hour >= 6) & (hour <= 17), 100 + 700 * np.sin(np.pi * (hour - 6) / 11), 0.0
+            (hour >= 6) & (hour <= 17), 60.0 * np.sin(np.pi * (hour - 6) / 11) + 1.0, -20.0
+        )
+        df["toa_horizontal"] = np.clip(
+            1361.0 * np.sin(np.deg2rad(np.clip(df[DAYLIGHT_REFERENCE_COLUMN], 0, None))), 0, None
         )
         df["city"] = city
         df["city_id"] = city_idx

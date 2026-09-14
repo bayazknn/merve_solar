@@ -4,11 +4,14 @@ WHY THIS EXISTS. The pooled Bootstrap x MC-Dropout sample contains only EPISTEMI
 where the model's own mean might sit -- while the interval is scored on whether it contains the
 OBSERVATION, which additionally carries the residual (aleatoric) term. Nothing in the pipeline
 ever reconciles the two, so coverage is whatever that mismatch happens to produce, and it is
-measured to break on three independent axes that do not correct one another (ABLATION.md 3.5,
-4.6, 6.5): fidelity B, model capacity, and the target formulation. Under `raw` the interval
-comes out too WIDE (daylight CP 0.977) and under `clearsky_index` too NARROW (0.928) at an
-identical MPIW/RMSE ratio, so the required correction is signed differently per arm and a single
-scalar multiplier fitted on one of them is wrong on the other.
+measured to break on independent axes that do not correct one another (ABLATION.md 3.5, 4.6,
+6.5): fidelity B and model capacity, and -- on the superseded dataset, where the axis still
+existed -- the target formulation, where `raw` came out too WIDE (daylight CP 0.977) and the
+clearness-index formulation too NARROW (0.928) at an identical MPIW/RMSE ratio. That last pair
+is the cleanest demonstration on record that the required correction is signed differently per
+arm, so a single scalar multiplier fitted on one arm is wrong on another; it is kept here as
+the argument even though the arm itself is gone with the 14-Sep-2026 export. Every number in
+this paragraph predates that export and has to be re-measured.
 
 THE FORM OF THE CORRECTION. This module rescales the predictive distribution about its own mean,
 

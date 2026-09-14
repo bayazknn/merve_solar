@@ -1,7 +1,7 @@
 """Naive reference forecasts, scored through the same pipeline as the models.
 
 These exist because a metric is only interpretable against a floor. Measured on this dataset,
-a climatological lookup table scores R^2 = 0.923 over all 24 hours -- so an impressive-looking
+a climatological lookup table scores R^2 = 0.92 over all 24 hours -- so an impressive-looking
 all-hours R^2 in a results table can be worse than a monthly average, and a model that does not
 beat these is not a result. They cost seconds: no training, no scaler, no sweep.
 
@@ -13,20 +13,20 @@ for a point forecast it reduces exactly to MAE, which is a legitimate proper-sco
 import numpy as np
 import pandas as pd
 
-from merve_solar.config import DAYLIGHT_REFERENCE_COLUMN, TARGET_COLUMN
+from merve_solar.config import TARGET_COLUMN
 from merve_solar.windows import build_experiment_windows
 
 HOURS_PER_DAY = 24
 
-# Physical ceiling on the carried-forward clear-sky index. Occasional hours measure slightly
-# above the clear-sky reference (cloud-edge reflection), and letting those propagate a day
-# forward would produce predictions above the clear-sky curve.
-MAX_CLEARNESS_INDEX = 1.1
-
+# Smart persistence (yhat(T) = kt(T-24h) * CLRSKY(T)) used to sit here as a third rule. It
+# needs a clear-sky MAGNITUDE, which the 14-Sep-2026 export no longer supplies, and no
+# substitute model reproduces it closely enough to serve as a reference floor -- see
+# MODEL_FAMILIES in config.py for the measurement. It is removed rather than approximated:
+# a floor the model is judged against has to be a fact about the data, not about a model we
+# swapped in.
 BASELINE_COLUMNS = {
     "climatology": "_pred_climatology",
     "persistence": "_pred_persistence",
-    "smart_persistence": "_pred_smart_persistence",
 }
 
 
@@ -51,25 +51,10 @@ def add_baseline_columns(base_df: pd.DataFrame, train_end: pd.Timestamp) -> pd.D
     by_city = df.groupby("city", sort=False)[TARGET_COLUMN]
     df[BASELINE_COLUMNS["persistence"]] = by_city.shift(HOURS_PER_DAY).astype(np.float32)
 
-    # Smart persistence: carry yesterday's clear-sky index forward and re-apply it to today's
-    # clear-sky irradiance. kt is undefined at night (CLRSKY = 0); filling those with 0 rather
-    # than leaving NaN matters, because a NaN carried forward would silently drop every night
-    # row from this reference alone and make its scope incomparable with the others. Yesterday's
-    # night has clearness 0 and tonight's clear-sky is 0, so the prediction is 0 either way.
-    clearsky = df[DAYLIGHT_REFERENCE_COLUMN].to_numpy(dtype=np.float64)
-    kt = np.divide(
-        df[TARGET_COLUMN].to_numpy(dtype=np.float64), clearsky,
-        out=np.zeros(len(df)), where=clearsky > 0,
-    )
-    df["_kt"] = kt
-    kt_lag = df.groupby("city", sort=False)["_kt"].shift(HOURS_PER_DAY).clip(upper=MAX_CLEARNESS_INDEX)
-    df[BASELINE_COLUMNS["smart_persistence"]] = (
-        (kt_lag.fillna(0.0).to_numpy() * clearsky).clip(min=0).astype(np.float32)
-    )
-    # Where the plain lag is missing the window genuinely has no yesterday, so keep it missing
-    # rather than letting it become a confident zero.
-    df.loc[df[BASELINE_COLUMNS["persistence"]].isna(), BASELINE_COLUMNS["smart_persistence"]] = np.nan
-    return df.drop(columns="_kt")
+    # Where the lag is missing the window genuinely has no yesterday; it stays missing rather
+    # than becoming a confident zero, and build_baseline_predictions drops those windows from
+    # every arm together.
+    return df
 
 
 def build_baseline_predictions(base_df: pd.DataFrame, config, train_end, val_end) -> dict:

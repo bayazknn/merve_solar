@@ -29,6 +29,10 @@ def _synthetic(start="2024-01-01", periods=24 * 400, cities=("Ankara", "Rize")):
                     "DY": idx.day,
                     "HR": hour,
                     TARGET_COLUMN: 900 * shape * seasonal,
+                    # Geometry columns, as data.py attaches them: elevation in degrees and
+                    # the top-of-atmosphere horizontal irradiance kt is divided by.
+                    "solar_elevation": np.where((hour >= 6) & (hour <= 18), 30.0, -20.0),
+                    "toa_horizontal": 1361.0 * shape,
                     "city": city,
                 }
             )
@@ -45,32 +49,33 @@ def test_season_mapping_is_meteorological():
     assert seasons[10] == "Sonbahar"
 
 
-def test_daylight_mask_is_geometric_not_value_based(monkeypatch):
-    """The mask must come from the clear-sky reference, not from the realised target.
+def test_daylight_mask_is_geometric_not_value_based():
+    """The mask must come from the sun's computed position, not from the realised target.
 
-    A fully overcast noon reading of 0.0 is still daylight; the clear-sky column says so
-    regardless of the weather.
+    A fully overcast noon reading of 0.0 is still daylight; the geometry says so regardless
+    of the weather. This is the property that keeps the metric subset from being selected
+    with the answer -- see solar.py.
     """
     df = _synthetic(periods=24 * 5, cities=("Ankara",))
-    clear = df[["datetime", "city"]].copy()
-    clear["CLRSKY_SFC_SW_DWN"] = np.where((df["HR"] >= 6) & (df["HR"] <= 18), 500.0, 0.0)
-    monkeypatch.setattr(eda, "load_clearsky_reference", lambda: clear)
+    df["solar_elevation"] = np.where((df["HR"] >= 6) & (df["HR"] <= 18), 30.0, -20.0)
 
     noon = df.index[df["HR"] == 12][2]
     df.loc[noon, TARGET_COLUMN] = 0.0
     mask = eda.daylight_mask(df)
     assert mask.loc[noon], "an overcast noon hour was dropped by the daylight filter"
     assert not mask[df["HR"] == 0].any(), "night hours were kept"
-    assert mask.sum() == (13 * 5), "daylight span must follow the clear-sky column"
+    assert mask.sum() == (13 * 5), "daylight span must follow the solar elevation column"
 
 
-def test_daylight_mask_rejects_incomplete_clearsky_coverage(monkeypatch):
+def test_daylight_mask_refuses_a_frame_without_the_geometry_column():
+    """A stale parquet is the realistic failure, and it must be loud.
+
+    Without solar_elevation the only thing left to fall back on is the target, which is
+    exactly the definition this project rejects -- so there is no fallback.
+    """
     df = _synthetic(periods=24 * 3, cities=("Ankara",))
-    clear = df[["datetime", "city"]].iloc[:-1].copy()
-    clear["CLRSKY_SFC_SW_DWN"] = 100.0
-    monkeypatch.setattr(eda, "load_clearsky_reference", lambda: clear)
-    with pytest.raises(ValueError, match="does not cover"):
-        eda.daylight_mask(df)
+    with pytest.raises(ValueError, match="solar_elevation"):
+        eda.daylight_mask(df.drop(columns=["solar_elevation"], errors="ignore"))
 
 
 def test_last_12_months_is_exactly_twelve_ordered_months():
@@ -89,9 +94,7 @@ def test_last_12_months_is_exactly_twelve_ordered_months():
 
 def test_daily_totals_are_invariant_to_the_daylight_filter(monkeypatch):
     df = _synthetic(periods=24 * 90)
-    clear = df[["datetime", "city"]].copy()
-    clear["CLRSKY_SFC_SW_DWN"] = np.where((df["HR"] >= 6) & (df["HR"] <= 18), 500.0, 0.0)
-    monkeypatch.setattr(eda, "load_clearsky_reference", lambda: clear)
+    df["solar_elevation"] = np.where((df["HR"] >= 6) & (df["HR"] <= 18), 30.0, -20.0)
     full = eda.daily_totals(df).set_index(["city", "date"])["daily_kwh"]
     filtered = eda.daily_totals(df[eda.daylight_mask(df)]).set_index(["city", "date"])["daily_kwh"]
     pd.testing.assert_series_equal(full, filtered, check_names=False)
@@ -165,9 +168,7 @@ def test_acf_tolerates_gaps():
 def test_daylight_blocks_are_shorter_than_a_lookback_plus_horizon(monkeypatch):
     """The evidence behind TODOs.md item A: no daylight-only run reaches 48 hours."""
     df = _synthetic(periods=24 * 120)
-    clear = df[["datetime", "city"]].copy()
-    clear["CLRSKY_SFC_SW_DWN"] = np.where((df["HR"] >= 6) & (df["HR"] <= 18), 500.0, 0.0)
-    monkeypatch.setattr(eda, "load_clearsky_reference", lambda: clear)
+    df["solar_elevation"] = np.where((df["HR"] >= 6) & (df["HR"] <= 18), 30.0, -20.0)
     blocks = eda.daylight_block_table(df)
     assert (blocks["share_blocks_ge_48h"] == 0).all()
     assert (blocks["block_len_max"] < 24).all()

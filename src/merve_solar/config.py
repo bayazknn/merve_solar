@@ -5,11 +5,6 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RAW_XLSX_PATH = PROJECT_ROOT / "SolarData_Merve(140926).xlsx"
-# The superseded 16-July export. It is NOT a data source for any experiment; it is kept for
-# exactly one reason: it is the only place CLRSKY_SFC_SW_DWN exists, and CLRSKY is this
-# project's daylight instrument (see MASK_COLUMNS below and clearsky.py). Remove this the
-# moment a re-export that includes CLRSKY_SFC_SW_DWN arrives.
-LEGACY_XLSX_PATH = PROJECT_ROOT / "SolarData_Merve_All(16July).xlsx"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 BASE_FEATURES_PATH = OUTPUTS_DIR / "processed" / "base_features.parquet"
 EXPERIMENTS_DIR = OUTPUTS_DIR / "experiments"
@@ -21,13 +16,23 @@ EDA_DIR = OUTPUTS_DIR / "eda"
 EDA_FIGURES_DIR = EDA_DIR / "figures"
 EDA_TABLES_DIR = EDA_DIR / "tables"
 
-# Clear-sky reference cache, built on demand by clearsky.build_clearsky_reference().
-# CLRSKY_SFC_SW_DWN must never become a model feature (it is a near-deterministic envelope of
-# the target). It is the daylight instrument for every metric, and it is what makes the cities
-# comparable on cloudiness rather than on latitude via the clearness index kt = ALLSKY / CLRSKY.
-# Since the 14-Sep-2026 export no longer carries the column, this cache is reconstructed --
-# clearsky.py documents how, and how accurately.
-CLEARSKY_REFERENCE_PATH = OUTPUTS_DIR / "processed" / "clearsky_reference.parquet"
+# Province sites. Published coordinates and elevations, used only by solar.py to place the
+# sun; the UTC offset is derived from the longitude (see solar.utc_offset_hours) rather than
+# stored, so the two cannot disagree. Verified against this record: the derived offsets
+# reproduce the observed irradiance-weighted peak hours to within 0.11 h.
+#
+# Altitude enters only the refraction correction and moves sunrise by under a minute, so these
+# are province elevations rather than the MERRA-2 cell's model terrain (which differs
+# substantially -- the "Rize" cell averages ~880 m because it includes the Kaçkar range).
+#
+# These are also the coordinates the paper's province map needs (TODOs.md).
+PROVINCE_SITES = {
+    "Ankara":  {"latitude": 39.93, "longitude": 32.86, "altitude_m": 890},
+    "Antalya": {"latitude": 36.90, "longitude": 30.69, "altitude_m": 30},
+    "Konya":   {"latitude": 37.87, "longitude": 32.48, "altitude_m": 1020},
+    "Rize":    {"latitude": 41.02, "longitude": 40.52, "altitude_m": 5},
+    "Van":     {"latitude": 38.49, "longitude": 43.38, "altitude_m": 1725},
+}
 
 CITIES = ["Ankara", "Antalya", "Konya", "Rize", "Van"]
 CITY_TO_ID = {city: i for i, city in enumerate(CITIES)}
@@ -83,30 +88,22 @@ DROPPED_COLUMNS = []
 
 # Kept in the frame but NEVER a model input.
 #
-# CLRSKY_SFC_SW_DWN is a near-deterministic geometric upper envelope of the target, so as a
-# *feature* it turns part of the task into a clear-sky-index fit and inflates skill relative
-# to what is available operationally -- which is why it was removed from the feature set.
-# That same property is exactly what makes it the right *instrument*: whatever atmospheric term
-# clear-sky irradiance carries in its MAGNITUDE (it carries one -- see TARGET_TRANSFORMS below),
-# its SIGN is pure solar geometry, so `CLRSKY > 0` is an exact "is the sun above the horizon"
-# indicator that never reads the realised target. Useless as a predictor, ideal as a mask. It
-# defines the daylight subset used for metrics (see metrics.py).
+# `solar_elevation` is the apparent elevation of the sun, in degrees, at the midpoint of each
+# labelled hour -- computed by solar.py from the site coordinates and the timestamp, and from
+# nothing else. It replaces NASA POWER's CLRSKY_SFC_SW_DWN, which the 14-Sep-2026 export no
+# longer carries. It is a mask, not a predictor: as a feature it would hand the network the
+# solar geometry that hour_sin/hour_cos and doy_sin/doy_cos already encode, and the guard
+# below is what stops it drifting into NUMERIC_FEATURE_COLUMNS by accident.
 #
-# Measured against the alternatives on the previous export (295,920 rows): `CLRSKY > 0`
-# selects 151,643 rows and agrees with a `y >= 1 W/m^2` target threshold on 99.9983% of hours,
-# but never conditions on the outcome. A (city, month, hour) climatological cell selects
-# 156,909 -- it over-admits 5,266 twilight hours at the edges of monthly cells, whose median
-# irradiance is 12.0 W/m^2 against the daylight interior's 395.7, which would put much of the
-# night inflation straight back into the "daylight" numbers.
-#
-# !! The 14-Sep-2026 export DOES NOT CONTAIN CLRSKY_SFC_SW_DWN. It is reconstructed instead --
-# see clearsky.py for the method and its measured accuracy. The reconstruction is exact for
-# 97.6% of hours (they are covered by the previous export, which the new file reproduces
-# bit-for-bit in the meteorological columns) and a (city, month, day, hour) across-year median
-# for the remaining 2.4%, where the sun-up flag is right on 99.92-100% of hours. The right fix
-# is a re-export that includes the parameter; this is the bridge until then.
-MASK_COLUMNS = ["CLRSKY_SFC_SW_DWN"]
-DAYLIGHT_REFERENCE_COLUMN = "CLRSKY_SFC_SW_DWN"
+# `solar_elevation > 0` defines the daylight subset used for every headline metric, and
+# `solar_elevation <= 0` is what clamp_night_to_zero acts on. solar.py documents why the
+# obvious shortcut (`target > 0`) is not admissible and what the geometric choice costs.
+# `toa_horizontal` is the top-of-atmosphere irradiance on a horizontal surface, W/m^2 -- the
+# denominator of the standard clearness index kt = GHI / (I0 cos theta_z). Also pure astronomy,
+# also never a feature: as an input it would hand the network the geometry the cyclical time
+# encodings already carry.
+MASK_COLUMNS = ["solar_elevation", "toa_horizontal"]
+DAYLIGHT_REFERENCE_COLUMN = "solar_elevation"
 
 # A secondary aggregate that leaves Rize out, reported alongside the plain one.
 # The five provinces are two regimes, not one: Rize's daily clear-sky index is 0.697 against
@@ -120,7 +117,14 @@ SECONDARY_AGGREGATE_EXCLUDES = ["Rize"]
 # header migration. "global" is the headline configuration and the default; "per_city" exists
 # only as the ablation arm that tests the paper's cross-city transfer claim.
 TRAINING_SCOPES = ("global", "per_city")
-MODEL_FAMILIES = ("lstm", "climatology", "persistence", "smart_persistence")
+# smart_persistence is absent by design: it is yhat(T) = kt(T-24h) * CLRSKY(T), so it needs a
+# clear-sky MAGNITUDE, not just the sun's position. The 14-Sep-2026 export dropped that column
+# and no external clear-sky model reproduces it well enough here (measured: the baseline's
+# daylight RMSE degrades 117.4 -> 124.7 under pvlib's Ineichen model, and kt's >1 tail grows
+# from 2.9% to 13-20% of lit hours). Rather than ship a reference floor that is partly an
+# artefact of a substituted model, the arm is removed. A re-export carrying
+# CLRSKY_SFC_SW_DWN restores it exactly.
+MODEL_FAMILIES = ("lstm", "climatology", "persistence")
 
 # Training criterion, in SCALED target space (the non-negativity penalty is added on top of it
 # either way -- that term is a physics constraint, not part of the fit criterion).
@@ -133,25 +137,10 @@ MODEL_FAMILIES = ("lstm", "climatology", "persistence", "smart_persistence")
 # the finding, which is why this is a recorded axis rather than a silent default change.
 LOSS_FUNCTIONS = ("mse", "mae", "huber")
 
-# What the network is asked to regress. "raw" is the irradiance itself, in W/m^2.
-# "clearsky_index" regresses kt = ALLSKY / CLRSKY instead and multiplies the prediction back by
-# the target hour's clear-sky value, so the network learns only the atmospheric attenuation and
-# is handed the solar geometry -- which is the same information the naive baselines get for free
-# (smart persistence multiplies kt forward by CLRSKY at the target hour; the climatology cell
-# memorises the same envelope). Admitting CLRSKY is NOT leakage -- it never sees cloud cover,
-# which is the thing being forecast -- but the older justification here ("pure astronomy with
-# no weather term") is measurably too strong and should not be repeated in the paper: at a
-# FIXED solar position (Ankara, 21 June, 11:00 LST) NASA POWER's clear-sky value ranges
-# 952.5-1008.7 W/m^2 across 2020-2025, a 5.9% spread, and across all cells above 200 W/m^2 the
-# across-year relative sd is 4.1% (median) / 7.9% (p90). So CLRSKY carries a slow aerosol and
-# water-vapour term on top of the geometry. Only its SIGN is purely geometric, which is all
-# the daylight mask and clamp_night_to_zero rely on. It stays out of NUMERIC_FEATURE_COLUMNS
-# either way, entering only through this transform.
-# Measured on the base frame before implementing: daylight CLRSKY has a floor of 2.40 W/m^2, so
-# the division never blows up; kt has median 0.885, p99 = 1.000, 138 of 151,643 daylight hours
-# above 1.0 and exactly one above 1.5 (the documented Van 1215.88 back-fill artefact). No
-# clipping or threshold is applied, and none is needed.
-TARGET_TRANSFORMS = ("raw", "clearsky_index")
+# NOTE: the `clearsky_index` target transform was removed with the 14-Sep-2026 export. It
+# regressed kt = ALLSKY / CLRSKY and multiplied the prediction back by the target hour's
+# clear-sky value, which needs a clear-sky MAGNITUDE the export no longer supplies (see
+# MODEL_FAMILIES above and solar.py). The network now always regresses irradiance in W/m^2.
 
 # Split-conformal recalibration of the predictive interval; the vocabulary lives in
 # conformal.py (imported lazily in __post_init__ because that module imports this one).
@@ -292,10 +281,6 @@ class ExperimentConfig:
     # Training criterion; see LOSS_FUNCTIONS above.
     loss_function: str = "mse"
 
-    # What the network regresses; see TARGET_TRANSFORMS above. Default "raw" is the behaviour
-    # every existing ledger row was produced under.
-    target_transform: str = "raw"
-
     # Granularity of the split-conformal correction: "none" | "global" | "per_horizon" |
     # "per_city" | "city_horizon". See conformal.py for the method and its two stated threats
     # (the calibration split is the same one early stopping used, and it misses April and May).
@@ -310,8 +295,6 @@ class ExperimentConfig:
             raise ValueError(f"model_family must be one of {MODEL_FAMILIES}, got {self.model_family!r}")
         if self.loss_function not in LOSS_FUNCTIONS:
             raise ValueError(f"loss_function must be one of {LOSS_FUNCTIONS}, got {self.loss_function!r}")
-        if self.target_transform not in TARGET_TRANSFORMS:
-            raise ValueError(f"target_transform must be one of {TARGET_TRANSFORMS}, got {self.target_transform!r}")
         from merve_solar.conformal import CONFORMAL_MODES  # local: conformal.py imports this module
         if self.conformal_mode not in CONFORMAL_MODES:
             raise ValueError(f"conformal_mode must be one of {CONFORMAL_MODES}, got {self.conformal_mode!r}")
