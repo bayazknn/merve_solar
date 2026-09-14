@@ -4,7 +4,12 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-RAW_XLSX_PATH = PROJECT_ROOT / "SolarData_Merve_All(16July).xlsx"
+RAW_XLSX_PATH = PROJECT_ROOT / "SolarData_Merve(140926).xlsx"
+# The superseded 16-July export. It is NOT a data source for any experiment; it is kept for
+# exactly one reason: it is the only place CLRSKY_SFC_SW_DWN exists, and CLRSKY is this
+# project's daylight instrument (see MASK_COLUMNS below and clearsky.py). Remove this the
+# moment a re-export that includes CLRSKY_SFC_SW_DWN arrives.
+LEGACY_XLSX_PATH = PROJECT_ROOT / "SolarData_Merve_All(16July).xlsx"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 BASE_FEATURES_PATH = OUTPUTS_DIR / "processed" / "base_features.parquet"
 EXPERIMENTS_DIR = OUTPUTS_DIR / "experiments"
@@ -16,11 +21,12 @@ EDA_DIR = OUTPUTS_DIR / "eda"
 EDA_FIGURES_DIR = EDA_DIR / "figures"
 EDA_TABLES_DIR = EDA_DIR / "tables"
 
-# Clear-sky reference cache, built on demand by eda.load_clearsky_reference().
-# CLRSKY_SFC_SW_DWN is in DROPPED_COLUMNS and must never become a model feature (it is a
-# near-deterministic envelope of the target). It is read back here for DESCRIPTIVE USE ONLY
-# -- the clearness index kt = ALLSKY / CLRSKY is what makes the cities comparable on
-# cloudiness rather than on latitude. Nothing under experiment.py reads this file.
+# Clear-sky reference cache, built on demand by clearsky.build_clearsky_reference().
+# CLRSKY_SFC_SW_DWN must never become a model feature (it is a near-deterministic envelope of
+# the target). It is the daylight instrument for every metric, and it is what makes the cities
+# comparable on cloudiness rather than on latitude via the clearness index kt = ALLSKY / CLRSKY.
+# Since the 14-Sep-2026 export no longer carries the column, this cache is reconstructed --
+# clearsky.py documents how, and how accurately.
 CLEARSKY_REFERENCE_PATH = OUTPUTS_DIR / "processed" / "clearsky_reference.parquet"
 
 CITIES = ["Ankara", "Antalya", "Konya", "Rize", "Van"]
@@ -29,37 +35,76 @@ CITY_TO_ID = {city: i for i, city in enumerate(CITIES)}
 # NASA POWER's missing-value sentinel.
 MISSING_SENTINEL = -999
 
-# Last valid timestamp before NASA POWER's near-real-time processing-latency gap
-# (2026-03-31 00:00 -> 2026-06-30 23:00 is -999 for ALLSKY_SFC_SW_DWN/CLRSKY_SFC_SW_DWN
-# in every sheet, verified directly against the source file).
-LAST_VALID_TIMESTAMP = "2026-03-30 23:00:00"
-EXPECTED_TRIMMED_ROWS_PER_SHEET = 2208
+# Last valid timestamp before NASA POWER's near-real-time processing-latency gap.
+# In the 14-Sep-2026 export that gap is 2026-05-31 00:00 -> 2026-06-30 23:00 = 744 hours and
+# it affects ALLSKY_SFC_SW_DWN only -- the meteorological columns are complete to the last row
+# (verified directly against every sheet). The previous export's gap was 2208 hours, so this
+# file adds 1,464 usable hours (61 days) per province on top of the unit change.
+LAST_VALID_TIMESTAMP = "2026-05-30 23:00:00"
+EXPECTED_TRIMMED_ROWS_PER_SHEET = 744
 
 # Target: global horizontal irradiance under all-sky conditions, in W/m^2.
 TARGET_COLUMN = "ALLSKY_SFC_SW_DWN"
 
+# --- units -----------------------------------------------------------------------------
+# The 14-Sep-2026 export is in NASA POWER's *default* hourly units, which are not the ones
+# the previous export used and not the ones this project, the reference paper, or the
+# irradiance literature report in:
+#
+#   ALLSKY_SFC_SW_DWN : MJ/m^2/hour   (was W/m^2)      x 1e6/3600 = x 277.78 -> W/m^2
+#   PRECTOTCORR       : mm/hour       (was mm/day)     left as-is; mm/hour is the honest
+#                                                      unit for an hourly record, and the
+#                                                      old figure labels already said
+#                                                      "mm/saat" while the data was mm/day.
+#
+# Verified by joining the two exports on (city, datetime) over the 59,184 shared hours: the
+# meteorological columns are bit-identical, and new * 277.78 reproduces the old irradiance to
+# within 1.39 W/m^2 everywhere (mean 0.70). That residual is pure quantisation -- the new file
+# stores 2 decimals of MJ/m^2/hour, i.e. a 2.78 W/m^2 grid, against the old file's 0.01 W/m^2.
+# Quantisation noise is uniform on that grid, sd = 2.78/sqrt(12) = 0.80 W/m^2, which is under
+# 1% of the naive floor's RMSE and therefore immaterial to any metric -- but it does mean the
+# target is now discrete, so statements like "the smallest nonzero daylight reading" move.
+#
+# We convert rather than restate the project in MJ: every number in ABLATION.md, README.md and
+# the source paper is W/m^2, the conversion is exact and linear, and a unit switch would orphan
+# them all for no gain.
+MJ_M2_HOUR_TO_W_M2 = 1e6 / 3600.0
+IRRADIANCE_COLUMNS_MJ = ["ALLSKY_SFC_SW_DWN"]
+
 # Columns dropped while reading the xlsx (see data.py). The source file is left
 # physically untouched so it stays the raw NASA POWER export; the drop list lives here.
-#   ALLSKY_KT - clearness index, undefined at night (~50% -999); dropping it is what
-#               makes the "no -999 remains" integrity check pass.
-DROPPED_COLUMNS = ["ALLSKY_KT"]
+#
+# Empty since the 14-Sep-2026 export: ALLSKY_KT is no longer among the exported parameters,
+# so there is nothing left to drop. That also removes the reason the drop existed -- ALLSKY_KT
+# was -999 for every night hour and was what the "no -999 remains" integrity check tripped on.
+# The list is kept (rather than deleted) because it is the documented place to put a column
+# that must never reach the frame, and data.py still enforces it.
+DROPPED_COLUMNS = []
 
 # Kept in the frame but NEVER a model input.
 #
 # CLRSKY_SFC_SW_DWN is a near-deterministic geometric upper envelope of the target, so as a
 # *feature* it turns part of the task into a clear-sky-index fit and inflates skill relative
 # to what is available operationally -- which is why it was removed from the feature set.
-# That same property is exactly what makes it the right *instrument*: clear-sky irradiance is
-# pure solar geometry with no weather term, so `CLRSKY > 0` is an exact "is the sun above the
-# horizon" indicator that never reads the realised target. Useless as a predictor, ideal as a
-# mask. It defines the daylight subset used for metrics (see metrics.py).
+# That same property is exactly what makes it the right *instrument*: whatever atmospheric term
+# clear-sky irradiance carries in its MAGNITUDE (it carries one -- see TARGET_TRANSFORMS below),
+# its SIGN is pure solar geometry, so `CLRSKY > 0` is an exact "is the sun above the horizon"
+# indicator that never reads the realised target. Useless as a predictor, ideal as a mask. It
+# defines the daylight subset used for metrics (see metrics.py).
 #
-# Measured against the alternatives on the full record (295,920 rows): `CLRSKY > 0` selects
-# 151,643 rows and agrees with a `y >= 1 W/m^2` target threshold on 99.9983% of hours, but
-# never conditions on the outcome. A (city, month, hour) climatological cell selects 156,909
-# -- it over-admits 5,266 twilight hours at the edges of monthly cells, whose median irradiance
-# is 12.0 W/m^2 against the daylight interior's 395.7, which would put much of the night
-# inflation straight back into the "daylight" numbers.
+# Measured against the alternatives on the previous export (295,920 rows): `CLRSKY > 0`
+# selects 151,643 rows and agrees with a `y >= 1 W/m^2` target threshold on 99.9983% of hours,
+# but never conditions on the outcome. A (city, month, hour) climatological cell selects
+# 156,909 -- it over-admits 5,266 twilight hours at the edges of monthly cells, whose median
+# irradiance is 12.0 W/m^2 against the daylight interior's 395.7, which would put much of the
+# night inflation straight back into the "daylight" numbers.
+#
+# !! The 14-Sep-2026 export DOES NOT CONTAIN CLRSKY_SFC_SW_DWN. It is reconstructed instead --
+# see clearsky.py for the method and its measured accuracy. The reconstruction is exact for
+# 97.6% of hours (they are covered by the previous export, which the new file reproduces
+# bit-for-bit in the meteorological columns) and a (city, month, day, hour) across-year median
+# for the remaining 2.4%, where the sun-up flag is right on 99.92-100% of hours. The right fix
+# is a re-export that includes the parameter; this is the bridge until then.
 MASK_COLUMNS = ["CLRSKY_SFC_SW_DWN"]
 DAYLIGHT_REFERENCE_COLUMN = "CLRSKY_SFC_SW_DWN"
 
@@ -93,9 +138,15 @@ LOSS_FUNCTIONS = ("mse", "mae", "huber")
 # the target hour's clear-sky value, so the network learns only the atmospheric attenuation and
 # is handed the solar geometry -- which is the same information the naive baselines get for free
 # (smart persistence multiplies kt forward by CLRSKY at the target hour; the climatology cell
-# memorises the same envelope). CLRSKY is pure astronomy with no weather term and is computable
-# from latitude, longitude and time, so admitting it is NOT leakage; it stays out of
-# NUMERIC_FEATURE_COLUMNS either way, entering only through this transform.
+# memorises the same envelope). Admitting CLRSKY is NOT leakage -- it never sees cloud cover,
+# which is the thing being forecast -- but the older justification here ("pure astronomy with
+# no weather term") is measurably too strong and should not be repeated in the paper: at a
+# FIXED solar position (Ankara, 21 June, 11:00 LST) NASA POWER's clear-sky value ranges
+# 952.5-1008.7 W/m^2 across 2020-2025, a 5.9% spread, and across all cells above 200 W/m^2 the
+# across-year relative sd is 4.1% (median) / 7.9% (p90). So CLRSKY carries a slow aerosol and
+# water-vapour term on top of the geometry. Only its SIGN is purely geometric, which is all
+# the daylight mask and clamp_night_to_zero rely on. It stays out of NUMERIC_FEATURE_COLUMNS
+# either way, entering only through this transform.
 # Measured on the base frame before implementing: daylight CLRSKY has a floor of 2.40 W/m^2, so
 # the division never blows up; kt has median 0.885, p99 = 1.000, 138 of 151,643 daylight hours
 # above 1.0 and exactly one above 1.5 (the documented Van 1215.88 back-fill artefact). No
@@ -108,20 +159,33 @@ TARGET_TRANSFORMS = ("raw", "clearsky_index")
 # is also the only mode that costs nothing: any other value makes the run predict the
 # VALIDATION split as well, which is roughly a 13% wall-clock surcharge.
 
+# 16 columns, down from the previous export's 17. The change is NOT a modelling decision --
+# it is what the 14-Sep-2026 export contains. Gone: QV2M (specific humidity), WS50M/WD50M
+# (50 m wind). New: WS2M/WD2M (2 m wind). Kept identical: the target lag, T2M, RH2M, T2MDEW,
+# PS, WS10M/WD10M, PRECTOTCORR and the four time encodings.
+#
+# Nothing of consequence is lost. QV2M was already flagged as redundant (r = 0.962 with
+# T2MDEW on the old export), and the 50 m wind was the member of its pair the EDA had queued
+# for removal anyway. The substitution is if anything tighter: measured on the new export,
+# WS2M-WS10M correlate at 0.975 and WD2M-WD10M at 0.997, with the two directions agreeing to
+# a median 0.1 deg -- so WD2M carries essentially no information WD10M does not already have,
+# and it is the first candidate for a feature-reduction arm (see TODOs.md).
+#
+# Any ledger row written before this export ran on a different 17-column feature set over a
+# different record and is NOT comparable. Reruns need new ids.
 NUMERIC_FEATURE_COLUMNS = [
     "ALLSKY_SFC_SW_DWN",  # own-lag, autoregressive
     "T2M",
     "RH2M",
-    "QV2M",
     "T2MDEW",
     "PS",
+    "WS2M",
     "WS10M",
-    "WS50M",
     "PRECTOTCORR",
+    "WD2M_sin",
+    "WD2M_cos",
     "WD10M_sin",
     "WD10M_cos",
-    "WD50M_sin",
-    "WD50M_cos",
     "hour_sin",
     "hour_cos",
     "doy_sin",
@@ -137,9 +201,9 @@ RAW_METEO_COLUMNS = [c for c in NUMERIC_FEATURE_COLUMNS if not c.endswith(("_sin
 
 # Wind direction is circular: its arithmetic mean/std are meaningless (a pooled "189.5 +- 107
 # deg" is an artifact, not a statistic). Reported separately via circular statistics.
-CIRCULAR_COLUMNS = ["WD10M", "WD50M"]
+CIRCULAR_COLUMNS = ["WD2M", "WD10M"]
 
-# CLRSKY_SFC_SW_DWN now sits in the frame rather than being dropped, which makes it the column
+# CLRSKY_SFC_SW_DWN sits in the frame rather than being dropped, which makes it the column
 # most likely to drift back into the feature list by accident -- there is even a cached parquet
 # of it on disk inviting the mistake. This guard is what stops that, so it must keep covering
 # MASK_COLUMNS as well as DROPPED_COLUMNS.

@@ -66,25 +66,30 @@ VARIABLE_LABELS_TR = {
     "ALLSKY_SFC_SW_DWN": "Güneş ışınımı (W/m²)",
     "T2M": "Sıcaklık, 2 m (°C)",
     "RH2M": "Bağıl nem, 2 m (%)",
-    "QV2M": "Özgül nem, 2 m (g/kg)",
     "T2MDEW": "Çiy noktası, 2 m (°C)",
     "PS": "Yüzey basıncı (kPa)",
+    "WS2M": "Rüzgâr hızı, 2 m (m/s)",
     "WS10M": "Rüzgâr hızı, 10 m (m/s)",
-    "WS50M": "Rüzgâr hızı, 50 m (m/s)",
     "PRECTOTCORR": "Yağış (mm/saat)",
+    "WD2M": "Rüzgâr yönü, 2 m (°)",
     "WD10M": "Rüzgâr yönü, 10 m (°)",
+    # Retired with the 14-Sep-2026 export, kept so figures regenerated from an older cached
+    # parquet still label correctly rather than falling back to the raw column name.
+    "QV2M": "Özgül nem, 2 m (g/kg)",
+    "WS50M": "Rüzgâr hızı, 50 m (m/s)",
     "WD50M": "Rüzgâr yönü, 50 m (°)",
 }
 VARIABLE_SHORT_TR = {
     "ALLSKY_SFC_SW_DWN": "Işınım",
     "T2M": "Sıcaklık",
     "RH2M": "Bağıl nem",
-    "QV2M": "Özgül nem",
     "T2MDEW": "Çiy nokt.",
     "PS": "Basınç",
+    "WS2M": "Rüzgâr 2m",
     "WS10M": "Rüzgâr 10m",
-    "WS50M": "Rüzgâr 50m",
     "PRECTOTCORR": "Yağış",
+    "QV2M": "Özgül nem",
+    "WS50M": "Rüzgâr 50m",
 }
 
 PAPER_RC = {
