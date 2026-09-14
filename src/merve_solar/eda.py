@@ -611,8 +611,15 @@ def plot_scatter_vs_target(df_daylight: pd.DataFrame, city: str, save_path: Path
 
     variables = [c for c in RAW_METEO_COLUMNS if c != TARGET_COLUMN]
     g = df_daylight[df_daylight["city"] == city]
+    # Grid sized from the feature set, not hard-coded: the 14-Sep-2026 export has 7 raw
+    # meteorological variables where the previous one had 8, and a fixed 2x4 left a bare
+    # 0-1 axis in the corner of every panel figure.
+    ncols = 4
+    nrows = -(-len(variables) // ncols)
     with plt.rc_context(PAPER_RC):
-        fig, axes = plt.subplots(2, 4, figsize=(FULL_WIDTH_IN, 4.0))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(FULL_WIDTH_IN, 2.0 * nrows))
+        for ax in axes.ravel()[len(variables):]:
+            ax.axis("off")
         for ax, var in zip(axes.ravel(), variables):
             ax.scatter(
                 g[var], g[TARGET_COLUMN], s=2, alpha=0.10, color=ACCENT,

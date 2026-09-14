@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from merve_solar import eda
-from merve_solar.config import TARGET_COLUMN
+from merve_solar.config import RAW_METEO_COLUMNS, TARGET_COLUMN
 
 
 def _synthetic(start="2024-01-01", periods=24 * 400, cities=("Ankara", "Rize")):
@@ -122,12 +122,16 @@ def test_month_year_grid_raises_on_a_hole():
 
 
 def test_descriptive_table_has_one_row_per_city_and_variable():
+    # Columns come from RAW_METEO_COLUMNS rather than a literal list: the export's parameter
+    # set has changed once already (17 features -> 16), and a hard-coded fixture turns that
+    # into a test failure that says "KeyError: WS2M" instead of anything useful.
     df = _synthetic(periods=24 * 40)
-    df = df.assign(T2M=1.0, RH2M=2.0, QV2M=3.0, T2MDEW=4.0, PS=5.0,
-                   WS10M=6.0, WS50M=7.0, PRECTOTCORR=8.0)
+    n_vars = len(RAW_METEO_COLUMNS)
+    df = df.assign(**{c: float(i + 1) for i, c in enumerate(RAW_METEO_COLUMNS)
+                      if c != TARGET_COLUMN})
     table = eda.descriptive_table(df)
-    assert len(table) == 3 * 9  # 2 cities + pooled, 9 variables
-    assert table.groupby("city")["variable"].nunique().eq(9).all()
+    assert len(table) == 3 * n_vars  # 2 cities + pooled
+    assert table.groupby("city")["variable"].nunique().eq(n_vars).all()
     assert table.loc[table["city"] == eda.POOLED_LABEL, "n"].iloc[0] == len(df)
 
 
