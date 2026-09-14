@@ -20,41 +20,50 @@ uv run python scripts/02_descriptive_analysis.py  # tüm tablolar ve figürler
 
 | | |
 |---|---|
-| Kaynak dosya | `SolarData_Merve(140926).xlsx` (14 Eylül 2026 dışa aktarımı) |
+| Kaynak dosya | `SolarData_Merve(140926).xlsx` (14 Eylül 2026 dışa aktarımı) — **tek kaynak** |
 | Ara ürün | `outputs/processed/base_features.parquet` |
 | Kapsam | 2019-06-30 00:00 → 2026-05-30 23:00 |
 | İl başına satır | 60.648 kesintisiz saatlik satır (2.527 gün) |
-| Havuzlanmış | 303.240 satır; gündüz alt kümesi **155.896** (%51.41) |
+| Havuzlanmış | 303.240 satır; gündüz alt kümesi **152.893** (%50.42) |
 | Öznitelik | 16 |
 
-**Bu dosya öncekinden farklı ayarlarla alınmıştır** — birimler, parametre seçimi ve
-kayıt uzunluğu değişti. Üçünün de ayrıntısı ve sonuçları `EDA.md` §0'dadır; okumadan
-buradaki hiçbir sayı eskisiyle kıyaslanmamalıdır.
+**Bu dosya öncekinden farklı ayarlarla alınmıştır** — birimler, parametre seçimi ve kayıt
+uzunluğu değişti, ve `CLRSKY_SFC_SW_DWN` artık yok. Hepsinin ayrıntısı `EDA.md` §0'dadır;
+okumadan buradaki hiçbir sayı eskisiyle kıyaslanmamalıdır.
 
-**`CLRSKY_SFC_SW_DWN` bu dışa aktarımda yok ve yeniden inşa ediliyor**
-(`src/merve_solar/clearsky.py`): kaydın %97.6'sı için önceki dışa aktarımdan birebir,
-kalan %2.4'ü (31 Mart – 30 Mayıs 2026) aynı takvim hücresinin önceki yıllardaki medyanı.
-Sütun frame'de bir **maske** olarak durur, modele asla öznitelik olarak girmez. Ölçülen
-doğruluğu ve sınırları `EDA.md` §0.2'dedir.
+**Berrak gökyüzü sütununun yerini güneş geometrisi aldı** (`src/merve_solar/solar.py`). Depoda
+başka hiçbir veri dosyası yoktur; her şey bu excelden ve astronomiden türer.
+
+- `solar_elevation` — her saatin orta noktasındaki görünür güneş yüksekliği (derece), il
+  koordinatlarından ve zaman damgasından NREL algoritmasıyla. `> 0` gündüz demektir ve
+  `clamp_night_to_zero` bunun işaretine bakar.
+- `toa_horizontal` — atmosfer üstü yatay ışınım (W/m²), berraklık indeksinin paydası.
+
+İkisi de frame'de **maske** olarak durur, modele asla öznitelik olarak girmez.
 
 ---
 
 ## Makaleye yazarken dikkat edilecek altı yöntem noktası
 
-**1. "Gündüz" geometrik olarak tanımlıdır: `CLRSKY_SFC_SW_DWN > 0`.** Berrak gökyüzü
-ışınımının *işareti* saf güneş geometrisidir, dolayısıyla > 0 olması tam olarak "bu ilde ve
-bu saatte güneş ufkun üstünde" demektir. Yalnız boolean kullanılır: "güneş doğmuş mu"
-bilgisi kamuya açık astronomik bir bilgidir, hava durumu değil; bu yüzden
-`CLRSKY_SFC_SW_DWN`'ı öznitelik listesine koymak sızıntı olurken bu maske değildir.
+**1. "Gündüz" hesaplanmış güneş yüksekliğiyle tanımlıdır: `solar_elevation > 0`.** Saatin orta
+noktasında güneşin ufkun üzerinde olması. Yalnız (il, zaman damgası) fonksiyonudur; hiçbir
+ölçümü, özellikle hedefi okumaz.
 
-İki alternatif denendi, ikisi de yanlış:
+İki alternatif denendi, ikisi de reddedildi:
 
-- *`ışınım > 0` değer eşiği* bağımlı değişkene koşullanıyor gibi görünür. Önceki veri
-  sürümünde pratikte aynı satırları seçiyordu; **yeni sürümde artık seçmiyor.** Hedef
-  2.78 W/m² adımlarla ayrıklaştığı için 36 gerçek gündüz saati tam sıfır okuyor. Yani
-  itiraz artık yalnız ilkesel değil, ölçülebilir.
-- *Klimatolojik (il, ay, saat) hücre ortalaması > 0* ilk EDA turunda kullanıldı ve **çok
-  kaba olduğu için hatalıydı** — ayrıntı en alttaki *Düzeltme kaydı*'nda.
+- *`ışınım > 0` değer eşiği.* Bu veride 303.240 satırın 303.204'ünde aynı sonucu verir, yine de
+  kabul edilemez: (a) başlık metriklerinin paydasını sonuca göre seçer — bulutlu bir
+  alacakaranlık saati sıfır okur ve modelin en kötü olduğu yerden elenir; (b) **24 saat ilerisi
+  için hesaplanamaz**, oysa `clamp_night_to_zero` tam da orada karar vermek zorundadır. İkinci
+  madde belirleyicidir: geometriye zaten mecburuz, ve elde geometri varken metrik için başka
+  bir tanım kullanmak tutarsızlık olur. Gerekçenin tamamı `solar.py`'nin başındadır.
+- *Klimatolojik (il, ay, saat) hücre ortalaması > 0* ilk EDA turunda kullanıldı ve **çok kaba
+  olduğu için hatalıydı** — ayrıntı en alttaki *Düzeltme kaydı*'nda.
+
+**Eşik ayarlanmamıştır.** Tarayınca hedefe daha iyi uyan bir değer bulunabiliyor (−2.0°,
+uyumsuzluğu 3.034'ten 587 satıra düşürüyor), ama geometrik bir maskeyi hedefe göre ayarlamak
+maskenin var olma nedenini ortadan kaldırır. Bedeli ölçüldü: klimatoloji zemini gündüz RMSE
+108.78 → 109.86.
 
 **2. Aylık kutu grafiği saatlik değil, günlük toplam üzerindendir.** Gündüz *saatlik*
 değerlerle çizilen bir kutunun genişliğinin büyük kısmı gün içi güneş geometrisidir ve
@@ -90,14 +99,14 @@ yıllarını (2020–2025) kullanır.
 
 **Kapsam kuralı: bir istisna dışında her tablo verinin tamamını kullanır** — 2019-06-30 →
 2026-05-30, il başına 60.648 saat / 2.527 gün, havuzlanmış 303.240 satır (gündüz alt kümesi
-155.896). Tek istisna `monthly_target_stats.csv`'dir: son 12 ayın kutu grafiğinin verisidir
+152.893). Tek istisna `monthly_target_stats.csv`'dir: son 12 ayın kutu grafiğinin verisidir
 ve bilerek 2025-06 → 2026-05 ile sınırlıdır. Figürlerde iki istisna vardır:
 `monthly_boxplot_last12m_*` (son 12 ay) ve `month_year_surface_*` /
 `month_year_anomaly_panel` (yalnız 2020–2025).
 
 | Dosya | İçerik | Kapsam |
 |---|---|---|
-| `descriptive_stats_by_city_daylight.csv/.md/.tex` | **Birincil tablo.** Gündüz saatleri, il bazında + havuzlanmış. | tam veri (gündüz, n = 155.896) |
+| `descriptive_stats_by_city_daylight.csv/.md/.tex` | **Birincil tablo.** Gündüz saatleri, il bazında + havuzlanmış. | tam veri (gündüz, n = 152.893) |
 | `descriptive_stats_by_city_24h.csv/.md/.tex` | Aynı tablo 24 saat üzerinden — modelin eğitildiği dağılım budur. | tam veri (n = 303.240) |
 | `temporal_coverage_by_city.csv` | Kapsam, saat/gün sayısı, gündüz payı, mevsime göre ortalama günlük gündüz süresi, hedefin mevsimsel özetleri. | tam veri |
 | `target_by_hour_by_city.csv` | Hedefin (il, mevsim, LST saati) dağılımı — günlük profil figürünün verisi. | tam veri |
@@ -109,11 +118,11 @@ ve bilerek 2025-06 → 2026-05 ile sınırlıdır. Figürlerde iki istisna vard�
 | `seasonal_target_stats.csv` | Mevsim bazında saatlik ve günlük toplam özetleri. | tam veri (2.527 gün/il) |
 | `daily_clearness_by_city.csv` | **Ampirik** berraklık oranı (günlük toplam ÷ aynı yılın-günü için gözlenen 95. persentil) ve açık/kapalı gün payları — illeri enlemden bağımsız kıyaslar. | tam veri (2.525 gün/il; 29 Şubat'lar hizalama için düşülür) |
 | `monthly_target_stats.csv` | Son 12 ayın günlük toplam özetleri — kutu grafiğinin verisi. | **SADECE 2025-06 → 2026-05** |
-| `clearness_index_by_city.csv` | **Fiziksel** berraklık indeksi kt = ALLSKY / CLRSKY, saatlik ve günlük, il × mevsim. Saatlik değerler `CLRSKY > 20 W/m²` ile sınırlıdır (alacakaranlıkta bölme patlar). | tam veri |
+| `clearness_index_by_city.csv` | **Standart** berraklık indeksi kt = GHI / (I₀ cos θz), saatlik ve günlük, il × mevsim. Saatlik değerler `toa_horizontal > 20 W/m²` ile sınırlıdır (alacakaranlıkta bölme patlar). Gökyüzü durumu eşikleri literatürün bantlarıdır: berrak kt > 0.65, kapalı kt < 0.35. | tam veri |
 | `autocorrelation_clearness.csv` | kt'nin ACF ve PACF'i, saatlik (gecikme 1–72) ve günlük (1–30). `lookback_hours` kararının dayanağı. | tam veri |
 | `ramp_stats_by_city.csv` | Saatlik \|ΔIşınım\| ve \|Δkt\| dağılımı, il × mevsim. | tam veri (gündüz) |
 | `daylight_block_structure.csv` | Gece satırları silinseydi oluşacak kesintisiz blok uzunlukları. | tam veri (gündüz) |
-| `persistence_baseline.csv` | Referans zemin: kalıcılık, akıllı kalıcılık, klimatoloji için RMSE/MAE/R²/yanlılık. | **modelin test penceresi** (val_end sonrası, 9.097 saat/il) |
+| `persistence_baseline.csv` | Referans zemin: kalıcılık ve klimatoloji için RMSE/MAE/R²/yanlılık. Akıllı kalıcılık kaldırıldı (`EDA.md` §0.3). Bu tablo betimsel bir ikizdir; makaleye girecek sayılar `scripts/03_run_naive_baselines.py`'nin boru hattından geçen çıktısıdır ve payda farkı yüzünden birkaç ondalık ayrışır. | **modelin test penceresi** (val_end sonrası, 9.097 saat/il) |
 
 Üç okuma notu:
 
@@ -190,19 +199,28 @@ her sayı yeniden üretilmiştir**; eski sürümden alıntılanmış hiçbir rak
 | Hedef birimi | W/m² | MJ/m²/saat → okurken W/m²'ye çevriliyor |
 | Yağış birimi | mm/gün | mm/saat |
 | Öznitelik sayısı | 17 | 16 (`QV2M`, `WS50M`, `WD50M` gitti; `WS2M`, `WD2M` geldi) |
-| `CLRSKY_SFC_SW_DWN` | dosyada var | **dosyada yok**, yeniden inşa ediliyor |
+| Gündüz tanımı | `CLRSKY_SFC_SW_DWN > 0` | **`solar_elevation > 0`** (hesaplanmış) |
+| Berraklık indeksi | `ALLSKY / CLRSKY` | **`GHI / (I₀ cos θz)`** (standart tanım) |
 | Kayıt sonu | 2026-03-30 | 2026-05-30 (+61 gün) |
 | İl başına satır | 59.184 | 60.648 |
-| Gündüz satırı / payı | 151.643 / %51.2 | 155.896 / %51.41 |
+| Gündüz satırı / payı | 151.643 / %51.2 | 152.893 / %50.42 |
 | Test penceresi | 8.878 saat / 370 gün | 9.097 saat / 379 gün |
+| Naif zemin (gündüz) | klim. 106.8 / kal. 116.4 | klim. **109.86** / kal. **121.56** |
+
+**Eski excel (`SolarData_Merve_All(16July).xlsx`) depodan silinmiştir.** Bir ara sürümde
+`CLRSKY_SFC_SW_DWN` oradan yeniden inşa ediliyordu; o köprü kaldırıldı ve yerini güneş
+geometrisi aldı, böylece proje tek bir veri dosyasına bağlı. Bunun iki bedeli var ve ikisi de
+ölçülerek kabul edildi: gündüz maskesi %1 kayıyor (klimatoloji RMSE 108.78 → 109.86) ve berrak
+gökyüzü **büyüklüğüne** dayanan iki analiz — akıllı kalıcılık referansı ile `clearsky_index`
+hedef dönüşümü — kaldırıldı. Gerekçeler `EDA.md` §0.2 ve §0.3'te.
 
 Ayrıntılı gerekçe, ölçümler ve sonuçları `EDA.md` §0'dadır. Bu turda ayrıca **daha önce
 bu belgede yazılı olan iki ifade düzeltildi**:
 
 1. *"Açık-hava ışınımı saf geometrik bir büyüklüktür."* Ölçüldü ve fazla güçlü bulundu:
    güneşin konumu sabitken bile NASA POWER'ın değeri yıllar arasında %4–8 geziyor. Yalnız
-   **işareti** geometriktir — gündüz maskesi ve gece sabitlemesi için yeterli, ama
-   `clearsky_index` dönüşümünü "tamamen astronomi" diye savunmak için değil. `EDA.md` §0.2.
+   **işareti** geometrikti. Bu artık tarihsel bir not: sütun tamamen kullanımdan kalktı ve
+   yerine gerçekten saf geometri olan hesaplanmış güneş yüksekliği geçti.
 2. *"`PRECTOTCORR`'un birim etiketi şüpheli."* Çözüldü: eski dosya mm/gün, yeni dosya
    mm/saat. `VARIABLE_LABELS_TR`'deki "mm/saat" etiketi eski veride yanlıştı, yeni veride
    doğrudur. `EDA.md` §0.1 ve §4.1.

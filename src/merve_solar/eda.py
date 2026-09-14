@@ -856,6 +856,15 @@ def plot_seasonal_dayofyear(daily: pd.DataFrame, save_path: Path) -> None:
 # ---------------------------------------------------------------------------------------
 TOA_MIN_FOR_KT = 20.0  # W/m^2; below this, GHI/TOA is a twilight division blow-up
 
+# Sky-condition cut-offs on the CLEARNESS INDEX kt = GHI / (I0 cos theta_z). These are the
+# literature's standard bands for this index (Liu & Jordan / Iqbal): clear above 0.65,
+# overcast below 0.35, partly cloudy between. They are NOT the 0.7/0.3 pair used while the
+# denominator was NASA POWER's clear-sky column -- that scale put a cloudless hour at ~1.0,
+# this one puts it at ~0.75-0.80, so carrying the old numbers over silently misclassifies the
+# sunniest provinces as the cloudiest.
+CLEAR_KT = 0.65
+OVERCAST_KT = 0.35
+
 
 def clearness_index_table(df_kt: pd.DataFrame) -> pd.DataFrame:
     """Standard clearness index kt = GHI / (I0 cos theta_z), per (city, season).
@@ -891,13 +900,13 @@ def clearness_index_table(df_kt: pd.DataFrame) -> pd.DataFrame:
                     "n_days": int(len(d)),
                     "kt_hourly_mean": h["kt"].mean(),
                     "kt_hourly_median": h["kt"].median(),
-                    "clear_hour_share": (h["kt"] > 0.7).mean(),
-                    "overcast_hour_share": (h["kt"] < 0.3).mean(),
+                    "clear_hour_share": (h["kt"] > CLEAR_KT).mean(),
+                    "overcast_hour_share": (h["kt"] < OVERCAST_KT).mean(),
                     "kt_daily_mean": d["kt_daily"].mean(),
                     "kt_daily_median": d["kt_daily"].median(),
                     "kt_daily_std": d["kt_daily"].std(),
-                    "clear_day_share": (d["kt_daily"] > 0.7).mean(),
-                    "overcast_day_share": (d["kt_daily"] < 0.3).mean(),
+                    "clear_day_share": (d["kt_daily"] > CLEAR_KT).mean(),
+                    "overcast_day_share": (d["kt_daily"] < OVERCAST_KT).mean(),
                 }
             )
     return pd.DataFrame(rows)

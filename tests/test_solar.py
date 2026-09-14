@@ -80,7 +80,7 @@ def test_the_mask_never_calls_a_lit_hour_night_in_the_dangerous_direction(frame)
     # are twilight, so their share of total daylight energy must be negligible.
     dropped = frame.loc[~day & positive, TARGET_COLUMN].sum()
     kept = frame.loc[day, TARGET_COLUMN].sum()
-    assert dropped / kept < 0.005
+    assert dropped / kept < 0.001
 
 
 def test_clearness_index_is_physically_admissible(frame):

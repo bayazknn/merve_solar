@@ -27,13 +27,14 @@ manuscript.
 24-hour-ahead hourly solar irradiance forecasting (`ALLSKY_SFC_SW_DWN`, W/m²) for 5 Turkish
 provinces (Ankara, Antalya, Konya, Rize, Van — deliberately spanning different climate zones),
 using an LSTM point forecaster wrapped in a **Bootstrap Ensemble × MC-Dropout** uncertainty layer.
-Source data is NASA POWER hourly, in `SolarData_Merve(140926).xlsx` (one sheet per province).
-That export replaced `SolarData_Merve_All(16July).xlsx` on 2026-09-14 and changed three things
-at once — the irradiance is in MJ/m²/hour (converted to W/m² at read time), the parameter set
-dropped `CLRSKY_SFC_SW_DWN`/`QV2M`/the 50 m wind and added the 2 m wind, and the record runs
-61 days longer. `outputs/eda/EDA.md` §0 is the full account; **every ledger row written before
-that date is not comparable and needs rerunning under a new id.** The old file stays in the repo
-for one reason only: it is the sole source of `CLRSKY_SFC_SW_DWN` (see `clearsky.py`).
+Source data is NASA POWER hourly, in `SolarData_Merve(140926).xlsx` (one sheet per province)
+— **the repo's only data file**. It replaced `SolarData_Merve_All(16July).xlsx` on 2026-09-14,
+which is now deleted, and changed three things at once: the irradiance is in MJ/m²/hour
+(converted to W/m² at read time), the parameter set dropped `CLRSKY_SFC_SW_DWN`/`QV2M`/the 50 m
+wind and added the 2 m wind, and the record runs 61 days longer. `outputs/eda/EDA.md` §0 is the
+full account; **every ledger row written before that date is not comparable**, and the old
+ledger is parked in `outputs/archive/` rather than migrated. `solar.py` replaced the clear-sky
+column with computed geometry, which removed two analyses (see *The domain* continued below).
 
 The methodology is adapted from a reference paper (`main_methodology_paper.pdf`), substituting
 the paper's PCNN backbone with an LSTM and PV power output with irradiance.
@@ -96,8 +97,8 @@ is per-config.**
 1. **Base data (once)** — `data.py` reads the 5 sheets, trims NASA POWER's trailing `-999` latency
    gap at `LAST_VALID_TIMESTAMP` (744 hours), converts the irradiance from MJ/m²/hour to
    W/m², drops the `DROPPED_COLUMNS` (currently empty) at read time so the xlsx stays
-   untouched, merges in the reconstructed `CLRSKY_SFC_SW_DWN` as a `MASK_COLUMNS` entry that
-   is never a model input, adds cyclical
+   untouched, computes `solar_elevation` and `toa_horizontal` via `solar.py` as `MASK_COLUMNS`
+   entries that are never model inputs, adds cyclical
    hour/day-of-year/wind-direction sin-cos features, and caches all cities concatenated to a
    parquet. Every experiment reuses this cache.
 2. **One experiment (per config)** — `experiment.py::run_experiment(config)` is the single
@@ -116,21 +117,22 @@ serialized to/from JSON; `experiment_id` names both the output directory
 (`outputs/experiments/<id>/`) and the row in the shared `outputs/experiments_ledger.csv`.
 `configs/experiment_grid.py` groups the sweep by name in `EXPERIMENT_GROUPS` — currently
 `smoke`, `main`, `ablation`, the `rize_curve*` family, `arch_sweep`/`arch_sweep_x`/`arch_frontier`,
-`percity_endpoints`, the `target_*` family, `sens_scaler_l1`, `device_parity`, and
-`conformal_smoke`/`conformal`/`conformal_grid`. Add sweep entries to a group builder there, and
+`percity_endpoints`, `sens_scaler_l1`, `device_parity`, and
+`conformal_smoke`/`conformal`/`conformal_grid`/`conformal_csh`. (The `target_*` family went with
+the `target_transform` axis; `configs/experiment_grid.py` keeps a note where it stood.) Add sweep entries to a group builder there, and
 `build_experiment_grid(groups)` assembles them and rejects duplicate ids. `--list` before running
 anything: with no `--group` it selects *every* group.
 
 Besides the windowing/architecture/UQ knobs, `ExperimentConfig` now carries the **arm-selection
 and criterion axes**: `training_scope` (`global` | `per_city`), `model_family`,
 `excluded_cities`, `loss_function` (`mse` | `mae` | `huber`) + `huber_delta`,
-`target_transform` (`raw` | `clearsky_index`), `loss_daylight_only`, `per_city_scaler`,
+`loss_daylight_only`, `per_city_scaler`,
 `clamp_night_to_zero` and `conformal_mode`. All of them are validated in
 `__post_init__` (so a typo fails at config load, not three hours into a sweep) and all of them
 are ledger columns. `README.md` has the per-field table.
 
-**`baselines.py` + `scripts/03_run_naive_baselines.py`** are the reference floor: climatology,
-persistence and smart persistence, fitted on training rows only and gathered into windows by
+**`baselines.py` + `scripts/03_run_naive_baselines.py`** are the reference floor: climatology
+and persistence, fitted on training rows only and gathered into windows by
 `build_experiment_windows(..., extra_target_columns=...)` so they are aligned by exactly the
 indexing the model's targets are. They report through `metrics.py` into the same ledger with
 `model_family` set, and blank the interval metrics (a point forecast's zero-width interval makes
@@ -169,7 +171,7 @@ CP an equality test). A model that does not beat these is not a result.
   windows ≈ 1 week at `window_stride=1`), resampled per city, to preserve temporal
   autocorrelation.
 - **`clamp_night_to_zero` (default ON) is a physics constraint, not post-hoc tuning.** After the
-  inverse transform, every element with `CLRSKY = 0` has its whole pooled sample set to zero —
+  inverse transform, every element with `solar_elevation <= 0` has its whole pooled sample set to zero —
   below the horizon the target is exactly 0 and that is known from geometry alone, without
   reading the target. It is applied once in `run_experiment`, not inside a scope runner, so every
   arm gets it identically. Consequence to carry into every write-up: it makes the all-hours CP
@@ -186,17 +188,20 @@ CP an equality test). A model that does not beat these is not a result.
   still scored via MC-Dropout alone.
 - **Scripts add `src/` to `sys.path`** rather than relying on the editable install; keep that
   prologue when adding a script under `scripts/`.
-- **Daylight means `CLRSKY_SFC_SW_DWN > 0`, everywhere in the project.** Clear-sky irradiance is
-  pure solar geometry **in its sign only** — the magnitude carries an aerosol/water-vapour term
-  (at a fixed solar position NASA POWER's value moves 4-8% across years), so never write "no
-  weather term". The sign is all the mask needs: it is an exact "is the sun above the horizon"
-  indicator that never reads the realised target, which is why it is not leakage even though the
-  column itself must never be a feature. Two alternatives were tried and are wrong: a `target > 0`
-  threshold conditions on the outcome (and since the 14-Sep-2026 export it is also simply wrong —
-  quantisation makes 36 real daylight hours read exactly 0, where the old export had none), and a
-  climatological `(city, month, hour)` cell mean is too coarse — sunrise shifts 30-60 minutes
-  within a month, so it admitted 5,266 rows whose clear-sky value is exactly 0, i.e. night. See
-  `outputs/eda/README.md`, *Düzeltme kaydı*.
+- **Daylight means `solar_elevation > 0`, everywhere in the project.** `solar.py` computes the
+  sun's apparent elevation at each hour's MIDPOINT from the province coordinates and the
+  timestamp (pvlib/NREL) — a pure function of (site, time) that reads no measurement at all.
+  Two alternatives were tried and are wrong, and the second reason for rejecting the first is
+  the decisive one: a `target > 0` threshold (a) selects the metric's denominator using the
+  answer, so the hours the model is worst on are the ones that drop out, and (b) **cannot be
+  evaluated 24 h ahead**, which is exactly where `clamp_night_to_zero` has to decide — so
+  geometry is required regardless, and a second definition for the metric would be incoherent.
+  A climatological `(city, month, hour)` cell mean is too coarse: sunrise shifts 30-60 minutes
+  within a month, so it admitted 5,266 rows of genuine night. The threshold is deliberately
+  UNTUNED — sweeping it fits the realised target better (587 disagreements at -2.0° against
+  3,034 at 0°) and that is precisely the conditioning the mask exists to avoid; the untuned
+  choice costs 1% on the floor (climatology daylight RMSE 108.78 -> 109.86). See `solar.py`
+  and `outputs/eda/EDA.md` §0.2/§3.2.
 - **The hourly clock is per-site Local Solar Time, not a shared time zone.** Verified from the
   data: mean-irradiance peak hour runs Konya 11.24 ≈ Ankara 11.24 < Antalya 11.41 < Van 11.58 <
   Rize 11.91, which is the *reverse* of what a common clock would give and matches
@@ -222,7 +227,7 @@ The ledger is only useful if rows are comparable, and the paper's tables come st
   `bootstrap_block_length`, `mc_dropout_passes`, the optimizer knobs (`batch_size`,
   `learning_rate`, `lr_reduce_factor`, `lr_reduce_patience`), `max_epochs`,
   `early_stop_patience`, `loss_function`, `huber_delta`, `nonneg_penalty_weight`,
-  `target_transform`, `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`,
+  `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`,
   `conformal_mode`, `seed` and `device`. A run
   that changed something *not* in those columns is indistinguishable in the table. If a new axis
   matters, add it to `LEDGER_COLUMNS` and the row dict first — `assert_ledger_schema_ok()` then
@@ -256,7 +261,7 @@ The ledger is only useful if rows are comparable, and the paper's tables come st
 `metrics.py` reports RMSE/MAE/**R²**/CP/PINW/MPIW/Reliability/CWC/CRPS three ways — aggregate,
 per-city (`results_summary.csv`, which also carries an `Aggregate_excl_Rize` group row), and
 per-horizon-step (`results_by_horizon.csv`) — and each of those **twice**, once per subset:
-`all_hours` and `daylight` (`CLRSKY_SFC_SW_DWN > 0`, ≈51.4% of elements). The subset is a
+`all_hours` and `daylight` (`solar_elevation > 0`, ≈50.4% of elements). The subset is a
 `subset` column in both CSVs; the ledger carries the all-hours aggregate plus
 `RMSE_daylight`/`MAE_daylight`/`R2_daylight`/`CP_daylight`/`n_elements_daylight`. CP/PINW follow
 the methodology doc's percentile-based CI (2.5/97.5 of the pooled sample — *not* mean ± 1.96·std);
@@ -264,7 +269,7 @@ MPIW/CWC/Reliability/CRPS use standard literature definitions to match the sourc
 reporting table. `n_samples` counts windows, `n_elements` counts scored (window, horizon-step)
 pairs — the actual denominator.
 
-**The paper's headline numbers come from the `daylight` subset.** ~48.6% of elements are exact
+**The paper's headline numbers come from the `daylight` subset.** ~49.6% of elements are exact
 night zeros that are trivially easy to predict, so all-hours numbers flatter the model in three
 distinct ways, and each has to be handled separately:
 
@@ -324,8 +329,9 @@ part of "done" for any new section:
   moves.
 - **§0.3 is a change-tracking matrix**: for each axis, which findings must be re-measured if it
   changes, and whether we have measured evidence that they do not transfer. Adding a new axis
-  means adding a row there *first*. The worked example is `target_transform`: §7 measured that
-  §1–§5 do **not** carry over to the clearness-index formulation.
+  means adding a row there *first*. The worked example was `target_transform`: §7 measured that
+  §1–§5 did **not** carry over to the clearness-index formulation. That axis is gone with the
+  14-Sep-2026 export, but the lesson it taught is the reason §0.3 exists.
 - **Cite finding IDs (`B-8`, `H1`, `T-4.5`), never section numbers** — sections get renumbered,
   IDs do not.
 
@@ -351,26 +357,28 @@ readable axis labels with units (W/m²), and a caption-ready title.
 
 Roughly translated, still outstanding:
 
-- **Dataset decisions: REOPENED by the 14-Sep-2026 export.** The feature set is now 16 columns
-  (`QV2M` and the 50 m wind left, the 2 m wind arrived); `ALLSKY_KT` is no longer exported so
-  `DROPPED_COLUMNS` is empty; `ALLSKY_SFC_SW_DWN` is still `TARGET_COLUMN`, now converted from
-  MJ/m²/hour to W/m² at read time; and `CLRSKY_SFC_SW_DWN` is **no longer in the export** and is
-  reconstructed by `clearsky.py` (still a `MASK_COLUMNS` entry, still never a model input).
-  **The whole sweep needs rerunning under new ids** — every existing ledger row used a different
-  feature set over a different record. **Open:** ask for a re-export that includes
-  `CLRSKY_SFC_SW_DWN`; it is one parameter in the NASA POWER request and it retires `clearsky.py`
-  and its dependency on the superseded workbook entirely.
+- **Dataset decisions: REOPENED by the 14-Sep-2026 export, then closed.** The feature set is now
+  16 columns (`QV2M` and the 50 m wind left, the 2 m wind arrived); `ALLSKY_KT` is no longer
+  exported so `DROPPED_COLUMNS` is empty; `ALLSKY_SFC_SW_DWN` is still `TARGET_COLUMN`, now
+  converted from MJ/m²/hour to W/m² at read time; and `CLRSKY_SFC_SW_DWN` is gone, replaced by
+  `solar.py`'s computed `solar_elevation` / `toa_horizontal` (both `MASK_COLUMNS`, never model
+  inputs). **The whole sweep needs rerunning under new ids** — every existing ledger row used a
+  different feature set, a different unit and a different daylight definition. Two analyses were
+  removed with the clear-sky magnitude and both decisions are measured: **smart persistence**
+  (rebuilt on top-of-atmosphere it scores 121.93/72.42 against plain persistence's 121.85/72.38,
+  i.e. it is the same rule) and **`target_transform="clearsky_index"`**. Both come back exactly
+  if a re-export ever includes `CLRSKY_SFC_SW_DWN` — one parameter in the NASA POWER request.
 - **Model configuration:** the lookback lag is settled at 24 h on EDA evidence (clearness-index
   PACF is ~0.006–0.12 at day 2), with a single `lookback_hours=48` config left as empirical
   confirmation; layer count / neuron sizes are still open, as is the "optimal LSTM config" built
   from the reference papers.
 - **Naive reference floor: re-measured on the new export (2026-09-14)** — `baselines.py` +
   `scripts/03_run_naive_baselines.py` score climatology / persistence / smart persistence through
-  the pipeline into the ledger. The LSTM has to beat pooled daylight RMSE **108.8 W/m²** and R²
-  **0.851** (climatology) *and* daylight MAE **65.0** (smart persistence) to be a result. (The
-  EDA's own `persistence_baseline.csv` reproduces these independently; the old floor was
-  106.8 / 0.856 / 60.4 on the superseded record.) The baseline ledger rows themselves still need
-  rerunning under new ids.
+  the pipeline into the ledger. The LSTM has to beat pooled daylight RMSE **109.86 W/m²** and R²
+  **0.8456** (climatology) *and* daylight MAE **72.15** (persistence) to be a result. Smart
+  persistence is no longer among them, so plain persistence is now the MAE champion. (The EDA's
+  own `persistence_baseline.csv` reproduces these to a few decimals; it counts hours where the
+  pipeline counts scored elements.)
 - **Baselines for comparison: still outstanding.** SVM, Prophet, GRU (Random Forest or MLP if
   Prophet is unworkable on this framing) — see *Comparability rules* before adding any.
   `model_family` already exists as a ledger column, so no header migration is needed.
