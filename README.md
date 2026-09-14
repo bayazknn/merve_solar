@@ -77,14 +77,17 @@ windowing logic — no network or GPU required).
 ### 1. One-time data preparation
 
 Before any experiment, build the cleaned/feature-engineered cache (loads all
-5 city sheets from `SolarData_Merve_All(16July).xlsx`, trims the trailing
-NASA POWER data-latency gap, drops the columns listed in `DROPPED_COLUMNS`
-(`ALLSKY_KT` only — dropped at read time, the xlsx itself is never modified),
-adds cyclical time/wind-direction features). `CLRSKY_SFC_SW_DWN` is *not*
-dropped: it is a `MASK_COLUMNS` entry, kept in the frame but never a model
-input, because `CLRSKY_SFC_SW_DWN > 0` is the project's definition of daylight.
-The final feature set is 17 columns. Only needs to be run once — every
-experiment reuses the cached file:
+5 city sheets from `SolarData_Merve(140926).xlsx`, converts the irradiance
+from the export's MJ/m²/hour to W/m², trims the trailing NASA POWER
+data-latency gap (744 hours), drops the columns listed in `DROPPED_COLUMNS`
+(currently none — the xlsx itself is never modified), adds cyclical
+time/wind-direction features). `CLRSKY_SFC_SW_DWN` is a `MASK_COLUMNS` entry,
+kept in the frame but never a model input, because `CLRSKY_SFC_SW_DWN > 0` is
+the project's definition of daylight; **the 14-Sep-2026 export no longer
+contains it**, so it is reconstructed by `clearsky.py` (verbatim from the
+previous export for 97.6% of hours, an across-year calendar median for the
+rest — see `outputs/eda/EDA.md` §0.2). The final feature set is 16 columns.
+Only needs to be run once — every experiment reuses the cached file:
 
 ```bash
 uv run python scripts/01_prepare_base_data.py
@@ -312,7 +315,7 @@ All fields live in the `ExperimentConfig` dataclass
 | `horizon_hours` | `24` | How many future hours the model forecasts in one shot (a single forward pass predicts all of them at once). |
 | `window_stride` | `1` | Step size (in hours) between consecutive training windows. `1` = a new window every hour (more training data, slower to build); `24` = one window per calendar day. |
 | `train_ratio` | `0.74` | Fraction of the usable date range (chronologically, earliest first) used for training. |
-| `val_ratio` | `0.11` | Fraction used for validation/early-stopping (immediately after the training range). The remainder (`1 - train_ratio - val_ratio`, ≈`0.15` by default) is the held-out test set (the most recent data — with the defaults it spans 8,878 hours = 369 days 22 hours ≈ 370 days, i.e. slightly over a full seasonal year, so all four seasons are covered; important for solar irradiance, otherwise the test score is biased toward one season). |
+| `val_ratio` | `0.11` | Fraction used for validation/early-stopping (immediately after the training range). The remainder (`1 - train_ratio - val_ratio`, ≈`0.15` by default) is the held-out test set (the most recent data — with the defaults it spans 9,097 hours = 379 days, i.e. slightly over a full seasonal year, so all four seasons are covered; important for solar irradiance, otherwise the test score is biased toward one season). |
 | `hidden_sizes` | `[64, 32]` | Model size/depth. The first number is the LSTM's hidden size, and `len(hidden_sizes)` is the number of stacked LSTM layers. Any additional numbers become extra `Linear` layers in the output head (e.g. `[64, 32]` → a 1-layer-hidden LSTM(64) feeding a Linear(64→32)→Linear(32→horizon_hours) head; `[128, 64, 32]` → a 2-layer LSTM(128) feeding a deeper head). |
 | `dropout_rate` | `0.3` | Dropout probability, used both for regularization during training *and* as the source of randomness for Monte Carlo Dropout at inference — don't set this to `0`, or MC-Dropout will produce identical predictions every pass (no epistemic uncertainty). |
 | `city_embedding_dim` | `4` | Size of the learned vector representing which city a window belongs to. |
@@ -324,7 +327,7 @@ All fields live in the `ExperimentConfig` dataclass
 | `nonneg_penalty_weight` | `0.1` | Weight of a soft penalty discouraging negative irradiance predictions (irradiance can't physically be negative). `0` disables it. It is added on top of whichever `loss_function` is selected — it is a physics constraint, not part of the fit criterion. |
 | `loss_function` | `"mse"` | Training criterion, in *scaled* target space: `"mse"`, `"mae"` or `"huber"`. MSE is minimised by the conditional mean and MAE by the conditional median, and this target's error distribution is strongly right-skewed, so the choice moves RMSE and MAE in opposite directions — that trade-off is a recorded experiment axis, not a tuning knob. |
 | `huber_delta` | `1.0` | Huber transition point, in scaled target space (quadratic below, linear above). Only used when `loss_function="huber"`. |
-| `target_transform` | `"raw"` | What the network regresses. `"raw"` is the irradiance in W/m², `"clearsky_index"` is the clearness index `kt = ALLSKY / CLRSKY`, multiplied back by the target hour's clear-sky value after the inverse scaling. The point is that the naive baselines get that envelope for free — smart persistence multiplies a carried-forward `kt` by `CLRSKY(t+h)` and the climatology cell memorises the same geometry — while a `"raw"` model has to infer it from `hour_sin/cos` and the day-of-year encoding. `CLRSKY` is pure astronomy with no weather term, so this is not leakage, and it still never becomes a feature. Under `"clearsky_index"` night output is exactly zero by construction (`CLRSKY = 0`), which makes `clamp_night_to_zero` a no-op rather than a correction. No clipping is applied: measured on the base frame, daylight `CLRSKY` has a floor of 2.40 W/m² and `kt` has median 0.885 and p99 = 1.000. |
+| `target_transform` | `"raw"` | What the network regresses. `"raw"` is the irradiance in W/m², `"clearsky_index"` is the clearness index `kt = ALLSKY / CLRSKY`, multiplied back by the target hour's clear-sky value after the inverse scaling. The point is that the naive baselines get that envelope for free — smart persistence multiplies a carried-forward `kt` by `CLRSKY(t+h)` and the climatology cell memorises the same geometry — while a `"raw"` model has to infer it from `hour_sin/cos` and the day-of-year encoding. Admitting `CLRSKY` is not leakage — it never sees cloud cover, which is the thing being forecast — but do not repeat the older claim that it is "pure astronomy with no weather term": measured at a fixed solar position (Ankara, 21 June, 11:00) NASA POWER's value ranges 952.5–1008.7 W/m² across 2020–2025. Only its *sign* is purely geometric, which is all the daylight mask and `clamp_night_to_zero` rely on. It still never becomes a feature. Under `"clearsky_index"` night output is exactly zero by construction (`CLRSKY = 0`), which makes `clamp_night_to_zero` a no-op rather than a correction. No clipping is applied: measured on the base frame, daylight `CLRSKY` has a floor of 2.40 W/m² and `kt` has median 0.885 and p99 = 1.000. |
 | `loss_daylight_only` | `False` | Mask the *training* loss to daylight steps only. Off by default and deliberately so: it leaves night outputs unsupervised, keeps only ~13 of the 24 horizon steps supervised (and which 13 shifts with the season), and leaves the UQ layer unconstrained at night. Evaluate it as its own experiment, never folded into another comparison. Independent of the metric subsets, which are always both reported. |
 | `training_scope` | `"global"` | `"global"` = one model over all active provinces, city identity entering as a learned embedding (the headline configuration). `"per_city"` = an independent model set per province, assembled back into the same pooled test layout; this exists only as the ablation arm that tests the cross-city transfer claim. |
 | `per_city_scaler` | `True` | Only meaningful when `training_scope="per_city"`. `True` gives each province its own scaler, so the isolated arm contains no cross-province information at all. `False` reuses the pooled scaler, which separates "a per-province model" from "a per-province normalisation of the loss and the early-stopping signal". Either way the scaler is fit on train rows only. |
@@ -460,10 +463,10 @@ and every one of those, twice, for two **subsets**.
 | `subset` | Mask | Share of elements | Role |
 |---|---|---|---|
 | `all_hours` | none | 100% | completeness only; inflated by night |
-| `daylight` | `CLRSKY_SFC_SW_DWN > 0` | ≈51.2% | **the paper's headline numbers** |
+| `daylight` | `CLRSKY_SFC_SW_DWN > 0` | ≈51.4% | **the paper's headline numbers** |
 
 Daylight is defined geometrically, from clear-sky irradiance, so the mask never
-reads the realised target. Roughly 48.8% of target elements are exactly `0`
+reads the realised target. Roughly 48.6% of target elements are exactly `0`
 because the sun is below the horizon, and they are trivially easy to predict —
 so all-hours numbers flatter the model. The daylight share is 0.515 at *every*
 one of the 24 horizon steps, so the per-horizon daylight comparison is not
@@ -535,7 +538,7 @@ below 0.95.
 > **Read interval quality from the `daylight` rows only.** With
 > `clamp_night_to_zero` on (the default), every night element gets a degenerate
 > `[0, 0]` interval, and the true value there is exactly `0` — so it is covered
-> *by definition*. Since ~48.8% of elements are night, the all-hours CP is a
+> *by definition*. Since ~48.6% of elements are night, the all-hours CP is a
 > mixture whose night half is 1.0 by construction, and it comes out far above
 > the daylight CP for reasons that have nothing to do with calibration. If an
 > all-hours CP is reported at all, it must be reported together with this

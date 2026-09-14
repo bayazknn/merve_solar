@@ -27,7 +27,13 @@ manuscript.
 24-hour-ahead hourly solar irradiance forecasting (`ALLSKY_SFC_SW_DWN`, W/m²) for 5 Turkish
 provinces (Ankara, Antalya, Konya, Rize, Van — deliberately spanning different climate zones),
 using an LSTM point forecaster wrapped in a **Bootstrap Ensemble × MC-Dropout** uncertainty layer.
-Source data is NASA POWER hourly, in `SolarData_Merve_All(16July).xlsx` (one sheet per province).
+Source data is NASA POWER hourly, in `SolarData_Merve(140926).xlsx` (one sheet per province).
+That export replaced `SolarData_Merve_All(16July).xlsx` on 2026-09-14 and changed three things
+at once — the irradiance is in MJ/m²/hour (converted to W/m² at read time), the parameter set
+dropped `CLRSKY_SFC_SW_DWN`/`QV2M`/the 50 m wind and added the 2 m wind, and the record runs
+61 days longer. `outputs/eda/EDA.md` §0 is the full account; **every ledger row written before
+that date is not comparable and needs rerunning under a new id.** The old file stays in the repo
+for one reason only: it is the sole source of `CLRSKY_SFC_SW_DWN` (see `clearsky.py`).
 
 The methodology is adapted from a reference paper (`main_methodology_paper.pdf`), substituting
 the paper's PCNN backbone with an LSTM and PV power output with irradiance.
@@ -88,9 +94,10 @@ Two-stage design, and the split matters: **`data.py` is config-independent, ever
 is per-config.**
 
 1. **Base data (once)** — `data.py` reads the 5 sheets, trims NASA POWER's trailing `-999` latency
-   gap at `LAST_VALID_TIMESTAMP`, drops the `DROPPED_COLUMNS` (`ALLSKY_KT` only, ~50% `-999`
-   at night) at read time so the xlsx stays untouched, keeps `CLRSKY_SFC_SW_DWN` as a
-   `MASK_COLUMNS` entry that is never a model input, adds cyclical
+   gap at `LAST_VALID_TIMESTAMP` (744 hours), converts the irradiance from MJ/m²/hour to
+   W/m², drops the `DROPPED_COLUMNS` (currently empty) at read time so the xlsx stays
+   untouched, merges in the reconstructed `CLRSKY_SFC_SW_DWN` as a `MASK_COLUMNS` entry that
+   is never a model input, adds cyclical
    hour/day-of-year/wind-direction sin-cos features, and caches all cities concatenated to a
    parquet. Every experiment reuses this cache.
 2. **One experiment (per config)** — `experiment.py::run_experiment(config)` is the single
@@ -149,8 +156,10 @@ CP an equality test). A model that does not beat these is not a result.
   dropped. Split boundaries are chronological (train → val → test, oldest first), computed once
   on the FULL five-province frame *before* any `excluded_cities` filter, so every arm of every
   comparison splits on identical dates. The default `train_ratio=0.74 / val_ratio=0.11` is tuned
-  so the test set spans all four seasons: measured, it is 8,878 hours = 369 days 22 hours ≈ 370
-  days (2025-03-26 02:00 → 2026-03-30 23:00), i.e. slightly over a full year — not exactly one.
+  so the test set spans all four seasons: measured on the 14-Sep-2026 export, it is 9,097 hours
+  = 379 days (2025-05-16 23:00 → 2026-05-30 23:00), i.e. slightly over a full year — not exactly
+  one. Note the validation window (2024-08-12 → 2025-05-16) is missing June and July, which is
+  where the conformal layer's calibration set now has its hole; it used to be April and May.
   Changing those ratios breaks the four-season property and makes the score season-biased.
 - **Scaler is fit on train rows only** (`scaling.py`). Any new preprocessing step must be fit
   inside the same train-only boundary; a scaler fit on the full frame is silent test leakage that
@@ -178,17 +187,19 @@ CP an equality test). A model that does not beat these is not a result.
 - **Scripts add `src/` to `sys.path`** rather than relying on the editable install; keep that
   prologue when adding a script under `scripts/`.
 - **Daylight means `CLRSKY_SFC_SW_DWN > 0`, everywhere in the project.** Clear-sky irradiance is
-  pure solar geometry with no weather term, so the boolean is an exact "is the sun above the
-  horizon" indicator that never reads the realised target — which is why it is not leakage even
-  though the column itself must never be a feature. Two alternatives were tried and are wrong:
-  a `target > 0` threshold looks like conditioning on the outcome (it happens to select the
-  identical 151,643 rows here, but only by coincidence), and a climatological `(city, month,
-  hour)` cell mean is too coarse — sunrise shifts 30-60 minutes within a month, so it admitted
-  5,266 rows whose clear-sky value is exactly 0, i.e. night. See `outputs/eda/README.md`,
-  *Düzeltme kaydı*.
+  pure solar geometry **in its sign only** — the magnitude carries an aerosol/water-vapour term
+  (at a fixed solar position NASA POWER's value moves 4-8% across years), so never write "no
+  weather term". The sign is all the mask needs: it is an exact "is the sun above the horizon"
+  indicator that never reads the realised target, which is why it is not leakage even though the
+  column itself must never be a feature. Two alternatives were tried and are wrong: a `target > 0`
+  threshold conditions on the outcome (and since the 14-Sep-2026 export it is also simply wrong —
+  quantisation makes 36 real daylight hours read exactly 0, where the old export had none), and a
+  climatological `(city, month, hour)` cell mean is too coarse — sunrise shifts 30-60 minutes
+  within a month, so it admitted 5,266 rows whose clear-sky value is exactly 0, i.e. night. See
+  `outputs/eda/README.md`, *Düzeltme kaydı*.
 - **The hourly clock is per-site Local Solar Time, not a shared time zone.** Verified from the
-  data: mean-irradiance peak hour runs Konya 11.25 < Ankara 11.26 < Antalya 11.41 < Van 11.56 <
-  Rize 11.89, which is the *reverse* of what a common clock would give and matches
+  data: mean-irradiance peak hour runs Konya 11.24 ≈ Ankara 11.24 < Antalya 11.41 < Van 11.58 <
+  Rize 11.91, which is the *reverse* of what a common clock would give and matches
   `UTC + round(lon/15)` to within 0.1 h. So `HR=11` is a different physical instant in Rize than
   in Ankara — never compare hours across cities, and label hour axes "yerel saat (LST)". Hour
   labels are interval *starts*. This makes `hour_sin`/`hour_cos` a better encoding than it looks
@@ -245,7 +256,7 @@ The ledger is only useful if rows are comparable, and the paper's tables come st
 `metrics.py` reports RMSE/MAE/**R²**/CP/PINW/MPIW/Reliability/CWC/CRPS three ways — aggregate,
 per-city (`results_summary.csv`, which also carries an `Aggregate_excl_Rize` group row), and
 per-horizon-step (`results_by_horizon.csv`) — and each of those **twice**, once per subset:
-`all_hours` and `daylight` (`CLRSKY_SFC_SW_DWN > 0`, ≈51.2% of elements). The subset is a
+`all_hours` and `daylight` (`CLRSKY_SFC_SW_DWN > 0`, ≈51.4% of elements). The subset is a
 `subset` column in both CSVs; the ledger carries the all-hours aggregate plus
 `RMSE_daylight`/`MAE_daylight`/`R2_daylight`/`CP_daylight`/`n_elements_daylight`. CP/PINW follow
 the methodology doc's percentile-based CI (2.5/97.5 of the pooled sample — *not* mean ± 1.96·std);
@@ -253,7 +264,7 @@ MPIW/CWC/Reliability/CRPS use standard literature definitions to match the sourc
 reporting table. `n_samples` counts windows, `n_elements` counts scored (window, horizon-step)
 pairs — the actual denominator.
 
-**The paper's headline numbers come from the `daylight` subset.** ~48.8% of elements are exact
+**The paper's headline numbers come from the `daylight` subset.** ~48.6% of elements are exact
 night zeros that are trivially easy to predict, so all-hours numbers flatter the model in three
 distinct ways, and each has to be handled separately:
 
@@ -340,21 +351,26 @@ readable axis labels with units (W/m²), and a caption-ready title.
 
 Roughly translated, still outstanding:
 
-- **Dataset decisions: DONE (2026-08-28).** `ALLSKY_KT` is dropped at read time via
-  `DROPPED_COLUMNS`; `CLRSKY_SFC_SW_DWN` is retained in the frame as a `MASK_COLUMNS` entry but
-  is **never a model input** (it defines the daylight subset — see the *Daylight* invariant
-  above, and it is also the instrument behind `clamp_night_to_zero`). The
-  feature set is 17 columns and `ALLSKY_SFC_SW_DWN` is confirmed as `TARGET_COLUMN`. Ledger rows
-  written before this change ran with 18 features and are **not comparable** — the sweep needs
-  rerunning under new ids.
+- **Dataset decisions: REOPENED by the 14-Sep-2026 export.** The feature set is now 16 columns
+  (`QV2M` and the 50 m wind left, the 2 m wind arrived); `ALLSKY_KT` is no longer exported so
+  `DROPPED_COLUMNS` is empty; `ALLSKY_SFC_SW_DWN` is still `TARGET_COLUMN`, now converted from
+  MJ/m²/hour to W/m² at read time; and `CLRSKY_SFC_SW_DWN` is **no longer in the export** and is
+  reconstructed by `clearsky.py` (still a `MASK_COLUMNS` entry, still never a model input).
+  **The whole sweep needs rerunning under new ids** — every existing ledger row used a different
+  feature set over a different record. **Open:** ask for a re-export that includes
+  `CLRSKY_SFC_SW_DWN`; it is one parameter in the NASA POWER request and it retires `clearsky.py`
+  and its dependency on the superseded workbook entirely.
 - **Model configuration:** the lookback lag is settled at 24 h on EDA evidence (clearness-index
   PACF is ~0.006–0.12 at day 2), with a single `lookback_hours=48` config left as empirical
   confirmation; layer count / neuron sizes are still open, as is the "optimal LSTM config" built
   from the reference papers.
-- **Naive reference floor: DONE (2026-08-28)** — `baselines.py` + `scripts/03_run_naive_baselines.py`
-  score climatology / persistence / smart persistence through the pipeline into the ledger. The
-  LSTM has to beat daylight RMSE 106.8 W/m² and R² 0.856 (climatology) *and* daylight MAE 60.4
-  (smart persistence) to be a result.
+- **Naive reference floor: re-measured on the new export (2026-09-14)** — `baselines.py` +
+  `scripts/03_run_naive_baselines.py` score climatology / persistence / smart persistence through
+  the pipeline into the ledger. The LSTM has to beat pooled daylight RMSE **108.8 W/m²** and R²
+  **0.851** (climatology) *and* daylight MAE **65.0** (smart persistence) to be a result. (The
+  EDA's own `persistence_baseline.csv` reproduces these independently; the old floor was
+  106.8 / 0.856 / 60.4 on the superseded record.) The baseline ledger rows themselves still need
+  rerunning under new ids.
 - **Baselines for comparison: still outstanding.** SVM, Prophet, GRU (Random Forest or MLP if
   Prophet is unworkable on this framing) — see *Comparability rules* before adding any.
   `model_family` already exists as a ledger column, so no header migration is needed.
@@ -374,13 +390,17 @@ Roughly translated, still outstanding:
   `scripts/08_conformal_mode_selection.py` refits every mode on the **validation** split and
   scores all three conditionals, with an oracle column that separates "wrong grid" from
   "calibration transfer error".
-- **Metrics table: R² DONE (2026-08-28)** — `metrics.py::r2` feeds the summary, per-horizon and
+- **Metrics table: R² DONE** — `metrics.py::r2` feeds the summary, per-horizon and
   ledger outputs alongside MAE/RMSE, for both subsets.
 - **Feature-set work queued from the EDA** (`TODOs.md` §B/§C): `log1p(PRECTOTCORR)` plus a
-  rain/no-rain binary indicator, and dropping `T2MDEW` and `WS50M` as near-deterministic
-  duplicates (17 → 15). Both invalidate existing ledger rows and both need a new ledger column or
-  a new id; neither is done.
-- **Paper figures: DONE (2026-08-28) except the map.** Per-variable scatter, correlation
+  rain/no-rain binary indicator, and dropping near-deterministic duplicates. The 14-Sep-2026
+  export changed which duplicates: `WS50M` is gone on its own, and the incoming 2 m wind is if
+  anything more redundant than what it replaced — `WD2M` differs from `WD10M` by a median 0.30°
+  (sin/cos r = 0.996) and `WS2M`-`WS10M` correlate at 0.986, while `T2MDEW` is still reproducible
+  from `T2M`+`RH2M` by Magnus to r = 0.99919 / 0.30 °C. Dropping `WD2M_sin`, `WD2M_cos`, `WS2M`
+  and `T2MDEW` takes 16 → 12 for a loss at measurement-noise level. Both items invalidate existing
+  ledger rows and need a new ledger column or a new id; neither is done.
+- **Paper figures: rebuilt on the new export (2026-09-14), still missing the map.** Per-variable scatter, correlation
   matrices, monthly boxplots, the 3D month × year × irradiance surface (plus a 2-D anomaly
   companion) and both seasonal views are built by `scripts/02_descriptive_analysis.py` into
   `outputs/eda/`. Still outstanding: the map of the 5 provinces and the written paragraph on
