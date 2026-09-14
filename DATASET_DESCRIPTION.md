@@ -193,6 +193,10 @@ daylight distribution itself is **platykurtic** — broad and flat rather than p
 direct consequence of solar geometry sweeping irradiance from zero to approximately 1000 W/m²
 within each day. Figure 1 shows the per-site daylight distributions.
 
+![Figure 1](outputs/eda/figures/target_histogram.png)
+
+**Figure 1.** Distribution of hourly irradiance over daylight hours, by site.
+
 Site-level statistics are given in Table 3.
 
 **Table 3.** Target variable by site, daylight hours.
@@ -221,6 +225,11 @@ daylight hours the seasonal contribution approximately doubles in relative impor
 Seasonal means and variability are summarised in Table 4, and the diurnal profile by season is
 shown in Figure 2.
 
+![Figure 2](outputs/eda/figures/seasonal_diurnal_profile.png)
+
+**Figure 2.** Mean diurnal irradiance profile by season and site, plotted in local solar time. The
+shaded band shows the between-day interquartile range for winter and summer.
+
 **Table 4.** Seasonal characteristics, averaged over sites. Meteorological seasons are used
 (winter = December–February).
 
@@ -247,6 +256,11 @@ site, and the spread between the best and worst year ranges from 5.1% (Konya) to
 is again the exception at 10.3%. Table 5 reports the annual means; Figure 3 presents the same
 information as a month-by-year anomaly field, which separates the inter-annual signal from the
 seasonal cycle that dominates the raw surface.
+
+![Figure 3](outputs/eda/figures/month_year_anomaly_panel.png)
+
+**Figure 3.** Month-by-year irradiance anomaly, expressed as the departure of each month from its
+six-year mean, by site.
 
 **Table 5.** Mean daily total irradiance (kWh/m²/day) by complete calendar year.
 
@@ -298,6 +312,12 @@ seven against one day in two. Its **best** season (summer, mean clearness 0.522)
 the other sites' **winter** (0.477–0.556). The difference is therefore one of regime, not of
 degree. Figure 4 summarises this comparison.
 
+![Figure 4](outputs/eda/figures/rize_comparison.png)
+
+**Figure 4.** Radiative regime of Rize against the other four sites: cumulative distribution of
+the daily clearness index, the monthly clearness cycle, seasonal between-day variability, and the
+accuracy of the climatological reference forecast.
+
 Van occupies the opposite extreme: the highest daily total, the highest clearness index, the lowest
 overcast-day share and the lowest winter variability of the five, consistent with its combination
 of high elevation and dry continental air.
@@ -323,6 +343,11 @@ informative column is the change in clearness index, which removes that componen
 On the clearness scale the five sites are strikingly similar (0.206–0.224 at the 99th percentile).
 Rize's smaller raw ramps therefore reflect a weaker radiative envelope rather than a steadier
 atmosphere. Figure 5 shows the cumulative distributions.
+
+![Figure 5](outputs/eda/figures/ramp_distribution.png)
+
+**Figure 5.** Cumulative distribution of the absolute hour-to-hour change in irradiance over
+daylight hours, by season and site.
 
 ### 8.2 Wind direction
 
@@ -380,6 +405,11 @@ different sites. Under partial correlation, **all six variables take the same si
 sites.** Once solar geometry is removed, the sites agree about the physics. Figure 6 presents the
 correlation structure.
 
+![Figure 6](outputs/eda/figures/correlation_heatmap_pooled.png)
+
+**Figure 6.** Correlation matrix of the target and the meteorological variables over daylight
+hours, pooled across sites.
+
 Relative humidity is the only variable that is strongly associated with irradiance under both
 formulations, and it is also the variable with the largest between-site dispersion in Table 2. It
 is, on this dataset, the single most informative meteorological predictor.
@@ -409,8 +439,18 @@ lower bound on redundancy, never an upper one.
 The autocorrelation structure was examined on the clearness index rather than on raw irradiance.
 The autocorrelation of raw irradiance is dominated almost entirely by the diurnal cycle and is
 therefore uninformative; dividing out the astronomical component leaves the persistence of
-atmospheric condition, which is the quantity a forecast must actually exploit. Figure 7 shows both
-resolutions.
+atmospheric condition, which is the quantity a forecast must actually exploit. Figures 7a and 7b
+show both resolutions.
+
+![Figure 7a](outputs/eda/figures/autocorrelation_hourly.png)
+
+**Figure 7a.** Autocorrelation and partial autocorrelation of the clearness index at hourly
+resolution, by site. Dotted lines mark lags of 24 and 48 h.
+
+![Figure 7b](outputs/eda/figures/autocorrelation_daily.png)
+
+**Figure 7b.** Autocorrelation and partial autocorrelation of the clearness index at daily
+resolution, by site.
 
 **Table 10.** Partial autocorrelation of the clearness index.
 
@@ -509,6 +549,11 @@ MAE before it can be said to have improved on the naive references at all.
 Site-level reference accuracy quantifies the regime difference of Section 7. The climatological
 reference attains a daylight RMSE of 97.2 W/m² at Antalya, 98.8 at Van, 107.1 at Konya and 108.2 at
 Ankara, but 133.8 at Rize, with R² falling from 0.88 to 0.71. Figure 8 shows this comparison. The
+
+![Figure 8](outputs/eda/figures/persistence_baseline.png)
+
+**Figure 8.** Accuracy of the naive reference forecasts on the test partition, by site, over
+daylight hours.
 pooled figure, in which four similar sites outvote one dissimilar one, understates the difficulty
 Rize presents.
 
@@ -532,31 +577,3 @@ predictors. Its principal characteristics, in the order in which they constrain 
    geometry; three of six reverse sign once geometry is controlled for.
 7. The naive reference forecasts attain a daylight RMSE of 109.86 W/m² and an R² of 0.846, which
    is the threshold any learned model must exceed to constitute a result.
-
----
-
-## Figures
-
-**Figure 1.** Distribution of hourly irradiance over daylight hours, by site.
-
-**Figure 2.** Mean diurnal irradiance profile by season and site, plotted in local solar time; the
-shaded band shows the between-day interquartile range for winter and summer.
-
-**Figure 3.** Month-by-year irradiance anomaly, expressed as the departure of each month from its
-six-year mean, by site.
-
-**Figure 4.** Radiative regime of Rize against the other four sites: cumulative distribution of the
-daily clearness index, the monthly clearness cycle, seasonal between-day variability, and the
-accuracy of the climatological reference forecast.
-
-**Figure 5.** Cumulative distribution of the absolute hour-to-hour change in irradiance over
-daylight hours, by season and site.
-
-**Figure 6.** Correlation matrix of the target and the meteorological variables over daylight
-hours, pooled across sites.
-
-**Figure 7.** Autocorrelation and partial autocorrelation of the clearness index at hourly and
-daily resolution, by site.
-
-**Figure 8.** Accuracy of the naive reference forecasts on the test partition, by site, over
-daylight hours.
