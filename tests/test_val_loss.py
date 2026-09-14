@@ -98,19 +98,30 @@ def test_the_migrated_ledger_still_matches_the_declared_schema():
     assert_ledger_schema_ok()
 
 
-def test_the_rows_that_predate_the_column_are_left_empty_rather_than_backfilled():
-    """log.txt holds the LAST epoch's loss, so there is nothing on disk to backfill with.
+def test_rows_without_a_validation_loss_say_so_rather_than_carrying_a_number():
+    """`best_val_loss` must never be guessed.
 
-    Filling those cells from the logs would put two different quantities in one column -- the
-    failure this column was added to avoid. Empty means 'ran before the column existed'.
+    Two kinds of row legitimately have none: a naive baseline never validates (written as
+    "n/a"), and -- in the archived ledger -- runs that predate the column (left empty, because
+    log.txt holds the LAST epoch's loss and backfilling from it would put two different
+    quantities in one column). Empty and "n/a" are different statements and both are kept.
     """
     if not experiment_module.LEDGER_PATH.exists():
         return
     written = pd.read_csv(experiment_module.LEDGER_PATH, keep_default_na=False)
-    legacy = written[written["experiment_id"].isin([
+    baselines = written[written["model_family"] != "lstm"]
+    assert len(baselines) > 0
+    assert set(baselines["best_val_loss"]) == {"n/a"}
+
+    # The legacy-migration guard now applies to the archived ledger, which is where those runs
+    # live: the 14-Sep-2026 export invalidated every one of them, so they were parked rather
+    # than migrated. Skipped if the archive is not present (a fresh clone need not carry it).
+    archive = experiment_module.LEDGER_PATH.parent / "archive" / "experiments_ledger_16july_dataset.csv"
+    if not archive.exists():
+        return
+    old_rows = pd.read_csv(archive, keep_default_na=False)
+    legacy = old_rows[old_rows["experiment_id"].isin([
         "abl_rize_all5_s42_l1", "abl_loss_mse_s42_b1", "abl_parity_cpu_s42",
     ])]
     assert len(legacy) == 3
     assert set(legacy["best_val_loss"]) == {""}
-    baselines = written[written["model_family"] != "lstm"]
-    assert set(baselines["best_val_loss"]) == {"n/a"}
