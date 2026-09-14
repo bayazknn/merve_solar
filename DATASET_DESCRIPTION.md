@@ -549,13 +549,13 @@ MAE before it can be said to have improved on the naive references at all.
 Site-level reference accuracy quantifies the regime difference of Section 7. The climatological
 reference attains a daylight RMSE of 97.2 W/m² at Antalya, 98.8 at Van, 107.1 at Konya and 108.2 at
 Ankara, but 133.8 at Rize, with R² falling from 0.88 to 0.71. Figure 8 shows this comparison. The
+pooled figure, in which four similar sites outvote one dissimilar one, understates the difficulty
+Rize presents.
 
 ![Figure 8](outputs/eda/figures/persistence_baseline.png)
 
 **Figure 8.** Accuracy of the naive reference forecasts on the test partition, by site, over
 daylight hours.
-pooled figure, in which four similar sites outvote one dissimilar one, understates the difficulty
-Rize presents.
 
 ## 13. Summary
 

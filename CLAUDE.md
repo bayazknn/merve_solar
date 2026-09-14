@@ -64,6 +64,8 @@ uv run python scripts/07_conformal_diagnostic.py           # which conformal gri
 uv run python scripts/run_experiment.py --config configs/config_000_smoke.json   # one run (smoke ≈ minutes)
 uv run python scripts/run_all_experiments.py --list        # what the whole sweep would run, without running it
 uv run python scripts/run_all_experiments.py --group smoke # one named group of configs/experiment_grid.py
+
+uv run python scripts/render_pdf.py DATASET_DESCRIPTION.md   # manuscript section -> PDF, figures embedded
 ```
 
 `run_experiment.py` also takes `--exclude-city NAME` (repeatable), `--loss {mse,mae,huber}` and
@@ -351,6 +353,13 @@ separate style contract in `paper_style.py` (English labels, always a white back
 channel). `paper_style.py` deliberately never mutates global rcParams — it
 exposes `PAPER_RC` for `plt.rc_context`, because a `sns.set_theme()` at import would silently
 restyle the `utils.py` experiment figures whenever both modules load in one process.
+
+Manuscript sections are drafted as Markdown at the repo root (`DATASET_DESCRIPTION.md`) with
+their figures embedded by relative path, and rendered with `scripts/render_pdf.py`
+(Markdown -> HTML -> headless Chrome; no pandoc or LaTeX on this host). Those documents must
+contain **no internal references at all** — no file paths in the prose, no config field names, no
+pointers to `ABLATION.md` or `EDA.md`. They are what a reviewer reads. The image `src` attributes
+are the one exception, since an embedded figure cannot work without them.
 
 For anything destined for the manuscript, prefer vector output (`.pdf`/`.svg`) alongside the PNG,
 readable axis labels with units (W/m²), and a caption-ready title. **Variables are labelled by

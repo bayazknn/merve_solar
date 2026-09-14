@@ -1320,13 +1320,15 @@ def plot_persistence_baseline(baseline: pd.DataFrame, save_path: Path) -> None:
             if metric == "R2":
                 ax.set_ylim(0.6, 1.0)
         handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc="upper right", ncol=3, frameon=False, fontsize=8,
-                   bbox_to_anchor=(0.99, 0.99))
+        # On its own line under the title. With three references the title was short enough to
+        # sit beside the legend; with two it runs the width of the figure and they collided.
+        fig.legend(handles, labels, loc="upper right", ncol=len(labels), frameon=False,
+                   fontsize=8, bbox_to_anchor=(0.99, 0.90))
         fig.suptitle(
             "Reference forecast floor: 24 h ahead, the model's test window, daylight hours",
             x=0.02, y=0.99, ha="left", va="top", fontsize=11, fontweight="semibold",
         )
-        fig.tight_layout(rect=(0, 0, 1, 0.86))
+        fig.tight_layout(rect=(0, 0, 1, 0.83))
         save_figure(fig, save_path)
 
 

@@ -19,7 +19,10 @@ dependencies = [
 # declaring pytest as an extra meant the documented install command actively UNINSTALLED it,
 # leaving `uv run pytest` to fall through to whatever pytest was on PATH.
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = [
+    "markdown>=3.10.3",
+    "pytest>=8.0",
+]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
