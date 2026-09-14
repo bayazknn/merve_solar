@@ -34,13 +34,13 @@ from merve_solar.paper_style import (
     COL_WIDTH_IN,
     FULL_WIDTH_IN,
     INK_SECONDARY,
-    MONTH_ABBR_TR,
-    MONTH_TO_SEASON_TR,
+    MONTH_ABBR,
+    MONTH_TO_SEASON,
     PAPER_RC,
     SEASON_COLORS,
     SEASON_LINESTYLES,
     SEASON_LINEWIDTHS,
-    SEASONS_TR,
+    SEASONS,
     VARIABLE_LABELS,
     VARIABLE_SHORT,
     diverging_cmap,
@@ -50,7 +50,7 @@ from merve_solar.paper_style import (
     white_3d_panes,
 )
 
-POOLED_LABEL = "Tümü"
+POOLED_LABEL = "All"
 SURFACE_YEARS = (2020, 2025)  # complete calendar years only (2019 and 2026 are partial)
 CALM_WIND_MIN = 1.0  # m/s; direction of near-calm hours is noise
 
@@ -108,10 +108,10 @@ def daylight_mask(df: pd.DataFrame) -> pd.Series:
 
 
 def add_season(df: pd.DataFrame) -> pd.DataFrame:
-    """Add a meteorological-season column (Kış = Dec/Jan/Feb) as an ordered Categorical."""
+    """Add a meteorological-season column (Winter = Dec/Jan/Feb) as an ordered Categorical."""
     df = df.copy()
     df["season"] = pd.Categorical(
-        df["MO"].map(MONTH_TO_SEASON_TR), categories=SEASONS_TR, ordered=True
+        df["MO"].map(MONTH_TO_SEASON), categories=SEASONS, ordered=True
     )
     return df
 
@@ -147,8 +147,8 @@ def last_12_months(df: pd.DataFrame, date_col: str = "datetime") -> pd.DataFrame
     period = df[date_col].dt.to_period("M")
     out = df[period.isin(months)].copy()
     out["ym"] = pd.Categorical(period[period.isin(months)], categories=months, ordered=True)
-    out["ym_label"] = [f"{MONTH_ABBR_TR[p.month]} {str(p.year)[2:]}" for p in out["ym"]]
-    labels = [f"{MONTH_ABBR_TR[p.month]} {str(p.year)[2:]}" for p in months]
+    out["ym_label"] = [f"{MONTH_ABBR[p.month]} {str(p.year)[2:]}" for p in out["ym"]]
+    labels = [f"{MONTH_ABBR[p.month]} {str(p.year)[2:]}" for p in months]
     out["ym_label"] = pd.Categorical(out["ym_label"], categories=labels, ordered=True)
     return out
 
@@ -236,7 +236,7 @@ def temporal_coverage_table(df: pd.DataFrame) -> pd.DataFrame:
     work = add_season(df.assign(_date=day, _daylight=is_day))
     rows = []
     for city, g in work.groupby("city", observed=True):
-        for season in [POOLED_LABEL] + SEASONS_TR:
+        for season in [POOLED_LABEL] + SEASONS:
             sub = g if season == POOLED_LABEL else g[g["season"] == season]
             n_days = sub["_date"].nunique()
             rows.append(
@@ -299,20 +299,20 @@ def time_explained_variance_table(df: pd.DataFrame) -> pd.DataFrame:
 
     rows = []
     is_day = daylight_mask(df)
-    for scope, sub in (("24 saat", df), ("gündüz", df[is_day])):
+    for scope, sub in (("24h", df), ("daylight", df[is_day])):
         for city, g in list(sub.groupby("city", observed=True)) + [(POOLED_LABEL, sub)]:
             y = g[TARGET_COLUMN].to_numpy()
             doy = g["datetime"].dt.dayofyear.to_numpy()
             rows.append(
                 {
-                    "city": city, "scope": scope, "factor": "saat (LST)",
+                    "city": city, "scope": scope, "factor": "hour (LST)",
                     "eta_squared": eta_squared(y, g["HR"].to_numpy()),
                     "harmonic_r2": harmonic_r2(y, 2 * np.pi * g["HR"].to_numpy() / 24.0),
                 }
             )
             rows.append(
                 {
-                    "city": city, "scope": scope, "factor": "yılın günü",
+                    "city": city, "scope": scope, "factor": "day of year",
                     "eta_squared": eta_squared(y, doy),
                     "harmonic_r2": harmonic_r2(y, 2 * np.pi * doy / 365.25),
                 }
@@ -440,7 +440,7 @@ def seasonal_target_stats(df: pd.DataFrame, daily: pd.DataFrame) -> pd.DataFrame
     daily_s = add_season(daily.assign(MO=daily["MO"]))
     rows = []
     for city in CITIES:
-        for season in SEASONS_TR:
+        for season in SEASONS:
             h = work[(work["city"] == city) & (work["season"] == season)]
             hd = h[is_day.loc[h.index]]
             d = daily_s[(daily_s["city"] == city) & (daily_s["season"] == season)]
@@ -479,7 +479,7 @@ def clearness_table(daily: pd.DataFrame) -> pd.DataFrame:
     work = add_season(work.assign(MO=work["date"].dt.month))
     rows = []
     for city, g in work.groupby("city", observed=True):
-        for season in [POOLED_LABEL] + SEASONS_TR:
+        for season in [POOLED_LABEL] + SEASONS:
             sub = g if season == POOLED_LABEL else g[g["season"] == season]
             rows.append(
                 {
@@ -589,7 +589,7 @@ def plot_target_correlation_panel(target_df: pd.DataFrame, save_path: Path) -> N
             linewidths=0.6, linecolor="white",
             cbar_kws={"shrink": 0.8, "label": "Pearson r"},
         )
-        ax.set_title("Güneş ışınımı ile korelasyon (gündüz saatleri)")
+        ax.set_title("Correlation with surface irradiance (daylight hours)")
         ax.set_xlabel("")
         ax.set_ylabel("")
         ax.tick_params(length=0)
@@ -633,7 +633,7 @@ def plot_scatter_vs_target(df_daylight: pd.DataFrame, city: str, save_path: Path
         for ax in axes[:, 0]:
             ax.set_ylabel(VARIABLE_LABELS[TARGET_COLUMN], fontsize=7)
         fig.suptitle(
-            f"{city}: değişkenlerin güneş ışınımına karşı dağılımı (gündüz saatleri)",
+            f"{city}: predictors against surface irradiance (daylight hours)",
             x=0.02, ha="left", fontsize=11, fontweight="semibold",
         )
         fig.tight_layout(rect=(0, 0, 1, 0.95))
@@ -670,13 +670,13 @@ def plot_monthly_boxplot(daily_12m: pd.DataFrame, city, save_path: Path) -> None
             )
             ax.set_title(c)
             ax.set_xlabel("")
-            ax.set_ylabel("Günlük toplam ışınım (kWh/m²)")
+            ax.set_ylabel("Daily insolation (kWh/m²)")
             grid_y_only(ax)
             plt.setp(ax.get_xticklabels(), rotation=45, ha="right", fontsize=8)
         if city is None:
-            _finish_city_panels(plt, fig, flat, "", "Günlük toplam ışınım (kWh/m²)")
+            _finish_city_panels(plt, fig, flat, "", "Daily insolation (kWh/m²)")
             fig.suptitle(
-                "Son 12 ayın günlük toplam güneş ışınımı", x=0.03, ha="left",
+                "Daily insolation over the last 12 months", x=0.03, ha="left",
                 fontsize=11, fontweight="semibold",
             )
             fig.tight_layout(rect=(0.03, 0, 1, 0.95))
@@ -712,15 +712,15 @@ def plot_month_year_surface_3d(grids: dict, city, save_path: Path, zlim=None) ->
                 vmin=zlim[0] if zlim else None, vmax=zlim[1] if zlim else None,
             )
             ax.set_xticks([1, 4, 7, 10])
-            ax.set_xticklabels([MONTH_ABBR_TR[m] for m in (1, 4, 7, 10)], fontsize=7)
+            ax.set_xticklabels([MONTH_ABBR[m] for m in (1, 4, 7, 10)], fontsize=7)
             ax.set_yticks(list(range(int(years.min()), int(years.max()) + 1)))
             ax.set_yticklabels([str(int(y)) for y in range(int(years.min()),
                                                            int(years.max()) + 1)], fontsize=7)
             ax.tick_params(axis="z", labelsize=7)
-            ax.set_xlabel("Ay", fontsize=8, labelpad=-2)
-            ax.set_ylabel("Yıl", fontsize=8, labelpad=2)
+            ax.set_xlabel("Month", fontsize=8, labelpad=-2)
+            ax.set_ylabel("Year", fontsize=8, labelpad=2)
             if city is not None:
-                ax.set_zlabel("kWh/m²/gün", fontsize=8, labelpad=-2)
+                ax.set_zlabel("kWh/m²/day", fontsize=8, labelpad=-2)
             if zlim:
                 ax.set_zlim(*zlim)
             ax.view_init(elev=26, azim=-58)
@@ -729,7 +729,7 @@ def plot_month_year_surface_3d(grids: dict, city, save_path: Path, zlim=None) ->
         # tight_layout cannot fit 3-D axis decorations; set the margins explicitly instead.
         if city is None:
             fig.suptitle(
-                "Aylık ortalama günlük toplam ışınım, kWh/m²/gün (2020–2025)",
+                "Mean daily insolation by month, kWh/m²/day (2020–2025)",
                 x=0.02, ha="left", fontsize=11, fontweight="semibold",
             )
             fig.subplots_adjust(left=0.0, right=1.0, top=0.88, bottom=0.0,
@@ -762,17 +762,17 @@ def plot_month_year_anomaly(grids: dict, save_path: Path) -> None:
                 xticklabels=[str(m) for m in anomalies[c].columns],
             )
             ax.set_title(c, fontsize=10)
-            ax.set_xlabel("Ay", fontsize=9)
+            ax.set_xlabel("Month", fontsize=9)
             ax.set_ylabel("")
             ax.tick_params(length=0, labelsize=8)
             plt.setp(ax.get_yticklabels(), rotation=0)
             plt.setp(ax.get_xticklabels(), rotation=0)
         mappable = flat[0].collections[0]
         cbar = fig.colorbar(mappable, ax=flat[5], fraction=0.5, shrink=0.9, pad=0.0)
-        cbar.set_label("Anomali (kWh/m²/gün)", fontsize=9)
+        cbar.set_label("Anomaly (kWh/m²/day)", fontsize=9)
         cbar.ax.tick_params(labelsize=8)
         fig.suptitle(
-            "Aylık ışınım anomalisi: o ayın 6 yıllık ortalamasından sapma",
+            "Monthly irradiance anomaly: departure from that month's 6-year mean",
             x=0.02, ha="left", fontsize=11, fontweight="semibold",
         )
         fig.tight_layout(rect=(0, 0, 1, 0.92))
@@ -793,13 +793,13 @@ def plot_seasonal_diurnal_profile(df: pd.DataFrame, save_path: Path) -> None:
         fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.4))
         for ax, city in zip(flat[:5], CITIES):
             g = work[work["city"] == city]
-            for season in ("Kış", "Yaz"):  # bands first, underneath the lines
+            for season in ("Winter", "Summer"):  # bands first, underneath the lines
                 s = g[g["season"] == season].groupby("HR", observed=True)[TARGET_COLUMN]
                 ax.fill_between(
                     s.mean().index + 0.5, s.quantile(0.25), s.quantile(0.75),
                     color=SEASON_COLORS[season], alpha=0.12, linewidth=0,
                 )
-            for season in SEASONS_TR:
+            for season in SEASONS:
                 m = g[g["season"] == season].groupby("HR", observed=True)[TARGET_COLUMN].mean()
                 ax.plot(
                     m.index + 0.5, m.to_numpy(), color=SEASON_COLORS[season],
@@ -810,12 +810,12 @@ def plot_seasonal_diurnal_profile(df: pd.DataFrame, save_path: Path) -> None:
             ax.set_xlim(0, 24)
             ax.set_xticks([0, 6, 12, 18, 24])
             grid_y_only(ax)
-        _finish_city_panels(plt, fig, flat, "Yerel saat (LST)",
-                            f"Ortalama {VARIABLE_LABELS[TARGET_COLUMN]}")
+        _finish_city_panels(plt, fig, flat, "Local solar time (LST)",
+                            f"Mean {VARIABLE_LABELS[TARGET_COLUMN]}")
         handles, labels = flat[0].get_legend_handles_labels()
-        flat[5].legend(handles, labels, loc="center", title="Mevsim", frameon=False)
+        flat[5].legend(handles, labels, loc="center", title="Season", frameon=False)
         fig.suptitle(
-            "Mevsimlere göre ortalama günlük ışınım profili (bant: günler arası IQR)",
+            "Mean diurnal irradiance profile by season (band: between-day IQR)",
             x=0.03, ha="left", fontsize=11, fontweight="semibold",
         )
         fig.tight_layout(rect=(0.03, 0, 1, 0.94))
@@ -834,13 +834,13 @@ def plot_seasonal_dayofyear(daily: pd.DataFrame, save_path: Path) -> None:
     # Season band edges on the aligned (non-leap) day-of-year axis.
     ref = pd.date_range("2021-01-01", "2021-12-31", freq="D")
     band_of_doy = pd.Series(
-        [MONTH_TO_SEASON_TR[d.month] for d in ref], index=ref.dayofyear
+        [MONTH_TO_SEASON[d.month] for d in ref], index=ref.dayofyear
     )
     with plt.rc_context(PAPER_RC):
         fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.4))
         for ax, city in zip(flat[:5], CITIES):
             g = work[work["city"] == city]
-            for season in SEASONS_TR:
+            for season in SEASONS:
                 days = band_of_doy[band_of_doy == season].index.to_numpy()
                 # Kış wraps the year end, so shade its contiguous runs separately.
                 for run in np.split(days, np.where(np.diff(days) > 1)[0] + 1):
@@ -860,16 +860,16 @@ def plot_seasonal_dayofyear(daily: pd.DataFrame, save_path: Path) -> None:
             ax.set_xlim(1, 365)
             ax.set_xticks([1, 91, 182, 274, 365])
             grid_y_only(ax)
-        _finish_city_panels(plt, fig, flat, "Yılın günü", "Günlük toplam (kWh/m²)")
+        _finish_city_panels(plt, fig, flat, "Day of year", "Daily insolation (kWh/m²)")
         handles = [
             plt.Line2D([], [], color=SEASON_COLORS[s], alpha=0.5, linewidth=8, label=s)
-            for s in SEASONS_TR
+            for s in SEASONS
         ]
         handles.append(plt.Line2D([], [], color="#7a2d0f", linewidth=1.6,
-                                  label="7 günlük ortalama"))
-        flat[5].legend(handles=handles, loc="center", title="Mevsim", frameon=False)
+                                  label="7-day mean"))
+        flat[5].legend(handles=handles, loc="center", title="Season", frameon=False)
         fig.suptitle(
-            "Yıl içinde günlük toplam ışınım (tüm yıllar, artık gün hizalı)",
+            "Daily insolation through the year (all years, leap-day aligned)",
             x=0.03, ha="left", fontsize=11, fontweight="semibold",
         )
         fig.tight_layout(rect=(0.03, 0, 1, 0.94))
@@ -907,11 +907,11 @@ def clearness_index_table(df_kt: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
     )
     daily["season"] = pd.Categorical(
-        daily["_date"].dt.month.map(MONTH_TO_SEASON_TR), categories=SEASONS_TR, ordered=True
+        daily["_date"].dt.month.map(MONTH_TO_SEASON), categories=SEASONS, ordered=True
     )
     rows = []
     for city in CITIES:
-        for season in [POOLED_LABEL] + SEASONS_TR:
+        for season in [POOLED_LABEL] + SEASONS:
             h = hourly[hourly["city"] == city]
             d = daily[daily["city"] == city]
             if season != POOLED_LABEL:
@@ -1003,7 +1003,7 @@ def autocorrelation_table(df_kt: pd.DataFrame, max_hourly_lag: int = 72,
         acf_h = _acf(hourly, max_hourly_lag)
         pacf_h = _pacf_from_acf(acf_h)
         for lag in range(1, max_hourly_lag + 1):
-            rows.append({"city": city, "resolution": "saatlik", "lag": lag,
+            rows.append({"city": city, "resolution": "hourly", "lag": lag,
                          "acf": acf_h[lag],
                          "pacf": pacf_h[lag] if lag <= hourly_pacf_max_lag else np.nan})
 
@@ -1016,7 +1016,7 @@ def autocorrelation_table(df_kt: pd.DataFrame, max_hourly_lag: int = 72,
         acf_d = _acf(kt_daily, max_daily_lag)
         pacf_d = _pacf_from_acf(acf_d)
         for lag in range(1, max_daily_lag + 1):
-            rows.append({"city": city, "resolution": "günlük", "lag": lag,
+            rows.append({"city": city, "resolution": "daily", "lag": lag,
                          "acf": acf_d[lag], "pacf": pacf_d[lag]})
     return pd.DataFrame(rows)
 
@@ -1039,7 +1039,7 @@ def ramp_table(df_kt: pd.DataFrame) -> pd.DataFrame:
 
     rows = []
     for city in CITIES:
-        for season in [POOLED_LABEL] + SEASONS_TR:
+        for season in [POOLED_LABEL] + SEASONS:
             sub = work[work["city"] == city]
             if season != POOLED_LABEL:
                 sub = sub[sub["season"] == season]
@@ -1135,12 +1135,12 @@ def persistence_baseline_table(df_kt: pd.DataFrame, config=None) -> pd.DataFrame
     test = work[work["datetime"] > val_end]
     is_day = daylight_mask(df_kt).reindex(work.index)
     rows = []
-    for scope, sub in (("24 saat", test), ("gündüz", test[is_day.reindex(test.index).to_numpy()])):
+    for scope, sub in (("24h", test), ("daylight", test[is_day.reindex(test.index).to_numpy()])):
         for city in CITIES + [POOLED_LABEL]:
             s = sub if city == POOLED_LABEL else sub[sub["city"] == city]
             y = s[TARGET_COLUMN].to_numpy(dtype=float)
-            for name, col in (("kalıcılık", "persistence"),
-                              ("klimatoloji", "climatology")):
+            for name, col in (("persistence", "persistence"),
+                              ("climatology", "climatology")):
                 yhat = s[col].to_numpy(dtype=float)
                 ok = ~(np.isnan(y) | np.isnan(yhat))
                 yt, yp = y[ok], yhat[ok]
@@ -1171,8 +1171,8 @@ def plot_target_histogram(df: pd.DataFrame, save_path: Path) -> None:
                     alpha=0.75, edgecolor="white", linewidth=0.3)
             ax.set_title(city)
             grid_y_only(ax)
-        _finish_city_panels(plt, fig, flat, VARIABLE_LABELS[TARGET_COLUMN], "Saat sayısı")
-        fig.suptitle("Gündüz saatlik ışınımın dağılımı", x=0.03, ha="left",
+        _finish_city_panels(plt, fig, flat, VARIABLE_LABELS[TARGET_COLUMN], "Hours")
+        fig.suptitle("Distribution of daylight hourly irradiance", x=0.03, ha="left",
                      fontsize=11, fontweight="semibold")
         fig.tight_layout(rect=(0.03, 0, 1, 0.94))
         save_figure(fig, save_path)
@@ -1189,7 +1189,7 @@ def plot_monthly_boxplot_all_years(daily: pd.DataFrame, save_path: Path) -> None
 
     work = daily.copy()
     work["month_label"] = pd.Categorical(
-        work["MO"].map(MONTH_ABBR_TR), categories=[MONTH_ABBR_TR[m] for m in range(1, 13)],
+        work["MO"].map(MONTH_ABBR), categories=[MONTH_ABBR[m] for m in range(1, 13)],
         ordered=True,
     )
     order = list(work["month_label"].cat.categories)
@@ -1207,9 +1207,9 @@ def plot_monthly_boxplot_all_years(daily: pd.DataFrame, save_path: Path) -> None
             ax.set_title(city)
             grid_y_only(ax)
             plt.setp(ax.get_xticklabels(), rotation=45, ha="right", fontsize=7)
-        _finish_city_panels(plt, fig, flat, "", "Günlük toplam ışınım (kWh/m²)")
+        _finish_city_panels(plt, fig, flat, "", "Daily insolation (kWh/m²)")
         fig.suptitle(
-            "Aylara göre günlük toplam ışınım (2019–2026, tüm yıllar havuzlanmış)",
+            "Daily insolation by month (2019–2026, all years pooled)",
             x=0.03, ha="left", fontsize=11, fontweight="semibold",
         )
         fig.tight_layout(rect=(0.03, 0, 1, 0.94))
@@ -1224,25 +1224,25 @@ def plot_autocorrelation(acf_df: pd.DataFrame, resolution: str, save_path: Path)
     plt = _plt()
 
     sub = acf_df[acf_df["resolution"] == resolution]
-    hourly = resolution == "saatlik"
+    hourly = resolution == "hourly"
     with plt.rc_context(PAPER_RC):
         fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.2))
         for ax, city in zip(flat[:5], CITIES):
             g = sub[sub["city"] == city]
             if hourly:
                 for mark in (24, 48):
-                    ax.axvline(mark, color=SEASON_COLORS["Sonbahar"], linewidth=0.8,
+                    ax.axvline(mark, color=SEASON_COLORS["Autumn"], linewidth=0.8,
                                linestyle=":", alpha=0.7)
             ax.axhline(0, color=INK_SECONDARY, linewidth=0.8)
             ax.plot(g["lag"], g["acf"], color=ACCENT, linewidth=1.6, label="ACF")
-            ax.vlines(g["lag"], 0, g["pacf"], color=SEASON_COLORS["Yaz"], linewidth=1.4,
+            ax.vlines(g["lag"], 0, g["pacf"], color=SEASON_COLORS["Summer"], linewidth=1.4,
                       alpha=0.85, label="PACF")
             ax.set_title(city)
             ax.set_ylim(-0.35, 1.02)
             grid_y_only(ax)
         _finish_city_panels(
             plt, fig, flat,
-            "Gecikme (saat)" if hourly else "Gecikme (gün)", "Korelasyon",
+            "Lag (hours)" if hourly else "Lag (days)", "Correlation",
         )
         handles, labels = flat[0].get_legend_handles_labels()
         seen, uniq = set(), []
@@ -1251,8 +1251,8 @@ def plot_autocorrelation(acf_df: pd.DataFrame, resolution: str, save_path: Path)
                 seen.add(l_); uniq.append((h_, l_))
         flat[5].legend([h_ for h_, _ in uniq], [l_ for _, l_ in uniq], loc="center",
                        frameon=False)
-        title = ("Berraklık indeksinin saatlik otokorelasyonu (noktalı çizgiler: 24 ve 48 saat)"
-                 if hourly else "Berraklık indeksinin günlük otokorelasyonu")
+        title = ("Hourly autocorrelation of the clearness index (dotted: 24 and 48 h)"
+                 if hourly else "Daily autocorrelation of the clearness index")
         fig.suptitle(title, x=0.03, ha="left", fontsize=11, fontweight="semibold")
         fig.tight_layout(rect=(0.03, 0, 1, 0.94))
         save_figure(fig, save_path)
@@ -1275,7 +1275,7 @@ def plot_ramp_distribution(df_kt: pd.DataFrame, save_path: Path) -> None:
         fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.2))
         for ax, city in zip(flat[:5], CITIES):
             g = work[work["city"] == city]
-            for season in SEASONS_TR:
+            for season in SEASONS:
                 v = np.sort(g.loc[g["season"] == season, "d_ghi"].dropna().to_numpy())
                 if not len(v):
                     continue
@@ -1285,10 +1285,10 @@ def plot_ramp_distribution(df_kt: pd.DataFrame, save_path: Path) -> None:
             ax.set_title(city)
             ax.set_xlim(0, 400)
             grid_y_only(ax)
-        _finish_city_panels(plt, fig, flat, "|Saatlik değişim| (W/m²)", "Birikimli oran")
+        _finish_city_panels(plt, fig, flat, "|Hour-to-hour change| (W/m²)", "Cumulative share")
         handles, labels = flat[0].get_legend_handles_labels()
-        flat[5].legend(handles, labels, loc="center", title="Mevsim", frameon=False)
-        fig.suptitle("Saatlik ışınım rampalarının birikimli dağılımı (gündüz)",
+        flat[5].legend(handles, labels, loc="center", title="Season", frameon=False)
+        fig.suptitle("Cumulative distribution of hourly irradiance ramps (daylight)",
                      x=0.03, ha="left", fontsize=11, fontweight="semibold")
         fig.tight_layout(rect=(0.03, 0, 1, 0.94))
         save_figure(fig, save_path)
@@ -1298,16 +1298,16 @@ def plot_persistence_baseline(baseline: pd.DataFrame, save_path: Path) -> None:
     """The forecast floor the model has to beat, per city, daylight hours only."""
     plt = _plt()
 
-    refs = ["kalıcılık", "klimatoloji"]
-    colors = [SEASON_COLORS["Kış"], SEASON_COLORS["Yaz"]]
-    sub = baseline[baseline["scope"] == "gündüz"]
+    refs = ["persistence", "climatology"]
+    colors = [SEASON_COLORS["Winter"], SEASON_COLORS["Summer"]]
+    sub = baseline[baseline["scope"] == "daylight"]
     order = CITIES + [POOLED_LABEL]
     x = np.arange(len(order))
     width = 0.34
     with plt.rc_context(PAPER_RC):
         fig, axes = plt.subplots(1, 2, figsize=(FULL_WIDTH_IN, 2.9))
         for ax, metric, label in zip(axes, ["RMSE", "R2"],
-                                     ["RMSE (W/m²)", "R² (gündüz)"]):
+                                     ["RMSE (W/m²)", "R² (daylight)"]):
             for i, (ref, color) in enumerate(zip(refs, colors)):
                 vals = [sub[(sub["city"] == c) & (sub["reference"] == ref)][metric].iloc[0]
                         for c in order]
@@ -1323,7 +1323,7 @@ def plot_persistence_baseline(baseline: pd.DataFrame, save_path: Path) -> None:
         fig.legend(handles, labels, loc="upper right", ncol=3, frameon=False, fontsize=8,
                    bbox_to_anchor=(0.99, 0.99))
         fig.suptitle(
-            "Referans tahmin zemini: 24 saat ilerisi, modelin test penceresi, gündüz saatleri",
+            "Reference forecast floor: 24 h ahead, the model's test window, daylight hours",
             x=0.02, y=0.99, ha="left", va="top", fontsize=11, fontweight="semibold",
         )
         fig.tight_layout(rect=(0, 0, 1, 0.86))
@@ -1341,7 +1341,7 @@ def plot_rize_comparison(kt_table: pd.DataFrame, seasonal: pd.DataFrame,
     plt = _plt()
 
     others = [c for c in CITIES if c != "Rize"]
-    rize_color, other_color = SEASON_COLORS["Yaz"], ACCENT
+    rize_color, other_color = SEASON_COLORS["Summer"], ACCENT
     daily = (
         df_kt.assign(_date=df_kt["datetime"].dt.normalize())
         .groupby(["city", "_date"], observed=True)[[TARGET_COLUMN, "toa_horizontal"]]
@@ -1361,10 +1361,10 @@ def plot_rize_comparison(kt_table: pd.DataFrame, seasonal: pd.DataFrame,
             ax.plot(v, np.arange(1, len(v) + 1) / len(v),
                     color=rize_color if is_rize else other_color,
                     linewidth=2.0 if is_rize else 1.2, alpha=1.0 if is_rize else 0.55,
-                    label="Rize" if is_rize else ("Diğer 4 il" if city == others[0] else None))
-        ax.set_xlabel("Günlük berraklık indeksi kt")
-        ax.set_ylabel("Birikimli oran")
-        ax.set_title("Berraklık dağılımı")
+                    label="Rize" if is_rize else ("Other 4 provinces" if city == others[0] else None))
+        ax.set_xlabel("Daily clearness index kt")
+        ax.set_ylabel("Cumulative share")
+        ax.set_title("Clearness distribution")
         ax.legend(fontsize=8)
         grid_y_only(ax)
 
@@ -1377,41 +1377,41 @@ def plot_rize_comparison(kt_table: pd.DataFrame, seasonal: pd.DataFrame,
                     marker="o" if is_rize else None, markersize=3)
         ax.set_xticks(range(1, 13))
         ax.set_xticklabels([str(m) for m in range(1, 13)], fontsize=7)
-        ax.set_xlabel("Ay")
-        ax.set_ylabel("Ortalama kt")
-        ax.set_title("Aylık berraklık")
+        ax.set_xlabel("Month")
+        ax.set_ylabel("Mean kt")
+        ax.set_title("Clearness by month")
         grid_y_only(ax)
 
         ax = axes[1, 0]
-        x = np.arange(len(SEASONS_TR))
+        x = np.arange(len(SEASONS))
         for i, city in enumerate(CITIES):
             vals = [seasonal[(seasonal["city"] == city) & (seasonal["season"] == s)]
-                    ["daily_kwh_cv"].iloc[0] for s in SEASONS_TR]
+                    ["daily_kwh_cv"].iloc[0] for s in SEASONS]
             is_rize = city == "Rize"
             ax.plot(x, vals, color=rize_color if is_rize else other_color,
                     linewidth=2.0 if is_rize else 1.2, alpha=1.0 if is_rize else 0.55,
                     marker="o" if is_rize else None, markersize=3)
         ax.set_xticks(x)
-        ax.set_xticklabels(SEASONS_TR, fontsize=8)
-        ax.set_ylabel("Günler arası CV")
-        ax.set_title("Mevsimsel değişkenlik")
+        ax.set_xticklabels(SEASONS, fontsize=8)
+        ax.set_ylabel("Between-day CV")
+        ax.set_title("Seasonal variability")
         grid_y_only(ax)
 
         ax = axes[1, 1]
-        sub = baseline[(baseline["scope"] == "gündüz")
-                       & (baseline["reference"] == "klimatoloji")]
+        sub = baseline[(baseline["scope"] == "daylight")
+                       & (baseline["reference"] == "climatology")]
         vals = [sub[sub["city"] == c]["R2"].iloc[0] for c in CITIES]
         ax.bar(range(len(CITIES)), vals,
                color=[rize_color if c == "Rize" else other_color for c in CITIES],
                alpha=0.85, width=0.6)
         ax.set_xticks(range(len(CITIES)))
         ax.set_xticklabels(CITIES, rotation=30, ha="right", fontsize=8)
-        ax.set_ylabel("R² (klimatoloji)")
+        ax.set_ylabel("R² (climatology)")
         ax.set_ylim(0.6, 1.0)
-        ax.set_title("Referans tahmin edilebilirliği")
+        ax.set_title("Reference predictability")
         grid_y_only(ax)
 
-        fig.suptitle("Rize, diğer dört ilden ayrı bir rejim", x=0.02, ha="left",
+        fig.suptitle("Rize is a separate regime from the other four provinces", x=0.02, ha="left",
                      fontsize=11, fontweight="semibold")
         fig.tight_layout(rect=(0, 0, 1, 0.94))
         save_figure(fig, save_path)

@@ -79,16 +79,16 @@ def _descriptive_outputs(df: pd.DataFrame, is_day: pd.Series) -> None:
             ["city", "variable_label", "n", "mean", "std", "min", "q25", "median", "q75",
              "max", "skew", "excess_kurtosis"]
         ].rename(
-            columns={"city": "İl", "variable_label": "Değişken", "n": "N", "mean": "Ort.",
-                     "std": "SS", "min": "Min", "q25": "Q1", "median": "Medyan",
-                     "q75": "Q3", "max": "Maks", "skew": "Çarpıklık",
-                     "excess_kurtosis": "Basıklık"}
+            columns={"city": "Province", "variable_label": "Variable", "n": "N",
+                     "mean": "Mean", "std": "SD", "min": "Min", "q25": "Q1",
+                     "median": "Median", "q75": "Q3", "max": "Max", "skew": "Skew",
+                     "excess_kurtosis": "Ex. kurtosis"}
         )
-        label = "gündüz saatleri" if scope == "daylight" else "24 saat"
+        label = "daylight hours" if scope == "daylight" else "all 24 hours"
         _write_markdown_and_latex(
             pretty, f"descriptive_stats_by_city_{scope}",
-            f"Betimsel istatistikler, il bazında ({label}). "
-            "Basıklık Fisher (fazlalık) tanımıdır: normal dağılım için 0.",
+            f"Descriptive statistics by province ({label}). "
+            "Kurtosis is Fisher's excess definition: 0 for a normal distribution.",
         )
 
 
@@ -102,9 +102,9 @@ def main() -> None:
     daily = eda.daily_totals(df)
     daily_12m = eda.last_12_months(daily, date_col="date")
 
-    print(f"{len(df):,} satır, {df['city'].nunique()} il, "
+    print(f"{len(df):,} rows, {df['city'].nunique()} provinces, "
           f"{df['datetime'].min()} → {df['datetime'].max()}")
-    print(f"gündüz (klimatolojik) satır payı: {is_day.mean():.3f}")
+    print(f"daylight row share: {is_day.mean():.3f}")
 
     # --- tables ---------------------------------------------------------------------
     _descriptive_outputs(df, is_day)
@@ -140,8 +140,8 @@ def main() -> None:
     # --- figures --------------------------------------------------------------------
     for city, matrix in corr["pearson"].items():
         suffix = "pooled" if city == eda.POOLED_LABEL else city
-        title = ("Tüm iller: korelasyon matrisi (gündüz)" if city == eda.POOLED_LABEL
-                 else f"{city}: korelasyon matrisi (gündüz)")
+        title = ("All provinces: correlation matrix (daylight)" if city == eda.POOLED_LABEL
+                 else f"{city}: correlation matrix (daylight)")
         eda.plot_correlation_heatmap(matrix, title, _figure(f"correlation_heatmap_{suffix}"))
     eda.plot_target_correlation_panel(corr["target"], _figure("target_correlation_panel"))
 
@@ -165,14 +165,14 @@ def main() -> None:
 
     eda.plot_target_histogram(df, _figure("target_histogram"))
     eda.plot_monthly_boxplot_all_years(daily, _figure("monthly_boxplot_all_years"))
-    eda.plot_autocorrelation(acf_table, "saatlik", _figure("autocorrelation_hourly"))
-    eda.plot_autocorrelation(acf_table, "günlük", _figure("autocorrelation_daily"))
+    eda.plot_autocorrelation(acf_table, "hourly", _figure("autocorrelation_hourly"))
+    eda.plot_autocorrelation(acf_table, "daily", _figure("autocorrelation_daily"))
     eda.plot_ramp_distribution(df_kt, _figure("ramp_distribution"))
     eda.plot_persistence_baseline(baseline, _figure("persistence_baseline"))
     eda.plot_rize_comparison(kt_table, seasonal, baseline, df_kt,
                              _figure("rize_comparison"))
 
-    print(f"\n{len(WRITTEN)} dosya yazıldı → {EDA_DIR}")
+    print(f"\n{len(WRITTEN)} files written → {EDA_DIR}")
     for path in WRITTEN:
         print("  ", path.relative_to(EDA_DIR.parent.parent))
 

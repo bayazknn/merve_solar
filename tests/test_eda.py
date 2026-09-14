@@ -43,10 +43,10 @@ def _synthetic(start="2024-01-01", periods=24 * 400, cities=("Ankara", "Rize")):
 def test_season_mapping_is_meteorological():
     df = _synthetic(periods=24 * 370)
     seasons = eda.add_season(df).groupby("MO", observed=True)["season"].first()
-    assert seasons[12] == "Kış" and seasons[1] == "Kış" and seasons[2] == "Kış"
-    assert seasons[3] == "İlkbahar"
-    assert seasons[7] == "Yaz"
-    assert seasons[10] == "Sonbahar"
+    assert seasons[12] == "Winter" and seasons[1] == "Winter" and seasons[2] == "Winter"
+    assert seasons[3] == "Spring"
+    assert seasons[7] == "Summer"
+    assert seasons[10] == "Autumn"
 
 
 def test_daylight_mask_is_geometric_not_value_based():
@@ -88,7 +88,7 @@ def test_last_12_months_is_exactly_twelve_ordered_months():
     assert categories[0] == categories[-1] - 11
     # ordering, not alphabetical/calendar sorting
     assert list(out["ym_label"].cat.categories) == [
-        f"{eda.MONTH_ABBR_TR[p.month]} {str(p.year)[2:]}" for p in categories
+        f"{eda.MONTH_ABBR[p.month]} {str(p.year)[2:]}" for p in categories
     ]
 
 

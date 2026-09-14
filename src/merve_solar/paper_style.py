@@ -32,44 +32,38 @@ ACCENT = "#2a78d6"
 # Validated with the dataviz skill's validate_palette.js against a white surface with
 # --pairs all: worst pair CVD dE 9.2 (deutan), normal-vision 16.3 -- both above threshold.
 # The "natural" green+amber+brick triad was rejected: it drops to dE 7.2 under protanopia.
-SEASONS_TR = ["Kış", "İlkbahar", "Yaz", "Sonbahar"]
-MONTH_TO_SEASON_TR = {
-    12: "Kış", 1: "Kış", 2: "Kış",
-    3: "İlkbahar", 4: "İlkbahar", 5: "İlkbahar",
-    6: "Yaz", 7: "Yaz", 8: "Yaz",
-    9: "Sonbahar", 10: "Sonbahar", 11: "Sonbahar",
+SEASONS = ["Winter", "Spring", "Summer", "Autumn"]
+MONTH_TO_SEASON = {
+    12: "Winter", 1: "Winter", 2: "Winter",
+    3: "Spring", 4: "Spring", 5: "Spring",
+    6: "Summer", 7: "Summer", 8: "Summer",
+    9: "Autumn", 10: "Autumn", 11: "Autumn",
 }
 SEASON_COLORS = {
-    "Kış": "#2a78d6",
-    "İlkbahar": "#1baf7a",
-    "Yaz": "#eb6834",
-    "Sonbahar": "#4a3aa7",
+    "Winter": "#2a78d6",
+    "Spring": "#1baf7a",
+    "Summer": "#eb6834",
+    "Autumn": "#4a3aa7",
 }
 # Second channel, so identity survives greyscale printing and colour-vision deficiency.
 SEASON_LINESTYLES = {
-    "Kış": "-",
-    "İlkbahar": "--",
-    "Yaz": "-",
-    "Sonbahar": "-.",
+    "Winter": "-",
+    "Spring": "--",
+    "Summer": "-",
+    "Autumn": "-.",
 }
-SEASON_LINEWIDTHS = {"Kış": 1.6, "İlkbahar": 1.6, "Yaz": 2.2, "Sonbahar": 1.6}
+SEASON_LINEWIDTHS = {"Winter": 1.6, "Spring": 1.6, "Summer": 2.2, "Autumn": 1.6}
 
-# Turkish month labels; written out because Python's .title()/.capitalize() map i -> I
-# rather than i -> İ ("ilkbahar".title() == "Ilkbahar").
-MONTH_ABBR_TR = {
-    1: "Oca", 2: "Şub", 3: "Mar", 4: "Nis", 5: "May", 6: "Haz",
-    7: "Tem", 8: "Ağu", 9: "Eyl", 10: "Eki", 11: "Kas", 12: "Ara",
+MONTH_ABBR = {
+    1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
+    7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
 }
 
-# Turkish display names for the meteorological variables (axis labels, table rows).
 # Variable labels. These are the RAW NASA POWER column names, not translations: a reader of
 # the manuscript has to be able to match a figure axis to the dataset documentation and to the
-# feature list in the methods section, and a Turkish gloss breaks that chain. The unit stays,
-# because an irradiance axis without W/m² is not readable -- the project's figure contract
-# requires it and the name alone does not carry it.
-#
-# The rest of the figure furniture (titles, legends, season names, table headers) stays
-# Turkish; only the dataset's own column identifiers are shown verbatim.
+# feature list in the methods section, and a gloss breaks that chain. The unit stays, because an
+# irradiance axis without W/m² is not readable -- the project's figure contract requires it and
+# the name alone does not carry it.
 VARIABLE_LABELS = {
     "ALLSKY_SFC_SW_DWN": "ALLSKY_SFC_SW_DWN (W/m²)",
     "T2M": "T2M (°C)",
@@ -77,7 +71,7 @@ VARIABLE_LABELS = {
     "T2MDEW": "T2MDEW (°C)",
     "PS": "PS (kPa)",
     "WS2M": "WS2M (m/s)",
-    "PRECTOTCORR": "PRECTOTCORR (mm/saat)",
+    "PRECTOTCORR": "PRECTOTCORR (mm/hour)",
     "WD2M": "WD2M (°)",
     # Retired columns, kept so a figure regenerated from an older cached parquet still labels
     # correctly rather than falling through to the bare name.
@@ -106,7 +100,7 @@ PAPER_RC = {
     "pdf.fonttype": 42,
     "ps.fonttype": 42,
     "font.family": "sans-serif",
-    "font.sans-serif": ["DejaVu Sans"],  # full Turkish glyph coverage, verified
+    "font.sans-serif": ["DejaVu Sans"],  # ships with matplotlib, full Latin-1 coverage
     "font.size": 9,
     "axes.titlesize": 11,
     "axes.titleweight": "semibold",
