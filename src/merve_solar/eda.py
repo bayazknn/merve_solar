@@ -41,8 +41,8 @@ from merve_solar.paper_style import (
     SEASON_LINESTYLES,
     SEASON_LINEWIDTHS,
     SEASONS_TR,
-    VARIABLE_LABELS_TR,
-    VARIABLE_SHORT_TR,
+    VARIABLE_LABELS,
+    VARIABLE_SHORT,
     diverging_cmap,
     grid_y_only,
     radiation_cmap,
@@ -204,7 +204,7 @@ def descriptive_table(df: pd.DataFrame) -> pd.DataFrame:
             row = {
                 "city": city,
                 "variable": var,
-                "variable_tr": VARIABLE_LABELS_TR.get(var, var),
+                "variable_label": VARIABLE_LABELS.get(var, var),
                 "n": int(s.size),
                 "mean": s.mean(),
                 "std": s.std(),
@@ -328,7 +328,11 @@ def circular_wind_table(df: pd.DataFrame) -> pd.DataFrame:
     """
     rows = []
     for col in CIRCULAR_COLUMNS:
-        speed_col = "WS10M" if col == "WD10M" else "WS2M"
+        # Direction is weighted by the speed measured at the SAME height; a mismatch would
+        # silently weight one level's directions by another's gusts.
+        speed_col = col.replace("WD", "WS")
+        if speed_col not in df.columns:
+            raise ValueError(f"no wind-speed column {speed_col!r} to pair with {col!r}")
         sub_all = df[df[speed_col] > CALM_WIND_MIN]
         groups = [(c, g) for c, g in sub_all.groupby("city", observed=True)]
         groups.append((POOLED_LABEL, sub_all))
@@ -338,7 +342,7 @@ def circular_wind_table(df: pd.DataFrame) -> pd.DataFrame:
                 {
                     "city": city,
                     "variable": col,
-                    "variable_tr": VARIABLE_LABELS_TR.get(col, col),
+                    "variable_label": VARIABLE_LABELS.get(col, col),
                     "n": int(len(g)),
                     "excluded_calm_hours": int((df[speed_col] <= CALM_WIND_MIN).sum())
                     if city == POOLED_LABEL else int((df.loc[df["city"] == city, speed_col]
@@ -378,7 +382,7 @@ def correlation_tables(df_daylight: pd.DataFrame) -> dict:
     for var in cols:
         if var == TARGET_COLUMN:
             continue
-        row = {"variable": var, "variable_tr": VARIABLE_LABELS_TR.get(var, var)}
+        row = {"variable": var, "variable_label": VARIABLE_LABELS.get(var, var)}
         for city in CITIES + [POOLED_LABEL]:
             row[f"pearson_{city}"] = out["pearson"][city].loc[TARGET_COLUMN, var]
         row["partial_r_within_hour_pooled"] = resid[TARGET_COLUMN].corr(resid[var])
@@ -390,8 +394,22 @@ def correlation_tables(df_daylight: pd.DataFrame) -> dict:
     return out
 
 
+COLLINEAR_COLUMNS = ["variable_a", "variable_b", "pearson_r"]
+
+
 def collinear_pairs(corr: pd.DataFrame, threshold: float = 0.9) -> pd.DataFrame:
-    """Feature pairs with |r| > threshold -- a finding about the 17-feature model, not noise."""
+    """Feature pairs with |r| > threshold.
+
+    An EMPTY result is a finding, not an error, and since the V2 export that is what this
+    returns: WS2M-WS10M (r = 0.987) was the only pair above the threshold and the 10 m wind is
+    no longer in the file. The frame is therefore built with an explicit schema -- an empty
+    DataFrame has no columns to sort by, and the caller writes a CSV that has to keep its
+    header either way.
+
+    Note what an empty table does NOT mean: T2MDEW is still reproducible from T2M and RH2M at
+    r = 0.99919, and no pairwise correlation can see that, because it is a two-variable
+    function. Pairwise collinearity is a floor on redundancy, never a ceiling.
+    """
     rows = []
     cols = list(corr.columns)
     for i, a in enumerate(cols):
@@ -399,7 +417,10 @@ def collinear_pairs(corr: pd.DataFrame, threshold: float = 0.9) -> pd.DataFrame:
             r = corr.loc[a, b]
             if abs(r) > threshold:
                 rows.append({"variable_a": a, "variable_b": b, "pearson_r": r})
-    return pd.DataFrame(rows).sort_values("pearson_r", key=abs, ascending=False)
+    out = pd.DataFrame(rows, columns=COLLINEAR_COLUMNS)
+    if out.empty:
+        return out
+    return out.sort_values("pearson_r", key=abs, ascending=False)
 
 
 def monthly_target_stats(daily: pd.DataFrame) -> pd.DataFrame:
@@ -537,7 +558,7 @@ def plot_correlation_heatmap(corr: pd.DataFrame, title: str, save_path: Path) ->
     plt = _plt()
     import seaborn as sns
 
-    labels = [VARIABLE_SHORT_TR.get(c, c) for c in corr.columns]
+    labels = [VARIABLE_SHORT.get(c, c) for c in corr.columns]
     with plt.rc_context(PAPER_RC):
         fig, ax = plt.subplots(figsize=(5.2, 4.6))
         sns.heatmap(
@@ -558,7 +579,7 @@ def plot_target_correlation_panel(target_df: pd.DataFrame, save_path: Path) -> N
     plt = _plt()
     import seaborn as sns
 
-    mat = target_df.set_index("variable_tr")[[f"pearson_{c}" for c in CITIES]]
+    mat = target_df.set_index("variable_label")[[f"pearson_{c}" for c in CITIES]]
     mat.columns = CITIES
     with plt.rc_context(PAPER_RC):
         fig, ax = plt.subplots(figsize=(COL_WIDTH_IN * 1.5, 3.4))
@@ -585,7 +606,10 @@ def plot_scatter_vs_target(df_daylight: pd.DataFrame, city: str, save_path: Path
     # Grid sized from the feature set, not hard-coded: the 14-Sep-2026 export has 7 raw
     # meteorological variables where the previous one had 8, and a fixed 2x4 left a bare
     # 0-1 axis in the corner of every panel figure.
-    ncols = 4
+    # Choose the column count that leaves the fewest empty cells: the export's parameter list
+    # has already changed twice (8 raw variables -> 7 -> 6) and a fixed grid leaves a ragged
+    # bottom row every time.
+    ncols = min((4, 3), key=lambda n: (-(-len(variables) // n) * n - len(variables), n))
     nrows = -(-len(variables) // ncols)
     with plt.rc_context(PAPER_RC):
         fig, axes = plt.subplots(nrows, ncols, figsize=(FULL_WIDTH_IN, 2.0 * nrows))
@@ -604,10 +628,10 @@ def plot_scatter_vs_target(df_daylight: pd.DataFrame, city: str, save_path: Path
             if hi > lo:
                 pad = (hi - lo) * 0.03
                 ax.set_xlim(lo - pad, hi + pad)
-            ax.set_xlabel(VARIABLE_LABELS_TR.get(var, var), fontsize=8)
+            ax.set_xlabel(VARIABLE_LABELS.get(var, var), fontsize=8)
             grid_y_only(ax)
         for ax in axes[:, 0]:
-            ax.set_ylabel("Işınım (W/m²)", fontsize=8)
+            ax.set_ylabel(VARIABLE_LABELS[TARGET_COLUMN], fontsize=7)
         fig.suptitle(
             f"{city}: değişkenlerin güneş ışınımına karşı dağılımı (gündüz saatleri)",
             x=0.02, ha="left", fontsize=11, fontweight="semibold",
@@ -786,7 +810,8 @@ def plot_seasonal_diurnal_profile(df: pd.DataFrame, save_path: Path) -> None:
             ax.set_xlim(0, 24)
             ax.set_xticks([0, 6, 12, 18, 24])
             grid_y_only(ax)
-        _finish_city_panels(plt, fig, flat, "Yerel saat (LST)", "Ortalama ışınım (W/m²)")
+        _finish_city_panels(plt, fig, flat, "Yerel saat (LST)",
+                            f"Ortalama {VARIABLE_LABELS[TARGET_COLUMN]}")
         handles, labels = flat[0].get_legend_handles_labels()
         flat[5].legend(handles, labels, loc="center", title="Mevsim", frameon=False)
         fig.suptitle(
@@ -1146,7 +1171,7 @@ def plot_target_histogram(df: pd.DataFrame, save_path: Path) -> None:
                     alpha=0.75, edgecolor="white", linewidth=0.3)
             ax.set_title(city)
             grid_y_only(ax)
-        _finish_city_panels(plt, fig, flat, "Işınım (W/m²)", "Saat sayısı")
+        _finish_city_panels(plt, fig, flat, VARIABLE_LABELS[TARGET_COLUMN], "Saat sayısı")
         fig.suptitle("Gündüz saatlik ışınımın dağılımı", x=0.03, ha="left",
                      fontsize=11, fontweight="semibold")
         fig.tight_layout(rect=(0.03, 0, 1, 0.94))

@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-RAW_XLSX_PATH = PROJECT_ROOT / "SolarData_Merve(140926).xlsx"
+RAW_XLSX_PATH = PROJECT_ROOT / "SolarData_Merve(140926_V2).xlsx"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 BASE_FEATURES_PATH = OUTPUTS_DIR / "processed" / "base_features.parquet"
 EXPERIMENTS_DIR = OUTPUTS_DIR / "experiments"
@@ -148,20 +148,17 @@ LOSS_FUNCTIONS = ("mse", "mae", "huber")
 # is also the only mode that costs nothing: any other value makes the run predict the
 # VALIDATION split as well, which is roughly a 13% wall-clock surcharge.
 
-# 16 columns, down from the previous export's 17. The change is NOT a modelling decision --
-# it is what the 14-Sep-2026 export contains. Gone: QV2M (specific humidity), WS50M/WD50M
-# (50 m wind). New: WS2M/WD2M (2 m wind). Kept identical: the target lag, T2M, RH2M, T2MDEW,
-# PS, WS10M/WD10M, PRECTOTCORR and the four time encodings.
+# 13 columns. The 14-Sep-2026 V2 export carries one wind level instead of two, which is the
+# change the EDA had been arguing for rather than a loss: measured on the V1 export of the same
+# record, WS2M-WS10M correlated at 0.987 and WD2M-WD10M agreed to a median 0.30 deg with
+# sin/cos correlations of 0.996, so the 10 m pair was carrying almost nothing the 2 m pair does
+# not. Also absent since the 16-July export: QV2M (redundant with T2MDEW at r = 0.962) and the
+# 50 m wind.
 #
-# Nothing of consequence is lost. QV2M was already flagged as redundant (r = 0.962 with
-# T2MDEW on the old export), and the 50 m wind was the member of its pair the EDA had queued
-# for removal anyway. The substitution is if anything tighter: measured on the new export,
-# WS2M-WS10M correlate at 0.975 and WD2M-WD10M at 0.997, with the two directions agreeing to
-# a median 0.1 deg -- so WD2M carries essentially no information WD10M does not already have,
-# and it is the first candidate for a feature-reduction arm (see TODOs.md).
+# One redundancy survives and is still worth an arm: T2MDEW is reproducible from T2M and RH2M
+# by the Magnus relation at r = 0.99919 / 0.30 C RMSE, i.e. at measurement-noise level.
 #
-# Any ledger row written before this export ran on a different 17-column feature set over a
-# different record and is NOT comparable. Reruns need new ids.
+# Any ledger row written under a different feature set is NOT comparable. Reruns need new ids.
 NUMERIC_FEATURE_COLUMNS = [
     "ALLSKY_SFC_SW_DWN",  # own-lag, autoregressive
     "T2M",
@@ -169,12 +166,9 @@ NUMERIC_FEATURE_COLUMNS = [
     "T2MDEW",
     "PS",
     "WS2M",
-    "WS10M",
     "PRECTOTCORR",
     "WD2M_sin",
     "WD2M_cos",
-    "WD10M_sin",
-    "WD10M_cos",
     "hour_sin",
     "hour_cos",
     "doy_sin",
@@ -190,7 +184,7 @@ RAW_METEO_COLUMNS = [c for c in NUMERIC_FEATURE_COLUMNS if not c.endswith(("_sin
 
 # Wind direction is circular: its arithmetic mean/std are meaningless (a pooled "189.5 +- 107
 # deg" is an artifact, not a statistic). Reported separately via circular statistics.
-CIRCULAR_COLUMNS = ["WD2M", "WD10M"]
+CIRCULAR_COLUMNS = ["WD2M"]
 
 # CLRSKY_SFC_SW_DWN sits in the frame rather than being dropped, which makes it the column
 # most likely to drift back into the feature list by accident -- there is even a cached parquet

@@ -20,15 +20,15 @@ uv run python scripts/02_descriptive_analysis.py  # tüm tablolar ve figürler
 
 | | |
 |---|---|
-| Kaynak dosya | `SolarData_Merve(140926).xlsx` (14 Eylül 2026 dışa aktarımı) — **tek kaynak** |
+| Kaynak dosya | `SolarData_Merve(140926_V2).xlsx` (14 Eylül 2026, V2) — **deponun tek veri dosyası** |
 | Ara ürün | `outputs/processed/base_features.parquet` |
 | Kapsam | 2019-06-30 00:00 → 2026-05-30 23:00 |
 | İl başına satır | 60.648 kesintisiz saatlik satır (2.527 gün) |
 | Havuzlanmış | 303.240 satır; gündüz alt kümesi **152.893** (%50.42) |
-| Öznitelik | 16 |
+| Öznitelik | 13 |
 
-**Bu dosya öncekinden farklı ayarlarla alınmıştır** — birimler, parametre seçimi ve kayıt
-uzunluğu değişti, ve `CLRSKY_SFC_SW_DWN` artık yok. Hepsinin ayrıntısı `EDA.md` §0'dadır;
+**Bu dosya 16 Temmuz sürümünden farklı ayarlarla alınmıştır** — birimler, parametre seçimi ve
+kayıt uzunluğu değişti, `CLRSKY_SFC_SW_DWN` artık yok, ve V2 ile 10 m rüzgâr da çıkarıldı. Hepsinin ayrıntısı `EDA.md` §0'dadır;
 okumadan buradaki hiçbir sayı eskisiyle kıyaslanmamalıdır.
 
 **Berrak gökyüzü sütununun yerini güneş geometrisi aldı** (`src/merve_solar/solar.py`). Depoda
@@ -43,7 +43,7 @@ başka hiçbir veri dosyası yoktur; her şey bu excelden ve astronomiden türer
 
 ---
 
-## Makaleye yazarken dikkat edilecek altı yöntem noktası
+## Makaleye yazarken dikkat edilecek yedi yöntem noktası
 
 **1. "Gündüz" hesaplanmış güneş yüksekliğiyle tanımlıdır: `solar_elevation > 0`.** Saatin orta
 noktasında güneşin ufkun üzerinde olması. Yalnız (il, zaman damgası) fonksiyonudur; hiçbir
@@ -89,7 +89,14 @@ altındadır. Anlamlılık yerine etki büyüklüğü ve `partial_r_within_hour`
 geometrisinden ayırır. Fark yalnız büyük değil, **işaret değiştirecek kadar** büyüktür
 (`EDA.md` §6.1).
 
-**6. Kısmi yıllar 3B yüzeye girmez.** 2019 (30 Haziran'da başlıyor) ve 2026 (30 Mayıs'ta
+**6. Değişken adları ham sütun adlarıdır, çeviri değil.** Figür eksenleri ve tablo satırları
+`ALLSKY_SFC_SW_DWN`, `T2M`, `RH2M`, … der; birim parantez içinde durur. Gerekçe: okuyucunun bir
+eksen etiketini NASA POWER dokümantasyonuyla ve yöntem bölümündeki öznitelik listesiyle birebir
+eşleştirebilmesi gerekir, Türkçe bir gloss bu zinciri koparır. Başlıklar, açıklamalar, mevsim
+adları ve tablo sütun başlıkları Türkçe kalır. Eşleme `paper_style.VARIABLE_LABELS` (birimli) ve
+`VARIABLE_SHORT` (çıplak) içindedir; betimsel tablolardaki sütunun adı `variable_label`'dır.
+
+**7. Kısmi yıllar 3B yüzeye girmez.** 2019 (30 Haziran'da başlıyor) ve 2026 (30 Mayıs'ta
 bitiyor) kısmidir; `month_year_surface_*` ve `month_year_anomaly_panel` yalnız tam takvim
 yıllarını (2020–2025) kullanır.
 
@@ -112,9 +119,9 @@ ve bilerek 2025-06 → 2026-05 ile sınırlıdır. Figürlerde iki istisna vard�
 | `target_by_hour_by_city.csv` | Hedefin (il, mevsim, LST saati) dağılımı — günlük profil figürünün verisi. | tam veri |
 | `time_feature_explained_variance.csv` | Saat ve yılın günü için η² ve harmonik R². Sin/cos sütunlarına karşı Pearson *r* yerine bu raporlanır: deterministik bir saat fonksiyonuna karşı korelasyon yorumlanamaz. | tam veri (hem 24 saat hem gündüz) |
 | `wind_direction_circular_stats.csv` | Rüzgâr yönü dairesel istatistiği (aşağıda). | tam veri (24 saat, hız > 1 m/s) |
-| `correlation_pearson_<il>.csv`, `correlation_spearman_<il>.csv`, `..._pooled.csv` | 8 fiziksel değişkenin korelasyon matrisleri. | tam veri (gündüz) |
+| `correlation_pearson_<il>.csv`, `correlation_spearman_<il>.csv`, `..._pooled.csv` | 7 fiziksel değişkenin korelasyon matrisleri. | tam veri (gündüz) |
 | `target_correlation_by_city.csv` | Hedefle ham korelasyon + `partial_r_within_hour`. | tam veri (gündüz) |
-| `collinear_pairs.csv` | \|r\| > 0.9 çiftler. | tam veri (gündüz) |
+| `collinear_pairs.csv` | \|r\| > 0.9 çiftler. **V2'den beri boştur** (tek böyle çift `WS2M`–`WS10M` idi); boş bir tablo burada bir sonuçtur, hata değil, ve başlık satırı korunur. | tam veri (gündüz) |
 | `seasonal_target_stats.csv` | Mevsim bazında saatlik ve günlük toplam özetleri. | tam veri (2.527 gün/il) |
 | `daily_clearness_by_city.csv` | **Ampirik** berraklık oranı (günlük toplam ÷ aynı yılın-günü için gözlenen 95. persentil) ve açık/kapalı gün payları — illeri enlemden bağımsız kıyaslar. | tam veri (2.525 gün/il; 29 Şubat'lar hizalama için düşülür) |
 | `monthly_target_stats.csv` | Son 12 ayın günlük toplam özetleri — kutu grafiğinin verisi. | **SADECE 2025-06 → 2026-05** |
@@ -145,7 +152,7 @@ siyah-beyaz baskıda ve renk körlüğünde kimlik korunur.
 
 | Dosya | Ne gösterir | Filtre |
 |---|---|---|
-| `correlation_heatmap_<il>`, `_pooled` | 8 değişkenin korelasyon matrisi | gündüz |
+| `correlation_heatmap_<il>`, `_pooled` | 7 değişkenin korelasyon matrisi | gündüz |
 | `target_correlation_panel` | Değişken × il, hedefle korelasyon | gündüz |
 | `scatter_vs_target_<il>` | Her değişkenin hedefe karşı saçılımı + binlenmiş medyan eğrisi | gündüz |
 | `monthly_boxplot_last12m_<il>`, `_panel` | Son 12 ayın günlük toplamları | 24 saat (toplam) |
@@ -160,9 +167,9 @@ siyah-beyaz baskıda ve renk körlüğünde kimlik korunur.
 | `persistence_baseline` | Modelin aşması gereken RMSE ve R² zemini | gündüz |
 | `rize_comparison` | Rize'yi diğer dört ile karşı dört eksende toplayan panel | karışık (alt panellerde yazılı) |
 
-**Saçılım paneli ızgarası öznitelik setinden türetilir.** Önceki dışa aktarımda 8 ham
-meteorolojik değişken vardı ve 2×4 ızgara tam oturuyordu; yenisinde 7 var. Izgara artık
-`RAW_METEO_COLUMNS`'tan hesaplanır ve artan hücreler kapatılır.
+**Saçılım paneli ızgarası öznitelik setinden türetilir.** Ham meteorolojik değişken sayısı iki
+kez değişti (8 → 7 → 6). Izgara artık `RAW_METEO_COLUMNS`'tan hesaplanır: sütun sayısı boş
+hücreyi en aza indirecek biçimde 4 veya 3 seçilir ve artan eksenler kapatılır.
 
 **Günlük profil figüründe gündüz filtresi bilinçli olarak uygulanmaz:** gece sıfırları
 fiziksel bilgidir; filtrelenirse eğri sıfırdan yükselip sıfıra dönmez ve kış sabahı gibi az
@@ -190,7 +197,7 @@ Meteorolojik mevsimler: **Kış** = Aralık, Ocak, Şubat · **İlkbahar** = Mar
 
 ### 2026-09-14 — veri seti değişti; tüm EDA yeniden üretildi
 
-Kaynak dosya `SolarData_Merve_All(16July).xlsx` → `SolarData_Merve(140926).xlsx`. Aynı NASA
+Kaynak dosya `SolarData_Merve_All(16July).xlsx` → `SolarData_Merve(140926_V2).xlsx`. Aynı NASA
 POWER kaydı, farklı dışa aktarım ayarları. Üç eksende değişiklik var ve **bu klasördeki
 her sayı yeniden üretilmiştir**; eski sürümden alıntılanmış hiçbir rakam geçerli değildir.
 
@@ -198,13 +205,14 @@ her sayı yeniden üretilmiştir**; eski sürümden alıntılanmış hiçbir rak
 |---|---|---|
 | Hedef birimi | W/m² | MJ/m²/saat → okurken W/m²'ye çevriliyor |
 | Yağış birimi | mm/gün | mm/saat |
-| Öznitelik sayısı | 17 | 16 (`QV2M`, `WS50M`, `WD50M` gitti; `WS2M`, `WD2M` geldi) |
+| Öznitelik sayısı | 17 | **13** (`QV2M`, 50 m ve 10 m rüzgâr gitti; 2 m rüzgâr geldi) |
 | Gündüz tanımı | `CLRSKY_SFC_SW_DWN > 0` | **`solar_elevation > 0`** (hesaplanmış) |
 | Berraklık indeksi | `ALLSKY / CLRSKY` | **`GHI / (I₀ cos θz)`** (standart tanım) |
 | Kayıt sonu | 2026-03-30 | 2026-05-30 (+61 gün) |
 | İl başına satır | 59.184 | 60.648 |
 | Gündüz satırı / payı | 151.643 / %51.2 | 152.893 / %50.42 |
 | Test penceresi | 8.878 saat / 370 gün | 9.097 saat / 379 gün |
+| Değişken etiketleri | Türkçe ("Sıcaklık, 2 m (°C)") | **ham sütun adı** (`T2M (°C)`) |
 | Naif zemin (gündüz) | klim. 106.8 / kal. 116.4 | klim. **109.86** / kal. **121.56** |
 
 **Eski excel (`SolarData_Merve_All(16July).xlsx`) depodan silinmiştir.** Bir ara sürümde

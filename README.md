@@ -77,7 +77,7 @@ windowing logic — no network or GPU required).
 ### 1. One-time data preparation
 
 Before any experiment, build the cleaned/feature-engineered cache (loads all
-5 city sheets from `SolarData_Merve(140926).xlsx`, converts the irradiance
+5 city sheets from `SolarData_Merve(140926_V2).xlsx`, converts the irradiance
 from the export's MJ/m²/hour to W/m², trims the trailing NASA POWER
 data-latency gap (744 hours), drops the columns listed in `DROPPED_COLUMNS`
 (currently none — the xlsx itself is never modified), adds cyclical
@@ -88,7 +88,8 @@ midpoint, in degrees) and `toa_horizontal` (top-of-atmosphere irradiance, the
 denominator of the clearness index). Both are `MASK_COLUMNS` entries — in the
 frame, never a model input — and `solar_elevation > 0` is the project's
 definition of daylight. See `outputs/eda/EDA.md` §0.2. The final feature set is
-16 columns.
+13 columns: the V2 export carries one wind level instead of two, which is the
+reduction the EDA had been arguing for (`WS2M`–`WS10M` correlated at 0.987).
 Only needs to be run once — every experiment reuses the cached file:
 
 ```bash
@@ -129,7 +130,9 @@ evaluated 24 h ahead where `clamp_night_to_zero` needs it. Everything month-to-m
 totals**, because a box of daylight-hourly values is mostly solar geometry and
 makes winter look *less* variable than summer, which is backwards. And the
 hourly clock is NASA POWER's **per-site Local Solar Time**, so hours are never
-compared across cities.
+compared across cities. Figures and tables name variables by their raw NASA
+POWER column (`T2M`, `RH2M`, …) with the unit in parentheses, so an axis can be
+matched to the dataset documentation; the surrounding prose stays Turkish.
 
 ### 3. Run a single experiment
 

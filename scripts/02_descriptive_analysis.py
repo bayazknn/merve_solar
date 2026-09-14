@@ -76,10 +76,10 @@ def _descriptive_outputs(df: pd.DataFrame, is_day: pd.Series) -> None:
         table = eda.descriptive_table(sub)
         _write_csv(table, f"descriptive_stats_by_city_{scope}.csv")
         pretty = table[
-            ["city", "variable_tr", "n", "mean", "std", "min", "q25", "median", "q75",
+            ["city", "variable_label", "n", "mean", "std", "min", "q25", "median", "q75",
              "max", "skew", "excess_kurtosis"]
         ].rename(
-            columns={"city": "İl", "variable_tr": "Değişken", "n": "N", "mean": "Ort.",
+            columns={"city": "İl", "variable_label": "Değişken", "n": "N", "mean": "Ort.",
                      "std": "SS", "min": "Min", "q25": "Q1", "median": "Medyan",
                      "q75": "Q3", "max": "Maks", "skew": "Çarpıklık",
                      "excess_kurtosis": "Basıklık"}
@@ -116,7 +116,7 @@ def main() -> None:
     _write_csv(eda.seasonal_target_stats(df, daily), "seasonal_target_stats.csv")
     _write_csv(eda.clearness_table(daily), "daily_clearness_by_city.csv")
 
-    # Clear-sky reference (descriptive use only -- CLRSKY never becomes a model feature).
+    # Clearness index kt = GHI / (I0 cos theta_z); geometry only, never a model feature.
     df_kt = eda.attach_clearness(df)
     kt_table = eda.clearness_index_table(df_kt)
     acf_table = eda.autocorrelation_table(df_kt)

@@ -1,6 +1,6 @@
 # Keşifsel veri analizi — bulgular ve yorumu
 
-**Veri sürümü:** `SolarData_Merve(140926).xlsx` (14 Eylül 2026 dışa aktarımı) — tek kaynak.
+**Veri sürümü:** `SolarData_Merve(140926_V2).xlsx` (14 Eylül 2026, V2) — deponun tek veri dosyası.
 **Bu belgenin tarihi:** 14 Eylül 2026. Önceki tüm sürümler geçersizdir.
 
 Bu belge `outputs/eda/` altındaki tablo ve figürlerin **ne söylediğini** anlatır. Hedef kitle
@@ -16,6 +16,11 @@ Okuma kılavuzu:
   kısıtlardır.
 - **Öneri** ile başlayan cümleler veriden çıkan modelleme yorumlarıdır; henüz sınanmış
   sonuçlar değildir.
+- **Figür ve tablolarda değişkenler NASA POWER'ın kendi sütun adlarıyla anılır**
+  (`ALLSKY_SFC_SW_DWN`, `T2M`, `RH2M`, …), Türkçe karşılıklarıyla değil: okuyucunun bir eksen
+  etiketini veri seti dokümantasyonuyla ve yöntem bölümündeki öznitelik listesiyle
+  eşleştirebilmesi gerekiyor. Birim parantez içinde kalır. Başlıklar, açıklamalar, mevsim
+  adları ve tablo sütun başlıkları Türkçedir.
 
 ---
 
@@ -111,16 +116,26 @@ getirilemedi ve ölçülerek kaldırıldı:
 **Öneri.** Bu iki analiz istenirse tek hamleyle geri gelir: NASA POWER'dan
 `CLRSKY_SFC_SW_DWN` parametresini de içeren bir dışa aktarım, aynı istekte tek kutucuk.
 
-### 0.4 Öznitelik seti: 17 → 16
+### 0.4 Öznitelik seti: 17 → 13
 
-| Giden | Gelen |
+İki adımda daraldı. 16 Temmuz dosyasından 14 Eylül'e geçerken `QV2M` ve 50 m rüzgâr çıktı, 2 m
+rüzgâr girdi; V2 sürümünde 10 m rüzgâr da çıkarıldı.
+
+| Kalan (13) | Çıkan |
 |---|---|
-| `QV2M` (özgül nem) | `WS2M` (2 m rüzgâr hızı) |
-| `WS50M`, `WD50M` (50 m rüzgâr) | `WD2M` (2 m rüzgâr yönü) |
-| `ALLSKY_KT`, `CLRSKY_SFC_SW_DWN` | — |
+| `ALLSKY_SFC_SW_DWN` (kendi gecikmesi), `T2M`, `RH2M`, `T2MDEW`, `PS`, `WS2M`, `PRECTOTCORR` | `QV2M` — `T2MDEW` ile r = 0.962 |
+| `WD2M_sin`, `WD2M_cos` | `WS50M`, `WD50M` — 50 m rüzgâr |
+| `hour_sin`, `hour_cos`, `doy_sin`, `doy_cos` | `WS10M`, `WD10M` — 10 m rüzgâr |
+| | `ALLSKY_KT`, `CLRSKY_SFC_SW_DWN` |
 
-Kayıp önemsiz, hatta lehimize: `QV2M` zaten gereksiz işaretlenmişti ve 50 m rüzgâr silinmek
-üzere kuyruktaydı. Yerine gelen 2 m rüzgârı daha da gereksiz (§6.3).
+**10 m rüzgârın çıkarılması EDA'nın zaten savunduğu şeydi, bir kayıp değil.** Aynı kaydın V1
+sürümünde ölçülmüştü: `WS2M`–`WS10M` korelasyonu 0.987, `WD2M` ile `WD10M` arasındaki açı
+farkının medyanı 0.30° ve sin/cos korelasyonları 0.996. Yani 10 m çifti, 2 m çiftinin
+taşımadığı neredeyse hiçbir şey taşımıyordu.
+
+Somut sonucu §6.3'te görünür: **artık |r| > 0.9 olan hiçbir öznitelik çifti kalmadı**
+(`collinear_pairs.csv` boş). Geriye tek bir gizli fazlalık kalıyor ve o ikili korelasyonla
+görünmüyor — `T2MDEW`, `T2M` ve `RH2M`'den türetilebilir (§6.3).
 
 ### 0.5 Kayıt uzadı
 
@@ -161,10 +176,11 @@ belirleyici olan günlük ölçekte berraklık indeksinin kısmi otokorelasyonu 
 2. günde **−0.002…0.098**'e düşüyor. `lookback_hours`'ı 48'e çıkarmak, kısmi korelasyonu
 sıfıra yakın bir ikinci gün eklemek demektir.
 
-**(6) Öznitelik setinde en az üç sütun fiilen gereksiz.** `WS2M`–`WS10M` r = 0.987; `WD2M` ile
-`WD10M` arasındaki açı farkının medyanı 0.30° ve sin/cos korelasyonları 0.996; çiy noktası
-sıcaklık ve bağıl nemden Magnus bağıntısıyla r = 0.99919, RMSE 0.30 °C ile yeniden üretilebiliyor.
-16 öznitelikten etkin olarak ~12'si bağımsız bilgi taşıyor.
+**(6) Öznitelik seti artık büyük ölçüde temiz, ama bir gizli fazlalık kaldı.** V2 sürümünde
+10 m rüzgârın çıkarılmasıyla |r| > 0.9 olan çift kalmadı. Buna karşılık `T2MDEW`, `T2M` ve
+`RH2M`'den Magnus bağıntısıyla **r = 0.99919 ve 0.30 °C RMSE** ile yeniden üretilebiliyor —
+yani bir ölçüm değil, mevcut iki sütunun determinist bir dönüşümü. İkili korelasyon bunu
+göremez (iki değişkenli bir fonksiyondur); 13 öznitelikten 12'si bağımsızdır.
 
 **(7) Test penceresi dört mevsimi kapsıyor; doğrulama penceresi kapsamıyor.** Test 9.097 saat =
 **379 gün** (2025-05-16 → 2026-05-30), mevsim yanlılığı yok. Doğrulama penceresi
@@ -327,18 +343,17 @@ skorundaki oynaklığın bir kısmının modelden değil o yılın kendisinden g
 
 Havuzlanmış gündüz değerleriyle:
 
-| Değişken | Ortalama | SS | Aralık | Not |
-|---|---|---|---|---|
-| Sıcaklık `T2M` | 15.5 °C | 10.3 | −23.6 … 42.3 | |
-| Bağıl nem `RH2M` | %54.0 | 23.7 | 3.4 … 100 | En ayrıştırıcı; tek gerçek yordayıcı |
-| Çiy noktası `T2MDEW` | 4.3 °C | 7.0 | −27.5 … 22.9 | Türetilebilir (§6.3) |
-| Basınç `PS` | 88.3 kPa | 6.0 | 75.8 … 97.7 | Varyansın tamamı rakım |
-| Rüzgâr 2 m `WS2M` | 2.59 m/s | 1.54 | 0.01 … 13.7 | |
-| Rüzgâr 10 m `WS10M` | 3.52 m/s | 2.01 | 0.01 … 18.7 | `WS2M` ile r = 0.987 |
-| Yağış `PRECTOTCORR` | 0.071 mm/saat | 0.26 | 0 … 7.4 | Çarpıklık +8.1 |
+| Sütun | Ortalama | SS | Aralık | İller arası SS | Not |
+|---|---|---|---|---|---|
+| `T2M` (°C) | 15.60 | 10.32 | −23.6 … 42.3 | 3.83 | |
+| `RH2M` (%) | 53.60 | 23.63 | 3.4 … 100 | **11.19** | En ayrıştırıcı; tek gerçek yordayıcı |
+| `T2MDEW` (°C) | 4.27 | 7.05 | −27.5 … 22.9 | 4.43 | Türetilebilir (§6.3) |
+| `PS` (kPa) | 88.28 | 6.03 | 75.8 … 97.7 | **6.72** | Varyansın tamamı rakım |
+| `WS2M` (m/s) | 2.61 | 1.54 | 0.01 … 13.7 | 0.51 | |
+| `PRECTOTCORR` (mm/saat) | 0.072 | 0.263 | 0 … 7.4 | 0.049 | Çarpıklık +8.1 |
 
-**Basınç bir meteorolojik değişken gibi davranmıyor.** Havuzlanmış standart sapması 6.0 kPa ama
-iller arası standart sapması 6.7 — varyansın tamamı iller arasıdır (Van 77.7, Konya 87.9,
+**Basınç bir meteorolojik değişken gibi davranmıyor.** Havuzlanmış standart sapması 6.03 kPa ama
+iller arası standart sapması 6.72 — varyansın tamamı iller arasıdır (Van 77.7, Konya 87.9,
 Ankara 88.8, Rize 91.2, Antalya 96.0 kPa). Havuzlanmış bir modelde `PS` fiilen bir **rakım/il
 kimliği göstergesi** olarak çalışır ve şehir gömmesiyle bilgi tekrarı yapar. İl içi değişimi
 (SS ≈ 0.4–0.5 kPa) gerçek sinoptik sinyaldir ve §6.1'de kısmi korelasyonun neden işaret
@@ -372,20 +387,22 @@ tahmin ediyor; bilinen bir davranış). Bu, mm/saat yorumunun bağımsız teyidi
 
 Hıza göre ağırlıklı dairesel istatistikler, 1 m/s altındaki durgun saatler dışarıda:
 
-| İl | Ortalama yön (10 m) | Bileşke uzunluk *R* | Dairesel SS |
+| İl | `WD2M` ortalama yön | Bileşke uzunluk *R* | Dairesel SS |
 |---|---|---|---|
-| Van | 211° | **0.464** | 71° |
-| Konya | 334° | 0.221 | 100° |
-| Rize | 257° | 0.203 | 102° |
-| Antalya | 31° | 0.191 | 104° |
-| Ankara | 335° | 0.128 | 116° |
+| Van | 215° | **0.468** | 71° |
+| Rize | 270° | 0.244 | 96° |
+| Konya | 337° | 0.227 | 99° |
+| Antalya | 43° | 0.188 | 105° |
+| Ankara | 332° | 0.124 | 117° |
 
 Bileşke uzunluk 0 (tamamen dağınık) ile 1 (tek yön) arasındadır. **Yalnızca Van'da baskın bir
 yön var**; diğer dört ilde rüzgâr yönü pratik olarak düzgün dağılmış ve öngörücü olarak
 neredeyse boş.
 
-**Uyarı.** Durgun saat payı iller arasında çok farklı (Rize 7.230 saat, Konya 2.786) ve o
-saatlerde yönün kendisi gürültüdür; yön öznitelikleri tartışılacaksa bu filtre belirtilmelidir.
+**Uyarı.** Durgun saat payı iller arasında çok farklı (`WS2M ≤ 1 m/s`: Rize 16.175 saat,
+Konya 8.606) ve o saatlerde yönün kendisi gürültüdür; yön öznitelikleri tartışılacaksa bu filtre
+belirtilmelidir. Eşik 10 m yerine 2 m rüzgârına uygulandığı için dışlanan saat sayısı V1'e göre
+belirgin biçimde artmıştır — 2 m'de rüzgâr daha yavaştır, fiziksel bir değişim değildir.
 
 ---
 
@@ -469,23 +486,22 @@ yarısını doğrudan etkiler.
 içindeki kısmi korelasyonu** verir. İkincisi, güneş geometrisi ve mevsim sabitken değişkenin
 hedefle ilişkisini ölçer. Havuzlanmış gündüz verisi:
 
-| Değişken | Ham r | Kısmi r | Yorum |
+| Sütun | Ham r | Kısmi r | Yorum |
 |---|---|---|---|
-| `RH2M` bağıl nem | −0.628 | **−0.530** | Tek gerçek yordayıcı; her iki ölçümde de güçlü |
-| `T2M` sıcaklık | +0.515 | +0.307 | Yarısı geometri |
-| `PRECTOTCORR` yağış | −0.168 | **−0.328** | Geometri sabitlenince **iki katına çıkıyor** |
-| `T2MDEW` çiy noktası | +0.042 | **−0.272** | **İşaret değiştiriyor** |
-| `PS` basınç | −0.038 | **+0.268** | **İşaret değiştiriyor** |
-| `WS10M` rüzgâr 10 m | +0.071 | −0.155 | **İşaret değiştiriyor** |
-| `WS2M` rüzgâr 2 m | +0.143 | −0.150 | **İşaret değiştiriyor** |
+| `RH2M` | −0.628 | **−0.530** | Tek gerçek yordayıcı; her iki ölçümde de güçlü |
+| `T2M` | +0.515 | +0.307 | Yarısı geometri |
+| `PRECTOTCORR` | −0.168 | **−0.328** | Geometri sabitlenince **iki katına çıkıyor** |
+| `T2MDEW` | +0.042 | **−0.272** | **İşaret değiştiriyor** |
+| `PS` | −0.038 | **+0.268** | **İşaret değiştiriyor** |
+| `WS2M` | +0.143 | −0.150 | **İşaret değiştiriyor** |
 
-Dört değişken işaret değiştiriyor, yağış iki katına çıkıyor. Mekanizma basit: sıcak, rüzgârlı,
+Üç değişken işaret değiştiriyor, yağış iki katına çıkıyor. Mekanizma basit: sıcak, rüzgârlı,
 yüksek çiy noktalı saatler aynı zamanda **yazın öğlen saatleridir** — ışınımın geometrik olarak
 zaten yüksek olduğu saatler. Geometri sabitlendiğinde bu sahte ilişki kaybolur ve fiziksel
 ilişki (nem ve bulut → daha az ışınım) ortaya çıkar.
 
-**En güçlü tek argüman:** ham korelasyonda `PS`, `WS2M` ve `WS10M`'in işareti beş il arasında
-**tutarsız**; kısmi korelasyonda **yedi değişkenin yedisi de** beş ilde aynı işarete sahip.
+**En güçlü tek argüman:** ham korelasyonda `PS` ve `WS2M`'in işareti beş il arasında
+**tutarsız**; kısmi korelasyonda **altı değişkenin altısı da** beş ilde aynı işarete sahip.
 Geometri ayıklandığında iller fizik konusunda hemfikir hâle geliyor.
 
 **Öneri.** Makalede yordayıcı önemi tartışılacaksa **kısmi korelasyon tablosu kullanılmalıdır**;
@@ -494,35 +510,37 @@ ham matris ancak "neden yanıltıcı olduğu" gösterilmek üzere verilmelidir.
 ### 6.2 Doğrusallık: Spearman ile Pearson örtüşüyor
 
 Havuzlanmış gündüz verisinde en büyük fark yağışta **−0.059**, ardından `WS2M`'de +0.047.
-Hiçbir değişkende fark 0.06'yı aşmıyor. Monotonik olmayan bir ilişki yok. Farkın yağış ve
+Hiçbir değişkende fark 0.06'yı aşmıyor (`T2M` −0.017, `T2MDEW` −0.009, `PS` −0.008,
+`RH2M` +0.001). Monotonik olmayan bir ilişki yok. Farkın yağış ve
 rüzgârda yoğunlaşması beklenen yöndedir (ikisi de çok çarpık) ve **Spearman'ın mutlak değerce
 daha büyük olması** §4.1'deki öneriyi güçlendirir: yağışın ilişkisi doğrusaldan çok sıralamaya
 dayalıdır.
 
-### 6.3 Eşdoğrusallık: üç sütun gereksiz
+### 6.3 Eşdoğrusallık: aşikâr fazlalık bitti, bir gizli fazlalık kaldı
 
-Havuzlanmış gündüz verisinde |r| > 0.5 olan yordayıcı çiftleri:
+**`collinear_pairs.csv` artık boş**: |r| > 0.9 olan hiçbir öznitelik çifti yok. V1 sürümünde tek
+böyle çift `WS2M`–`WS10M` (r = 0.987) idi ve 10 m rüzgâr V2'de çıkarıldı. Boş bir tablo burada
+bir hata değil, bir sonuçtur.
+
+Havuzlanmış gündüz verisinde |r| > 0.5 olan çiftler — hepsi fiziksel, hiçbiri kaldırılacak
+düzeyde değil:
 
 | Çift | Pearson | Spearman |
 |---|---|---|
-| `WS2M` – `WS10M` | **+0.987** | +0.980 |
 | `T2M` – `RH2M` | −0.673 | −0.676 |
 | `T2M` – `T2MDEW` | +0.609 | +0.594 |
 | `T2MDEW` – `PS` | +0.521 | +0.482 |
 
-Buna ek olarak, tabloların doğrudan göstermediği iki sonuç:
+**Uyarı — ikili korelasyonun göremediği bir fazlalık var.** `T2MDEW` bir ölçüm değil, bir
+formül: Magnus bağıntısıyla `T2M` ve `RH2M`'den yeniden üretildiğinde r = **0.99919**,
+RMSE = **0.30 °C** (24 saat); gündüzde r = 0.99957, RMSE = 0.23 °C. Ölçüm gürültüsü düzeyinde.
+İkili korelasyon bunu yakalayamaz çünkü iki değişkenli bir fonksiyondur — `T2M`–`T2MDEW`
+korelasyonu yalnız 0.609'dur. Eşdoğrusallık tablosu fazlalık için bir **alt sınırdır**, asla
+üst sınır değil.
 
-1. **`WD2M` ile `WD10M` fiilen aynı sütun.** Aralarındaki açı farkının medyanı **0.30°**,
-   ortalaması 1.56°, %95'lik dilimi 6.30°; farkın 10°'yi aştığı saat payı %2.5. Sin/cos
-   kodlamalarının korelasyonu 0.996 ve 0.997.
-2. **`T2MDEW` bir ölçüm değil, bir formül.** Magnus bağıntısıyla `T2M` ve `RH2M`'den yeniden
-   üretildiğinde r = **0.99919**, RMSE = **0.30 °C** (24 saat); gündüzde r = 0.99957,
-   RMSE = 0.23 °C. Ölçüm gürültüsü düzeyinde.
-
-**Öneri — öznitelik indirgeme arması.** 16 öznitelikten `WD2M_sin`, `WD2M_cos`, `WS2M` ve
-`T2MDEW` çıkarılırsa geriye 12 kalır ve kaybedilen bilgi ölçüm gürültüsü düzeyindedir. LSTM'in
-girdi katmanı öznitelik sayısıyla ölçeklendiği için bu gerçek bir parametre azalmasıdır ve tek
-başına bir ablasyon armasını hak eder.
+**Öneri — `T2MDEW` çıkarılarak tek eksenli bir arma koşulmalı.** 13 → 12. Beklenen etki
+küçüktür ama ölçülmemiştir, ve LSTM'in girdi katmanı öznitelik sayısıyla ölçeklendiği için
+gerçek bir parametre azalmasıdır.
 
 ---
 
@@ -672,6 +690,10 @@ sınanabilir ve saniyeler sürer.
 5. **Akıllı kalıcılık ve `clearsky_index` armı yoktur** (§0.3). `ABLATION.md` §6–§7 eski veri
    seti hakkında doğru sonuçlar olarak durur ama yeniden ölçülemez.
 
+5b. **Öznitelik seti iki kez daraldı** (17 → 16 → 13) ve üçü de farklı dışa aktarımlardır
+   (§0.4). Tek bir sütun değişikliği bile ledger satırlarını kıyaslanamaz kılar; kıyaslanabilir
+   olmak isteyen her koşu aynı sürümden gelmelidir.
+
 6. **Yalnızca beş il vardır ve dördü aynı rejimdedir** (§7.1). "İklim çeşitliliği" iddiası bu
    asimetriyle birlikte sunulmalıdır.
 
@@ -683,6 +705,10 @@ sınanabilir ve saniyeler sürer.
 
 9. **Beş ilin haritası ve coğrafi/iklimsel farklarının yazılı paragrafı hâlâ eksiktir.**
    Koordinatlar artık `config.py::PROVINCE_SITES` içinde hazır durmaktadır.
+
+10. **Figür ve tablolardaki değişken adları NASA POWER'ın ham sütun adlarıdır.** Makale metni
+    onları ilk geçtikleri yerde Türkçe olarak tanımlamalıdır (ör. "`RH2M`, 2 m bağıl nem");
+    figürler bu tanıma dayanır.
 
 ---
 
@@ -738,7 +764,7 @@ eklenmeleri önerilir; aksi hâlde izlenebilirlik kuralı ihlal edilmiş olur.
 | Eşik taramasının reddi | ayarlanmış −2.0° eşiği 587, ayarlanmamış 0° eşiği 3.034 uyumsuzluk verir | §0.2 |
 | Maske ile `hedef > 0` uyumu | gündüz ama sıfır: 1 satır; gece ama pozitif: 2.968 satır, gündüz enerjisinin %0.024'ü | §3.2 |
 | Akıllı kalıcılığın dejenerasyonu | TOA paydasıyla gündüz RMSE 121.93 / MAE 72.42; düz kalıcılık 121.85 / 72.38 | §0.3, §8 |
-| `WD2M` – `WD10M` fazlalığı | açı farkı medyan 0.30°, ort. 1.56°, p95 6.30°; sin/cos r = 0.996 / 0.997 | §0.4, §6.3 |
+| `WD2M` – `WD10M` fazlalığı (V1'de ölçüldü, V2'de 10 m sütunu artık yok) | açı farkı medyan 0.30°, ort. 1.56°, p95 6.30°; sin/cos r = 0.996 / 0.997; `WS2M`–`WS10M` r = 0.987 | §0.4, §6.3 |
 | Çiy noktasının Magnus ile yeniden üretimi | r = 0.99919, RMSE 0.30 °C (24 s); r = 0.99957, RMSE 0.23 °C (gündüz) | §1(6), §6.3 |
 | Yağış kodlamalarının hedefle korelasyonu | tablo §4.1'de; gündüz sıfır payı %66.8 | §4.1 |
 | Yağışın yıllık toplamı (birim teyidi) | Ankara 340, Konya 326, Van 343, Antalya 664, Rize 1399 mm/yıl | §4.1 |

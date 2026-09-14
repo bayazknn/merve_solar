@@ -62,35 +62,35 @@ MONTH_ABBR_TR = {
 }
 
 # Turkish display names for the meteorological variables (axis labels, table rows).
-VARIABLE_LABELS_TR = {
-    "ALLSKY_SFC_SW_DWN": "Güneş ışınımı (W/m²)",
-    "T2M": "Sıcaklık, 2 m (°C)",
-    "RH2M": "Bağıl nem, 2 m (%)",
-    "T2MDEW": "Çiy noktası, 2 m (°C)",
-    "PS": "Yüzey basıncı (kPa)",
-    "WS2M": "Rüzgâr hızı, 2 m (m/s)",
-    "WS10M": "Rüzgâr hızı, 10 m (m/s)",
-    "PRECTOTCORR": "Yağış (mm/saat)",
-    "WD2M": "Rüzgâr yönü, 2 m (°)",
-    "WD10M": "Rüzgâr yönü, 10 m (°)",
-    # Retired with the 14-Sep-2026 export, kept so figures regenerated from an older cached
-    # parquet still label correctly rather than falling back to the raw column name.
-    "QV2M": "Özgül nem, 2 m (g/kg)",
-    "WS50M": "Rüzgâr hızı, 50 m (m/s)",
-    "WD50M": "Rüzgâr yönü, 50 m (°)",
+# Variable labels. These are the RAW NASA POWER column names, not translations: a reader of
+# the manuscript has to be able to match a figure axis to the dataset documentation and to the
+# feature list in the methods section, and a Turkish gloss breaks that chain. The unit stays,
+# because an irradiance axis without W/m² is not readable -- the project's figure contract
+# requires it and the name alone does not carry it.
+#
+# The rest of the figure furniture (titles, legends, season names, table headers) stays
+# Turkish; only the dataset's own column identifiers are shown verbatim.
+VARIABLE_LABELS = {
+    "ALLSKY_SFC_SW_DWN": "ALLSKY_SFC_SW_DWN (W/m²)",
+    "T2M": "T2M (°C)",
+    "RH2M": "RH2M (%)",
+    "T2MDEW": "T2MDEW (°C)",
+    "PS": "PS (kPa)",
+    "WS2M": "WS2M (m/s)",
+    "PRECTOTCORR": "PRECTOTCORR (mm/saat)",
+    "WD2M": "WD2M (°)",
+    # Retired columns, kept so a figure regenerated from an older cached parquet still labels
+    # correctly rather than falling through to the bare name.
+    "WS10M": "WS10M (m/s)",
+    "WD10M": "WD10M (°)",
+    "QV2M": "QV2M (g/kg)",
+    "WS50M": "WS50M (m/s)",
+    "WD50M": "WD50M (°)",
 }
-VARIABLE_SHORT_TR = {
-    "ALLSKY_SFC_SW_DWN": "Işınım",
-    "T2M": "Sıcaklık",
-    "RH2M": "Bağıl nem",
-    "T2MDEW": "Çiy nokt.",
-    "PS": "Basınç",
-    "WS2M": "Rüzgâr 2m",
-    "WS10M": "Rüzgâr 10m",
-    "PRECTOTCORR": "Yağış",
-    "QV2M": "Özgül nem",
-    "WS50M": "Rüzgâr 50m",
-}
+
+# Bare identifiers, for places where the axis is too tight for a unit -- correlation-matrix
+# tick labels above all.
+VARIABLE_SHORT = {name: name for name in VARIABLE_LABELS}
 
 PAPER_RC = {
     "figure.facecolor": WHITE,

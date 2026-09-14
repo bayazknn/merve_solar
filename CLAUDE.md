@@ -27,11 +27,11 @@ manuscript.
 24-hour-ahead hourly solar irradiance forecasting (`ALLSKY_SFC_SW_DWN`, W/m²) for 5 Turkish
 provinces (Ankara, Antalya, Konya, Rize, Van — deliberately spanning different climate zones),
 using an LSTM point forecaster wrapped in a **Bootstrap Ensemble × MC-Dropout** uncertainty layer.
-Source data is NASA POWER hourly, in `SolarData_Merve(140926).xlsx` (one sheet per province)
+Source data is NASA POWER hourly, in `SolarData_Merve(140926_V2).xlsx` (one sheet per province)
 — **the repo's only data file**. It replaced `SolarData_Merve_All(16July).xlsx` on 2026-09-14,
-which is now deleted, and changed three things at once: the irradiance is in MJ/m²/hour
+which is now deleted, and changed several things at once: the irradiance is in MJ/m²/hour
 (converted to W/m² at read time), the parameter set dropped `CLRSKY_SFC_SW_DWN`/`QV2M`/the 50 m
-wind and added the 2 m wind, and the record runs 61 days longer. `outputs/eda/EDA.md` §0 is the
+wind and then (in V2) the 10 m wind too, leaving 13 features, and the record runs 61 days longer. `outputs/eda/EDA.md` §0 is the
 full account; **every ledger row written before that date is not comparable**, and the old
 ledger is parked in `outputs/archive/` rather than migrated. `solar.py` replaced the clear-sky
 column with computed geometry, which removed two analyses (see *The domain* continued below).
@@ -351,14 +351,18 @@ exposes `PAPER_RC` for `plt.rc_context`, because a `sns.set_theme()` at import w
 restyle the `utils.py` experiment figures whenever both modules load in one process.
 
 For anything destined for the manuscript, prefer vector output (`.pdf`/`.svg`) alongside the PNG,
-readable axis labels with units (W/m²), and a caption-ready title.
+readable axis labels with units (W/m²), and a caption-ready title. **Variables are labelled by
+their raw NASA POWER column name** (`T2M (°C)`, `RH2M (%)`, …) via `paper_style.VARIABLE_LABELS`
+/ `VARIABLE_SHORT`, not translated: a reader has to be able to match an axis to the dataset
+documentation and the methods section's feature list. Everything else on a figure — titles,
+legends, season names, table headers — stays Turkish.
 
 ## Open work (from `TODOs.md`, Turkish)
 
 Roughly translated, still outstanding:
 
 - **Dataset decisions: REOPENED by the 14-Sep-2026 export, then closed.** The feature set is now
-  16 columns (`QV2M` and the 50 m wind left, the 2 m wind arrived); `ALLSKY_KT` is no longer
+  13 columns (`QV2M`, the 50 m wind and the 10 m wind left, the 2 m wind arrived); `ALLSKY_KT` is no longer
   exported so `DROPPED_COLUMNS` is empty; `ALLSKY_SFC_SW_DWN` is still `TARGET_COLUMN`, now
   converted from MJ/m²/hour to W/m² at read time; and `CLRSKY_SFC_SW_DWN` is gone, replaced by
   `solar.py`'s computed `solar_elevation` / `toa_horizontal` (both `MASK_COLUMNS`, never model
@@ -405,9 +409,10 @@ Roughly translated, still outstanding:
   export changed which duplicates: `WS50M` is gone on its own, and the incoming 2 m wind is if
   anything more redundant than what it replaced — `WD2M` differs from `WD10M` by a median 0.30°
   (sin/cos r = 0.996) and `WS2M`-`WS10M` correlate at 0.986, while `T2MDEW` is still reproducible
-  from `T2M`+`RH2M` by Magnus to r = 0.99919 / 0.30 °C. Dropping `WD2M_sin`, `WD2M_cos`, `WS2M`
-  and `T2MDEW` takes 16 → 12 for a loss at measurement-noise level. Both items invalidate existing
-  ledger rows and need a new ledger column or a new id; neither is done.
+  from `T2M`+`RH2M` by Magnus to r = 0.99919 / 0.30 °C — and pairwise correlation cannot see it
+  (`T2M`–`T2MDEW` is only 0.609), so `collinear_pairs.csv` being empty since V2 is a floor on
+  redundancy, not a ceiling. Dropping `T2MDEW` takes 13 → 12 for a loss at measurement-noise
+  level. Both items invalidate existing ledger rows and need a new id; neither is done.
 - **Paper figures: rebuilt on the new export (2026-09-14), still missing the map.** Per-variable scatter, correlation
   matrices, monthly boxplots, the 3D month × year × irradiance surface (plus a 2-D anomaly
   companion) and both seasonal views are built by `scripts/02_descriptive_analysis.py` into
