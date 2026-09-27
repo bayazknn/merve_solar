@@ -33,9 +33,9 @@ repo's only data file. Irradiance arrives in MJ/m²/hour and is converted to W/m
 are 13 model features (`config.py::NUMERIC_FEATURE_COLUMNS`) and no clear-sky column, so geometry
 comes from `solar.py` instead. `outputs/eda/EDA.md` describes the dataset.
 
-**Legacy material, do not cite or build on it:** `main_methodology.md`, `TODOs.md` and everything
-in `outputs/archive/` (the ablation write-ups and that dataset's ledger) are in Turkish or
-describe experiments on a retired dataset with a different column set. The methodology and
+**Legacy material, do not cite or build on it:** everything in `outputs/archive/` (the old
+methodology, ablation and TODO documents, and the retired dataset's ledger) is in Turkish and/or
+describes experiments on a retired dataset with a different column set. The methodology and
 ablation documents will be rewritten from scratch, in English.
 
 ## Commands

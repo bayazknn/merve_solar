@@ -16,9 +16,9 @@ persisted directory and a row in a shared comparison ledger — see
 [Interpreting results](#interpreting-results) below.
 
 This README is the operating manual. The paper's methodology write-up is being
-redone from scratch; `main_methodology.md`, `TODOs.md` and the ablation
-documents in `outputs/archive/` are legacy (in Turkish, about an earlier
-dataset) and are not current.
+redone from scratch; the old methodology, ablation and TODO documents in
+`outputs/archive/` are legacy (in Turkish, about an earlier dataset) and are
+not current.
 
 ## Installation
 
