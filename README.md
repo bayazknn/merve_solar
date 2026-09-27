@@ -16,8 +16,9 @@ persisted directory and a row in a shared comparison ledger — see
 [Interpreting results](#interpreting-results) below.
 
 This README is the operating manual. The paper's methodology write-up is being
-redone from scratch; `main_methodology.md`, `ABLATION*.md` and `TODOs.md` are
-legacy documents (in Turkish) about an earlier dataset and are not current.
+redone from scratch; `main_methodology.md`, `TODOs.md` and the ablation
+documents in `outputs/archive/` are legacy (in Turkish, about an earlier
+dataset) and are not current.
 
 ## Installation
 
@@ -237,17 +238,14 @@ machine that ran it (the `.npz` dumps are gitignored):
 
 ```bash
 uv run python scripts/06_city_horizon_metrics.py --all      # per (city x horizon step) metrics
-uv run python scripts/07_conformal_diagnostic.py            # which conformal grid geometry to use
+uv run python scripts/08_conformal_mode_selection.py        # which conformal grid geometry to use
 ```
 
 `06` writes `metrics/results_by_city_horizon.csv` — the cross of the two tables
 the pipeline emits — and cross-checks it against them, so a transposed slice
 fails loudly instead of silently swapping two provinces' numbers.
 
-`07` is **superseded by `08`**: it fits and scores conformal modes inside the
-test period, which selects a hyperparameter on the test set.
-
-`08` (`scripts/08_conformal_mode_selection.py`) is the one to use. It reads a finished conformal
+`08` reads a finished conformal
 run's `calibration_predictions.npz` and `test_predictions.npz`, fits every mode
 on the former (the **validation** split, which is what production calibrates on),
 applies it to the latter, and scores three conditionals rather than one —
