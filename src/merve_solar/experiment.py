@@ -111,6 +111,15 @@ def _append_ledger_row(row: dict) -> None:
     assert_ledger_schema_ok()
     LEDGER_PATH.parent.mkdir(parents=True, exist_ok=True)
     df_row = pd.DataFrame([row], columns=list(LEDGER_COLUMNS))
+    if LEDGER_PATH.exists():
+        # A rerun under the same id has just overwritten that id's output directory, so its old
+        # row no longer describes anything on disk: replace it rather than leave a duplicate.
+        # Filtered as text so every other row stays byte-identical.
+        prefix = f"{row['experiment_id']},"
+        lines = LEDGER_PATH.read_text().splitlines(keepends=True)
+        kept = lines[:1] + [line for line in lines[1:] if not line.startswith(prefix)]
+        if len(kept) != len(lines):
+            LEDGER_PATH.write_text("".join(kept))
     df_row.to_csv(LEDGER_PATH, mode="a", header=not LEDGER_PATH.exists(), index=False)
 
 

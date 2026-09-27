@@ -47,6 +47,15 @@ def test_matching_schema_appends_without_a_second_header(ledger_path):
     assert list(written["experiment_id"]) == ["a", "b"]
 
 
+def test_rerun_under_the_same_id_replaces_its_row(ledger_path):
+    """The naive baselines write fixed ids, so each rerun used to add a duplicate row."""
+    for name, seconds in (("a", 1.0), ("b", 1.0), ("a", 2.0)):
+        _append_ledger_row(_ledger_row(ExperimentConfig(experiment_id=name), _fake_subsets(), {}, seconds))
+    written = pd.read_csv(ledger_path)
+    assert list(written["experiment_id"]) == ["b", "a"]
+    assert written.loc[written["experiment_id"] == "a", "training_time_sec"].item() == 2.0
+
+
 def test_schema_mismatch_raises_and_leaves_the_file_byte_identical(ledger_path):
     """The 'file untouched' half is the important one.
 

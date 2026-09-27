@@ -64,9 +64,8 @@ Full CLI and per-field config reference: `README.md`.
 
 **Before proposing a full run**, sanity-check the code path with a smoke config
 (`n_bootstrap=1, max_epochs=5, mc_dropout_passes=10`): a full run is 8 replicas × 100 MC passes,
-and a crash at the metrics step after hours of training is the expensive failure. This machine
-(Apple M4 Pro, torch MPS available) is new to the project, so estimate cost from a timed smoke run
-here and state the backend with any estimate.
+and a crash at the metrics step after hours of training is the expensive failure. State the
+backend (`cpu`/`mps`/`cuda`) with any cost estimate.
 
 ## Architecture
 
@@ -123,7 +122,8 @@ field is validated in `__post_init__`. Sweeps are named groups in
 
 The paper's tables come straight out of the ledger, so its rows must be comparable.
 
-- **Never reuse an `experiment_id`**: the ledger appends, so a rerun leaves a stale duplicate row.
+- **Give a changed run a new `experiment_id`**: rerunning an id replaces its output directory and
+  its ledger row, so the earlier result is gone.
 - **Change one axis at a time, and only along ledger columns** (`experiment.py::LEDGER_COLUMNS`).
   A new axis goes into `LEDGER_COLUMNS` and the row dict first;
   `tests/test_ledger.py` fails until it does.
