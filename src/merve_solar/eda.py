@@ -193,36 +193,33 @@ def circular_stats(sin_vals, cos_vals, weights=None) -> dict:
 # ---------------------------------------------------------------------------------------
 # tables
 # ---------------------------------------------------------------------------------------
-def descriptive_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Long-format descriptive statistics per (city, variable), plus a pooled row.
+DESCRIPTIVE_STATISTICS = {
+    "N": lambda s: int(s.size),
+    "Mean": lambda s: s.mean(),
+    "SD": lambda s: s.std(),
+    "Min": lambda s: s.min(),
+    "Q1": lambda s: s.quantile(0.25),
+    "Median": lambda s: s.median(),
+    "Q3": lambda s: s.quantile(0.75),
+    "Max": lambda s: s.max(),
+}
 
-    Kurtosis is pandas' Fisher (excess) kurtosis with the G2 bias correction -- 0, not 3,
-    means normal. Wind direction is excluded (circular; see circular_wind_table).
+
+def descriptive_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Descriptive statistics with one row per (city, statistic) and one column per variable.
+
+    Cities (plus the pooled "All" row block) run down the rows, the statistic sits beside the
+    city, and each variable is a column headed by its raw NASA POWER code and unit -- the
+    orientation of a manuscript table, where a reader compares provinces within a variable.
+    Wind direction is excluded (circular; see circular_wind_table).
     """
     rows = []
     groups = [(city, g) for city, g in df.groupby("city", observed=True)] + [(POOLED_LABEL, df)]
     for city, g in groups:
-        for var in RAW_METEO_COLUMNS:
-            s = g[var]
-            row = {
-                "city": city,
-                "variable": var,
-                "variable_label": VARIABLE_LABELS.get(var, var),
-                "n": int(s.size),
-                "mean": s.mean(),
-                "std": s.std(),
-                "min": s.min(),
-                "q25": s.quantile(0.25),
-                "median": s.median(),
-                "q75": s.quantile(0.75),
-                "max": s.max(),
-                "skew": s.skew(),
-                "excess_kurtosis": s.kurt(),
-            }
-            if city == POOLED_LABEL:
-                # The pooled std mixes within- and between-city variance; report the
-                # between-city component so the decomposition is visible.
-                row["between_city_sd"] = df.groupby("city", observed=True)[var].mean().std()
+        for stat, fn in DESCRIPTIVE_STATISTICS.items():
+            row = {"city": city, "statistic": stat}
+            for var in RAW_METEO_COLUMNS:
+                row[VARIABLE_LABELS.get(var, var)] = fn(g[var])
             rows.append(row)
     return pd.DataFrame(rows)
 

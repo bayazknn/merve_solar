@@ -9,6 +9,7 @@ import pytest
 
 from merve_solar import eda
 from merve_solar.config import RAW_METEO_COLUMNS, TARGET_COLUMN
+from merve_solar.paper_style import VARIABLE_LABELS
 
 
 def _synthetic(start="2024-01-01", periods=24 * 400, cities=("Ankara", "Rize")):
@@ -124,18 +125,22 @@ def test_month_year_grid_raises_on_a_hole():
         eda.month_year_grid(holed, "Ankara")
 
 
-def test_descriptive_table_has_one_row_per_city_and_variable():
+def test_descriptive_table_has_cities_and_statistics_on_rows_and_variables_on_columns():
     # Columns come from RAW_METEO_COLUMNS rather than a literal list: the export's parameter
     # set has changed once already (17 features -> 16), and a hard-coded fixture turns that
     # into a test failure that says "KeyError: WS2M" instead of anything useful.
     df = _synthetic(periods=24 * 40)
-    n_vars = len(RAW_METEO_COLUMNS)
     df = df.assign(**{c: float(i + 1) for i, c in enumerate(RAW_METEO_COLUMNS)
                       if c != TARGET_COLUMN})
     table = eda.descriptive_table(df)
-    assert len(table) == 3 * n_vars  # 2 cities + pooled
-    assert table.groupby("city")["variable"].nunique().eq(n_vars).all()
-    assert table.loc[table["city"] == eda.POOLED_LABEL, "n"].iloc[0] == len(df)
+    n_stats = len(eda.DESCRIPTIVE_STATISTICS)
+    assert len(table) == 3 * n_stats  # 2 cities + pooled
+    assert list(table.columns) == ["city", "statistic"] + [
+        VARIABLE_LABELS[c] for c in RAW_METEO_COLUMNS]
+    assert table.groupby("city")["statistic"].apply(list).map(
+        lambda s: s == list(eda.DESCRIPTIVE_STATISTICS)).all()
+    pooled_n = table[(table["city"] == eda.POOLED_LABEL) & (table["statistic"] == "N")]
+    assert (pooled_n.iloc[0, 2:] == len(df)).all()
 
 
 def test_acf_and_pacf_recover_a_known_ar1():

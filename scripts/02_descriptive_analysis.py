@@ -25,11 +25,18 @@ from merve_solar.data import load_base_features
 
 WRITTEN = []
 
+# The EDA tables are opened by hand in Excel under a Turkish (Istanbul) regional format, where
+# the decimal mark is "," and the list separator is ";". Written that way, a double-click opens
+# them as numbers in columns instead of one text column. The BOM makes Excel read the file as
+# UTF-8, without which "°C" and "W/m²" come out garbled. No code reads these tables back; the
+# experiment CSVs and the ledger, which the pipeline does read, stay in the default format.
+CSV_OPTIONS = {"sep": ";", "decimal": ",", "encoding": "utf-8-sig", "index": False}
+
 
 def _write_csv(df: pd.DataFrame, name: str) -> None:
     path = EDA_TABLES_DIR / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(path, index=False)
+    df.to_csv(path, **CSV_OPTIONS)
     WRITTEN.append(path)
 
 
@@ -75,20 +82,18 @@ def _descriptive_outputs(df: pd.DataFrame, is_day: pd.Series) -> None:
     for scope, sub in (("daylight", df[is_day]), ("24h", df)):
         table = eda.descriptive_table(sub)
         _write_csv(table, f"descriptive_stats_by_city_{scope}.csv")
-        pretty = table[
-            ["city", "variable_label", "n", "mean", "std", "min", "q25", "median", "q75",
-             "max", "skew", "excess_kurtosis"]
-        ].rename(
-            columns={"city": "Province", "variable_label": "Variable", "n": "N",
-                     "mean": "Mean", "std": "SD", "min": "Min", "q25": "Q1",
-                     "median": "Median", "q75": "Q3", "max": "Max", "skew": "Skew",
-                     "excess_kurtosis": "Ex. kurtosis"}
-        )
+        pretty = table.rename(columns={"city": "Province", "statistic": "Statistic"})
+        # Pre-format as text: N is a count and must not print as "60648.00".
+        is_n = pretty["Statistic"].eq("N")
+        for col in pretty.columns[2:]:
+            pretty[col] = [f"{v:,.0f}" if n else f"{v:.2f}" for v, n in zip(pretty[col], is_n)]
+        # Print each province name once, on the first row of its block.
+        pretty["Province"] = pretty["Province"].where(
+            pretty["Province"].ne(pretty["Province"].shift()), "")
         label = "daylight hours" if scope == "daylight" else "all 24 hours"
         _write_markdown_and_latex(
             pretty, f"descriptive_stats_by_city_{scope}",
-            f"Descriptive statistics by province ({label}). "
-            "Kurtosis is Fisher's excess definition: 0 for a normal distribution.",
+            f"Descriptive statistics by province ({label}).",
         )
 
 

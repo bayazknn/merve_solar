@@ -122,7 +122,7 @@ is deliberately limited to 2025-06 → 2026-05. Two exceptions exist among the f
 
 | File | Contents | Scope |
 |---|---|---|
-| `descriptive_stats_by_city_daylight.csv/.md/.tex` | **Primary table.** Daylight hours, per province + pooled. | full record (daylight, n = 152,893) |
+| `descriptive_stats_by_city_daylight.csv/.md/.tex` | **Primary table.** Daylight hours, per province + pooled. One row per (province, statistic: N, Mean, SD, Min, Q1, Median, Q3, Max), one column per variable. | full record (daylight, n = 152,893) |
 | `descriptive_stats_by_city_24h.csv/.md/.tex` | The same table over 24 hours — this is the distribution the model is trained on. | full record (n = 303,240) |
 | `temporal_coverage_by_city.csv` | Coverage, hour/day counts, daylight share, mean daylight duration by season, seasonal summaries of the target. | full record |
 | `target_by_hour_by_city.csv` | The target's (province, season, LST hour) distribution — the data behind the diurnal-profile figure. | full record |
@@ -142,10 +142,14 @@ is deliberately limited to 2025-06 → 2026-05. Two exceptions exist among the f
 
 Three reading notes:
 
-**Kurtosis is Fisher's excess definition** — 0 for a normal distribution, not 3.
+**CSV format is Excel-Turkish:** `;` separates fields and `,` is the decimal mark, UTF-8 with a
+byte-order mark, so the files open directly in Excel under a Turkish regional setting. Read them
+in pandas with `pd.read_csv(path, sep=";", decimal=",", encoding="utf-8-sig")`. The `.md` and
+`.tex` copies of the descriptive tables use the English decimal point, because they feed the
+manuscript.
 
-**The pooled ("All") row's standard deviation** mixes within-province and between-province
-variance; the between-province component is given separately in the `between_city_sd` column.
+**The pooled ("All") block's standard deviation** mixes within-province and between-province
+variance, so it is larger than any single province's.
 
 **Wind direction is kept out of the main table:** the arithmetic mean of a circular variable is
 meaningless. A separate table gives the speed-weighted circular mean, the resultant length *R*
