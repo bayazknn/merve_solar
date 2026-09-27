@@ -31,10 +31,14 @@ from merve_solar.config import (
 )
 from merve_solar.paper_style import (
     ACCENT,
-    COL_WIDTH_IN,
+    AXIS_LABELS,
+    AXIS_SHORT,
+    DAILY_IRRADIATION_LABEL,
     FULL_WIDTH_IN,
+    HOUR_LST_LABEL,
     INK_SECONDARY,
     MONTH_ABBR,
+    MONTH_INITIAL,
     MONTH_TO_SEASON,
     PAPER_RC,
     SEASON_COLORS,
@@ -42,7 +46,6 @@ from merve_solar.paper_style import (
     SEASON_LINEWIDTHS,
     SEASONS,
     VARIABLE_LABELS,
-    VARIABLE_SHORT,
     diverging_cmap,
     grid_y_only,
     radiation_cmap,
@@ -528,50 +531,63 @@ def _plt():
     return plt
 
 
-def _city_panels(plt, figsize=None, sharex=True, sharey=True):
-    """2x3 grid: 5 city panels + a 6th cell reserved for the legend or colourbar."""
+def _city_panels(plt, height: float, sharex=True, sharey=True):
+    """2x3 grid at full text width: 5 city panels + a 6th cell for the legend or colourbar.
+
+    Constrained layout rather than tight_layout: it places the suptitle and the shared y label
+    itself, so there is no hand-tuned `rect` leaving a band of white under the title.
+    """
     fig, axes = plt.subplots(
-        2, 3, figsize=figsize or (FULL_WIDTH_IN, 4.6), sharex=sharex, sharey=sharey
+        2, 3, figsize=(FULL_WIDTH_IN, height), sharex=sharex, sharey=sharey,
+        layout="constrained",
     )
     flat = axes.ravel()
     flat[5].axis("off")
     return fig, flat
 
 
-def _finish_city_panels(plt, fig, flat, xlabel: str, ylabel: str) -> None:
-    """One shared y label, and x tick labels on the top-right panel.
+def _finish_city_panels(fig, flat, xlabel: str, ylabel: str, title: str) -> None:
+    """x tick labels on EVERY panel, one x title per column, one shared y title.
 
-    With 5 panels in a 2x3 grid the third panel has no neighbour below it, so `sharex`
-    would otherwise leave it without tick labels; and a per-axes y label on rows 0 and 1
-    collides in the middle of the figure.
+    `sharex` hides the tick labels of the top row, which left Ankara and Antalya without any
+    and Konya (no neighbour below it) with labels re-enabled but unformatted. Every panel now
+    carries its own tick labels, so a reader never has to look down a column to read an axis.
+    The x title goes only under the bottom panel of each column, which is where it is read.
     """
+    for ax in flat[:5]:
+        ax.tick_params(axis="x", labelbottom=True)
+        ax.set_xlabel("")
+        ax.set_ylabel("")
     for ax in (flat[2], flat[3], flat[4]):
         ax.set_xlabel(xlabel)
-        ax.tick_params(labelbottom=True)
-        plt.setp(ax.get_xticklabels(), visible=True)
-    for ax in flat[:5]:
-        ax.set_ylabel("")
-    fig.supylabel(ylabel, fontsize=10, color=INK_SECONDARY, x=0.005)
+        # sharex hides the axis title of every non-bottom-row panel, not only its ticks.
+        ax.xaxis.label.set_visible(True)
+    fig.supylabel(ylabel)
+    fig.suptitle(title, x=0.01, ha="left")
+
+
+def _month_initial_ticks(ax, positions) -> None:
+    ax.set_xticks(list(positions))
+    ax.set_xticklabels([MONTH_INITIAL[m] for m in range(1, 13)], rotation=0)
 
 
 def plot_correlation_heatmap(corr: pd.DataFrame, title: str, save_path: Path) -> None:
     plt = _plt()
     import seaborn as sns
 
-    labels = [VARIABLE_SHORT.get(c, c) for c in corr.columns]
+    labels = [AXIS_SHORT.get(c, c) for c in corr.columns]
     with plt.rc_context(PAPER_RC):
-        fig, ax = plt.subplots(figsize=(5.2, 4.6))
+        fig, ax = plt.subplots(figsize=(FULL_WIDTH_IN * 0.65, 3.4), layout="constrained")
         sns.heatmap(
             corr, ax=ax, cmap=diverging_cmap(), vmin=-1, vmax=1, center=0,
-            annot=True, fmt=".2f", annot_kws={"size": 7}, square=True,
+            annot=True, fmt=".2f", annot_kws={"size": 6.5}, square=True,
             linewidths=0.6, linecolor="white",
             xticklabels=labels, yticklabels=labels,
-            cbar_kws={"shrink": 0.75, "label": "Pearson r"},
+            cbar_kws={"shrink": 0.8, "label": "Pearson correlation coefficient"},
         )
         ax.set_title(title)
         ax.tick_params(length=0)
-        plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
-        fig.tight_layout()
+        plt.setp(ax.get_xticklabels(), rotation=40, ha="right", rotation_mode="anchor")
         save_figure(fig, save_path)
 
 
@@ -579,21 +595,21 @@ def plot_target_correlation_panel(target_df: pd.DataFrame, save_path: Path) -> N
     plt = _plt()
     import seaborn as sns
 
-    mat = target_df.set_index("variable_label")[[f"pearson_{c}" for c in CITIES]]
+    mat = target_df.set_index("variable")[[f"pearson_{c}" for c in CITIES]]
     mat.columns = CITIES
+    mat.index = [AXIS_SHORT.get(v, v) for v in mat.index]
     with plt.rc_context(PAPER_RC):
-        fig, ax = plt.subplots(figsize=(COL_WIDTH_IN * 1.5, 3.4))
+        fig, ax = plt.subplots(figsize=(FULL_WIDTH_IN * 0.65, 2.6), layout="constrained")
         sns.heatmap(
             mat, ax=ax, cmap=diverging_cmap(), vmin=-1, vmax=1, center=0,
-            annot=True, fmt=".2f", annot_kws={"size": 8},
+            annot=True, fmt=".2f", annot_kws={"size": 7},
             linewidths=0.6, linecolor="white",
-            cbar_kws={"shrink": 0.8, "label": "Pearson r"},
+            cbar_kws={"shrink": 0.9, "label": "Pearson correlation coefficient"},
         )
-        ax.set_title("Correlation with surface irradiance (daylight hours)")
+        ax.set_title("Correlation of each variable with irradiance (daylight hours)")
         ax.set_xlabel("")
         ax.set_ylabel("")
         ax.tick_params(length=0)
-        fig.tight_layout()
         save_figure(fig, save_path)
 
 
@@ -603,40 +619,34 @@ def plot_scatter_vs_target(df_daylight: pd.DataFrame, city: str, save_path: Path
 
     variables = [c for c in RAW_METEO_COLUMNS if c != TARGET_COLUMN]
     g = df_daylight[df_daylight["city"] == city]
-    # Grid sized from the feature set, not hard-coded: the 14-Sep-2026 export has 7 raw
-    # meteorological variables where the previous one had 8, and a fixed 2x4 left a bare
-    # 0-1 axis in the corner of every panel figure.
     # Choose the column count that leaves the fewest empty cells: the export's parameter list
     # has already changed twice (8 raw variables -> 7 -> 6) and a fixed grid leaves a ragged
     # bottom row every time.
     ncols = min((4, 3), key=lambda n: (-(-len(variables) // n) * n - len(variables), n))
     nrows = -(-len(variables) // ncols)
     with plt.rc_context(PAPER_RC):
-        fig, axes = plt.subplots(nrows, ncols, figsize=(FULL_WIDTH_IN, 2.0 * nrows))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(FULL_WIDTH_IN, 1.85 * nrows + 0.3),
+                                 sharey=True, layout="constrained")
         for ax in axes.ravel()[len(variables):]:
             ax.axis("off")
         for ax, var in zip(axes.ravel(), variables):
             ax.scatter(
-                g[var], g[TARGET_COLUMN], s=2, alpha=0.10, color=ACCENT,
+                g[var], g[TARGET_COLUMN], s=1.5, alpha=0.10, color=ACCENT,
                 linewidths=0, rasterized=True,
             )
             bins = pd.qcut(g[var], 20, duplicates="drop")
             trend = g.groupby(bins, observed=True)[TARGET_COLUMN].median()
             centers = [iv.mid for iv in trend.index]
-            ax.plot(centers, trend.to_numpy(), color="#7a2d0f", linewidth=1.6)
+            ax.plot(centers, trend.to_numpy(), color="#7a2d0f", linewidth=1.3)
             lo, hi = g[var].quantile([0.001, 0.999])
             if hi > lo:
                 pad = (hi - lo) * 0.03
                 ax.set_xlim(lo - pad, hi + pad)
-            ax.set_xlabel(VARIABLE_LABELS.get(var, var), fontsize=8)
+            ax.set_xlabel(AXIS_LABELS.get(var, var))
             grid_y_only(ax)
-        for ax in axes[:, 0]:
-            ax.set_ylabel(VARIABLE_LABELS[TARGET_COLUMN], fontsize=7)
-        fig.suptitle(
-            f"{city}: predictors against surface irradiance (daylight hours)",
-            x=0.02, ha="left", fontsize=11, fontweight="semibold",
-        )
-        fig.tight_layout(rect=(0, 0, 1, 0.95))
+        fig.supylabel(AXIS_LABELS[TARGET_COLUMN])
+        fig.suptitle(f"{city}: meteorological variables against irradiance (daylight hours; "
+                     "line: binned median)", x=0.01, ha="left")
         save_figure(fig, save_path)
 
 
@@ -649,39 +659,39 @@ def plot_monthly_boxplot(daily_12m: pd.DataFrame, city, save_path: Path) -> None
     plt = _plt()
     import seaborn as sns
 
+    periods = list(daily_12m["ym"].cat.categories)
     order = list(daily_12m["ym_label"].cat.categories)
+    span = (f"{MONTH_ABBR[periods[0].month]} {periods[0].year} – "
+            f"{MONTH_ABBR[periods[-1].month]} {periods[-1].year}")
+    xlabel = f"Month ({span})"
     with plt.rc_context(PAPER_RC):
         if city is None:
-            fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.8))
+            fig, flat = _city_panels(plt, 3.9)
             panels = [(flat[i], c) for i, c in enumerate(CITIES)]
-            flat[5].axis("off")
         else:
-            fig, ax = plt.subplots(figsize=(COL_WIDTH_IN * 1.6, 3.0))
+            fig, ax = plt.subplots(figsize=(FULL_WIDTH_IN * 0.7, 2.6), layout="constrained")
             panels = [(ax, city)]
         for ax, c in panels:
             sub = daily_12m[daily_12m["city"] == c]
             sns.boxplot(
                 data=sub, x="ym_label", y="daily_kwh", order=order, ax=ax,
-                color=ACCENT, width=0.62, fliersize=1.6, linewidth=0.8,
+                color=ACCENT, width=0.62, fliersize=1.2, linewidth=0.6,
                 boxprops={"alpha": 0.55},
-                medianprops={"color": "#7a2d0f", "linewidth": 1.4},
+                medianprops={"color": "#7a2d0f", "linewidth": 1.1},
                 flierprops={"markerfacecolor": INK_SECONDARY, "markeredgewidth": 0,
                             "alpha": 0.5},
             )
             ax.set_title(c)
-            ax.set_xlabel("")
-            ax.set_ylabel("Daily insolation (kWh/m²)")
+            ax.set_xticks(range(len(periods)))
+            ax.set_xticklabels([MONTH_INITIAL[p.month] for p in periods], rotation=0)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(DAILY_IRRADIATION_LABEL)
             grid_y_only(ax)
-            plt.setp(ax.get_xticklabels(), rotation=45, ha="right", fontsize=8)
         if city is None:
-            _finish_city_panels(plt, fig, flat, "", "Daily insolation (kWh/m²)")
-            fig.suptitle(
-                "Daily insolation over the last 12 months", x=0.03, ha="left",
-                fontsize=11, fontweight="semibold",
-            )
-            fig.tight_layout(rect=(0.03, 0, 1, 0.95))
+            _finish_city_panels(fig, flat, xlabel, DAILY_IRRADIATION_LABEL,
+                                "Daily irradiation over the last 12 months")
         else:
-            fig.tight_layout()
+            ax.set_title(f"{city}: daily irradiation over the last 12 months")
         save_figure(fig, save_path)
 
 
@@ -694,11 +704,11 @@ def plot_month_year_surface_3d(grids: dict, city, save_path: Path, zlim=None) ->
     cmap = radiation_cmap()
     with plt.rc_context(PAPER_RC):
         if city is None:
-            fig = plt.figure(figsize=(FULL_WIDTH_IN, 5.4))
+            fig = plt.figure(figsize=(FULL_WIDTH_IN, 4.4))
             items = [(fig.add_subplot(2, 3, i + 1, projection="3d"), c)
                      for i, c in enumerate(CITIES)]
         else:
-            fig = plt.figure(figsize=(COL_WIDTH_IN * 1.6, 3.4))
+            fig = plt.figure(figsize=(FULL_WIDTH_IN * 0.7, 3.2))
             items = [(fig.add_subplot(111, projection="3d"), city)]
         for ax, c in items:
             grid = grids[c]
@@ -712,30 +722,37 @@ def plot_month_year_surface_3d(grids: dict, city, save_path: Path, zlim=None) ->
                 vmin=zlim[0] if zlim else None, vmax=zlim[1] if zlim else None,
             )
             ax.set_xticks([1, 4, 7, 10])
-            ax.set_xticklabels([MONTH_ABBR[m] for m in (1, 4, 7, 10)], fontsize=7)
-            ax.set_yticks(list(range(int(years.min()), int(years.max()) + 1)))
+            ax.set_xticklabels([MONTH_ABBR[m] for m in (1, 4, 7, 10)], fontsize=6)
+            ax.set_yticks(list(range(int(years.min()), int(years.max()) + 1, 2)))
             ax.set_yticklabels([str(int(y)) for y in range(int(years.min()),
-                                                           int(years.max()) + 1)], fontsize=7)
-            ax.tick_params(axis="z", labelsize=7)
-            ax.set_xlabel("Month", fontsize=8, labelpad=-2)
-            ax.set_ylabel("Year", fontsize=8, labelpad=2)
-            if city is not None:
-                ax.set_zlabel("kWh/m²/day", fontsize=8, labelpad=-2)
+                                                           int(years.max()) + 1, 2)],
+                               fontsize=6)
+            ax.tick_params(axis="z", labelsize=6, pad=0)
+            ax.tick_params(axis="x", pad=-3)
+            ax.tick_params(axis="y", pad=-3)
+            ax.set_xlabel("Month", fontsize=7, labelpad=-8)
+            ax.set_ylabel("Year", fontsize=7, labelpad=-6)
+            if city is not None:  # the panel figure carries the unit in its title
+                ax.set_zlabel("kWh/m²", fontsize=7, labelpad=-6)
             if zlim:
                 ax.set_zlim(*zlim)
             ax.view_init(elev=26, azim=-58)
-            ax.set_title(c, fontsize=10)
+            # Shrink the cube inside its cell so the z label of the right-hand panel is
+            # not clipped by the figure edge.
+            ax.set_box_aspect(None, zoom=0.92)
+            if city is None:  # a single-city figure names the city in its suptitle
+                ax.set_title(c, fontsize=8, pad=-2)
             white_3d_panes(ax)
         # tight_layout cannot fit 3-D axis decorations; set the margins explicitly instead.
         if city is None:
-            fig.suptitle(
-                "Mean daily insolation by month, kWh/m²/day (2020–2025)",
-                x=0.02, ha="left", fontsize=11, fontweight="semibold",
-            )
-            fig.subplots_adjust(left=0.0, right=1.0, top=0.88, bottom=0.0,
-                                wspace=0.0, hspace=0.30)
+            fig.suptitle("Monthly mean of daily irradiation, 2020–2025 (kWh/m²)",
+                         x=0.01, ha="left")
+            fig.subplots_adjust(left=0.0, right=0.96, top=0.91, bottom=0.0,
+                                wspace=0.0, hspace=0.08)
         else:
-            fig.subplots_adjust(left=0.02, right=0.98, top=0.94, bottom=0.04)
+            fig.suptitle(f"{city}: monthly mean of daily irradiation, 2020–2025",
+                         x=0.01, ha="left")
+            fig.subplots_adjust(left=0.02, right=0.95, top=0.95, bottom=0.04)
         save_figure(fig, save_path)
 
 
@@ -753,29 +770,24 @@ def plot_month_year_anomaly(grids: dict, save_path: Path) -> None:
     vmax = max(float(np.abs(a.to_numpy()).max()) for a in anomalies.values())
     vmax = float(np.ceil(vmax * 10) / 10)
     with plt.rc_context(PAPER_RC):
-        fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 3.6),
-                                 sharex=False, sharey=False)
+        fig, flat = _city_panels(plt, 3.3, sharex=False, sharey=False)
         for ax, c in zip(flat[:5], CITIES):
             sns.heatmap(
                 anomalies[c], ax=ax, cmap=diverging_cmap(), vmin=-vmax, vmax=vmax, center=0,
                 linewidths=0.5, linecolor="white", cbar=False, square=False,
-                xticklabels=[str(m) for m in anomalies[c].columns],
+                xticklabels=[MONTH_INITIAL[m] for m in anomalies[c].columns],
             )
-            ax.set_title(c, fontsize=10)
-            ax.set_xlabel("Month", fontsize=9)
-            ax.set_ylabel("")
-            ax.tick_params(length=0, labelsize=8)
+            ax.set_title(c)
+            ax.tick_params(length=0)
             plt.setp(ax.get_yticklabels(), rotation=0)
             plt.setp(ax.get_xticklabels(), rotation=0)
-        mappable = flat[0].collections[0]
-        cbar = fig.colorbar(mappable, ax=flat[5], fraction=0.5, shrink=0.9, pad=0.0)
-        cbar.set_label("Anomaly (kWh/m²/day)", fontsize=9)
-        cbar.ax.tick_params(labelsize=8)
-        fig.suptitle(
-            "Monthly irradiance anomaly: departure from that month's 6-year mean",
-            x=0.02, ha="left", fontsize=11, fontweight="semibold",
-        )
-        fig.tight_layout(rect=(0, 0, 1, 0.92))
+        # Horizontal colourbar inside the spare sixth cell, so it takes no width from the maps.
+        cax = flat[5].inset_axes([0.1, 0.45, 0.8, 0.09])
+        cbar = fig.colorbar(flat[0].collections[0], cax=cax, orientation="horizontal")
+        cbar.set_label("Daily irradiation anomaly\n(kWh/m²)")
+        _finish_city_panels(fig, flat, "Month", "Year",
+                            "Monthly irradiation anomaly: departure from that month's "
+                            "2020–2025 mean")
         save_figure(fig, save_path)
 
 
@@ -784,13 +796,13 @@ def plot_seasonal_diurnal_profile(df: pd.DataFrame, save_path: Path) -> None:
 
     The daylight filter is deliberately NOT applied: night zeros are physical information
     here, and filtering them would stop the curve rising from and returning to zero.
-    IQR bands are drawn for Kış and Yaz only -- four overlapping bands turn to mud.
+    IQR bands are drawn for Winter and Summer only -- four overlapping bands turn to mud.
     """
     plt = _plt()
 
     work = add_season(df)
     with plt.rc_context(PAPER_RC):
-        fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.4))
+        fig, flat = _city_panels(plt, 3.7)
         for ax, city in zip(flat[:5], CITIES):
             g = work[work["city"] == city]
             for season in ("Winter", "Summer"):  # bands first, underneath the lines
@@ -803,22 +815,19 @@ def plot_seasonal_diurnal_profile(df: pd.DataFrame, save_path: Path) -> None:
                 m = g[g["season"] == season].groupby("HR", observed=True)[TARGET_COLUMN].mean()
                 ax.plot(
                     m.index + 0.5, m.to_numpy(), color=SEASON_COLORS[season],
-                    linestyle=SEASON_LINESTYLES[season], linewidth=SEASON_LINEWIDTHS[season],
-                    label=season,
+                    linestyle=SEASON_LINESTYLES[season],
+                    linewidth=SEASON_LINEWIDTHS[season] * 0.75, label=season,
                 )
             ax.set_title(city)
             ax.set_xlim(0, 24)
             ax.set_xticks([0, 6, 12, 18, 24])
             grid_y_only(ax)
-        _finish_city_panels(plt, fig, flat, "Local solar time (LST)",
-                            f"Mean {VARIABLE_LABELS[TARGET_COLUMN]}")
+        _finish_city_panels(fig, flat, HOUR_LST_LABEL,
+                            "Mean g" + AXIS_LABELS[TARGET_COLUMN][1:],
+                            "Mean daily cycle of irradiance by season "
+                            "(shaded: interquartile range across days)")
         handles, labels = flat[0].get_legend_handles_labels()
         flat[5].legend(handles, labels, loc="center", title="Season", frameon=False)
-        fig.suptitle(
-            "Mean diurnal irradiance profile by season (band: between-day IQR)",
-            x=0.03, ha="left", fontsize=11, fontweight="semibold",
-        )
-        fig.tight_layout(rect=(0.03, 0, 1, 0.94))
         save_figure(fig, save_path)
 
 
@@ -837,42 +846,38 @@ def plot_seasonal_dayofyear(daily: pd.DataFrame, save_path: Path) -> None:
         [MONTH_TO_SEASON[d.month] for d in ref], index=ref.dayofyear
     )
     with plt.rc_context(PAPER_RC):
-        fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.4))
+        fig, flat = _city_panels(plt, 3.7)
         for ax, city in zip(flat[:5], CITIES):
             g = work[work["city"] == city]
             for season in SEASONS:
                 days = band_of_doy[band_of_doy == season].index.to_numpy()
-                # Kış wraps the year end, so shade its contiguous runs separately.
+                # Winter wraps the year end, so shade its contiguous runs separately.
                 for run in np.split(days, np.where(np.diff(days) > 1)[0] + 1):
                     ax.axvspan(
                         run.min() - 0.5, run.max() + 0.5,
                         color=SEASON_COLORS[season], alpha=0.11, linewidth=0,
                     )
             ax.scatter(
-                g["doy"], g["daily_kwh"], s=3, alpha=0.15, color=INK_SECONDARY,
+                g["doy"], g["daily_kwh"], s=2, alpha=0.15, color=INK_SECONDARY,
                 linewidths=0, rasterized=True,
             )
             clim = g.groupby("doy", observed=True)["daily_kwh"].mean().reindex(range(1, 366))
             tiled = pd.concat([clim, clim, clim]).rolling(7, center=True, min_periods=1).mean()
             smooth = tiled.iloc[365:730]
-            ax.plot(range(1, 366), smooth.to_numpy(), color="#7a2d0f", linewidth=1.6)
+            ax.plot(range(1, 366), smooth.to_numpy(), color="#7a2d0f", linewidth=1.3)
             ax.set_title(city)
             ax.set_xlim(1, 365)
             ax.set_xticks([1, 91, 182, 274, 365])
             grid_y_only(ax)
-        _finish_city_panels(plt, fig, flat, "Day of year", "Daily insolation (kWh/m²)")
+        _finish_city_panels(fig, flat, "Day of year", DAILY_IRRADIATION_LABEL,
+                            "Daily irradiation through the year (all years pooled)")
         handles = [
-            plt.Line2D([], [], color=SEASON_COLORS[s], alpha=0.5, linewidth=8, label=s)
+            plt.Line2D([], [], color=SEASON_COLORS[s], alpha=0.5, linewidth=6, label=s)
             for s in SEASONS
         ]
-        handles.append(plt.Line2D([], [], color="#7a2d0f", linewidth=1.6,
+        handles.append(plt.Line2D([], [], color="#7a2d0f", linewidth=1.3,
                                   label="7-day mean"))
         flat[5].legend(handles=handles, loc="center", title="Season", frameon=False)
-        fig.suptitle(
-            "Daily insolation through the year (all years, leap-day aligned)",
-            x=0.03, ha="left", fontsize=11, fontweight="semibold",
-        )
-        fig.tight_layout(rect=(0.03, 0, 1, 0.94))
         save_figure(fig, save_path)
 
 
@@ -1165,16 +1170,14 @@ def plot_target_histogram(df: pd.DataFrame, save_path: Path) -> None:
 
     d = df[daylight_mask(df)]
     with plt.rc_context(PAPER_RC):
-        fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.0))
+        fig, flat = _city_panels(plt, 3.5)
         for ax, city in zip(flat[:5], CITIES):
             ax.hist(d.loc[d["city"] == city, TARGET_COLUMN], bins=60, color=ACCENT,
                     alpha=0.75, edgecolor="white", linewidth=0.3)
             ax.set_title(city)
             grid_y_only(ax)
-        _finish_city_panels(plt, fig, flat, VARIABLE_LABELS[TARGET_COLUMN], "Hours")
-        fig.suptitle("Distribution of daylight hourly irradiance", x=0.03, ha="left",
-                     fontsize=11, fontweight="semibold")
-        fig.tight_layout(rect=(0.03, 0, 1, 0.94))
+        _finish_city_panels(fig, flat, AXIS_LABELS[TARGET_COLUMN], "Number of hours",
+                            "Distribution of hourly irradiance (daylight hours)")
         save_figure(fig, save_path)
 
 
@@ -1187,32 +1190,26 @@ def plot_monthly_boxplot_all_years(daily: pd.DataFrame, save_path: Path) -> None
     plt = _plt()
     import seaborn as sns
 
-    work = daily.copy()
-    work["month_label"] = pd.Categorical(
-        work["MO"].map(MONTH_ABBR), categories=[MONTH_ABBR[m] for m in range(1, 13)],
-        ordered=True,
-    )
-    order = list(work["month_label"].cat.categories)
+    first, last = daily["date"].min(), daily["date"].max()
     with plt.rc_context(PAPER_RC):
-        fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.4))
+        fig, flat = _city_panels(plt, 3.7)
         for ax, city in zip(flat[:5], CITIES):
             sns.boxplot(
-                data=work[work["city"] == city], x="month_label", y="daily_kwh", order=order,
-                ax=ax, color=ACCENT, width=0.62, fliersize=1.2, linewidth=0.7,
-                boxprops={"alpha": 0.55},
-                medianprops={"color": "#7a2d0f", "linewidth": 1.2},
+                data=daily[daily["city"] == city], x="MO", y="daily_kwh",
+                order=list(range(1, 13)), ax=ax, color=ACCENT, width=0.62, fliersize=1.0,
+                linewidth=0.6, boxprops={"alpha": 0.55},
+                medianprops={"color": "#7a2d0f", "linewidth": 1.1},
                 flierprops={"markerfacecolor": INK_SECONDARY, "markeredgewidth": 0,
                             "alpha": 0.35},
             )
             ax.set_title(city)
+            _month_initial_ticks(ax, range(12))
             grid_y_only(ax)
-            plt.setp(ax.get_xticklabels(), rotation=45, ha="right", fontsize=7)
-        _finish_city_panels(plt, fig, flat, "", "Daily insolation (kWh/m²)")
-        fig.suptitle(
-            "Daily insolation by month (2019–2026, all years pooled)",
-            x=0.03, ha="left", fontsize=11, fontweight="semibold",
+        _finish_city_panels(
+            fig, flat, "Month", DAILY_IRRADIATION_LABEL,
+            f"Daily irradiation by month ({MONTH_ABBR[first.month]} {first.year} – "
+            f"{MONTH_ABBR[last.month]} {last.year}, all years pooled)",
         )
-        fig.tight_layout(rect=(0.03, 0, 1, 0.94))
         save_figure(fig, save_path)
 
 
@@ -1226,24 +1223,27 @@ def plot_autocorrelation(acf_df: pd.DataFrame, resolution: str, save_path: Path)
     sub = acf_df[acf_df["resolution"] == resolution]
     hourly = resolution == "hourly"
     with plt.rc_context(PAPER_RC):
-        fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.2))
+        fig, flat = _city_panels(plt, 3.5)
         for ax, city in zip(flat[:5], CITIES):
             g = sub[sub["city"] == city]
             if hourly:
                 for mark in (24, 48):
-                    ax.axvline(mark, color=SEASON_COLORS["Autumn"], linewidth=0.8,
+                    ax.axvline(mark, color=SEASON_COLORS["Autumn"], linewidth=0.7,
                                linestyle=":", alpha=0.7)
-            ax.axhline(0, color=INK_SECONDARY, linewidth=0.8)
-            ax.plot(g["lag"], g["acf"], color=ACCENT, linewidth=1.6, label="ACF")
-            ax.vlines(g["lag"], 0, g["pacf"], color=SEASON_COLORS["Summer"], linewidth=1.4,
-                      alpha=0.85, label="PACF")
+            ax.axhline(0, color=INK_SECONDARY, linewidth=0.6)
+            ax.plot(g["lag"], g["acf"], color=ACCENT, linewidth=1.3,
+                    label="Autocorrelation (ACF)")
+            ax.vlines(g["lag"], 0, g["pacf"], color=SEASON_COLORS["Summer"], linewidth=1.1,
+                      alpha=0.85, label="Partial autocorrelation (PACF)")
             ax.set_title(city)
             ax.set_ylim(-0.35, 1.02)
+            if hourly:
+                ax.set_xticks([0, 24, 48, 72])
             grid_y_only(ax)
-        _finish_city_panels(
-            plt, fig, flat,
-            "Lag (hours)" if hourly else "Lag (days)", "Correlation",
-        )
+        title = ("Hourly autocorrelation of the clearness index (dotted: 24 h and 48 h lags)"
+                 if hourly else "Day-to-day autocorrelation of the daily clearness index")
+        _finish_city_panels(fig, flat, "Lag (hours)" if hourly else "Lag (days)",
+                            "Correlation coefficient", title)
         handles, labels = flat[0].get_legend_handles_labels()
         seen, uniq = set(), []
         for h_, l_ in zip(handles, labels):
@@ -1251,10 +1251,6 @@ def plot_autocorrelation(acf_df: pd.DataFrame, resolution: str, save_path: Path)
                 seen.add(l_); uniq.append((h_, l_))
         flat[5].legend([h_ for h_, _ in uniq], [l_ for _, l_ in uniq], loc="center",
                        frameon=False)
-        title = ("Hourly autocorrelation of the clearness index (dotted: 24 and 48 h)"
-                 if hourly else "Daily autocorrelation of the clearness index")
-        fig.suptitle(title, x=0.03, ha="left", fontsize=11, fontweight="semibold")
-        fig.tight_layout(rect=(0.03, 0, 1, 0.94))
         save_figure(fig, save_path)
 
 
@@ -1272,7 +1268,7 @@ def plot_ramp_distribution(df_kt: pd.DataFrame, save_path: Path) -> None:
              "d_ghi"] = np.nan
     work = work[daylight_mask(df_kt).reindex(work.index).to_numpy()]
     with plt.rc_context(PAPER_RC):
-        fig, flat = _city_panels(plt, figsize=(FULL_WIDTH_IN, 4.2))
+        fig, flat = _city_panels(plt, 3.5)
         for ax, city in zip(flat[:5], CITIES):
             g = work[work["city"] == city]
             for season in SEASONS:
@@ -1281,16 +1277,17 @@ def plot_ramp_distribution(df_kt: pd.DataFrame, save_path: Path) -> None:
                     continue
                 ax.plot(v, np.arange(1, len(v) + 1) / len(v),
                         color=SEASON_COLORS[season], linestyle=SEASON_LINESTYLES[season],
-                        linewidth=SEASON_LINEWIDTHS[season], label=season)
+                        linewidth=SEASON_LINEWIDTHS[season] * 0.75, label=season)
             ax.set_title(city)
             ax.set_xlim(0, 400)
+            ax.set_xticks([0, 100, 200, 300, 400])
             grid_y_only(ax)
-        _finish_city_panels(plt, fig, flat, "|Hour-to-hour change| (W/m²)", "Cumulative share")
+        _finish_city_panels(fig, flat, "Absolute hour-to-hour change (W/m²)",
+                            "Cumulative fraction of daylight hours",
+                            "Cumulative distribution of hour-to-hour irradiance changes "
+                            "(daylight hours)")
         handles, labels = flat[0].get_legend_handles_labels()
         flat[5].legend(handles, labels, loc="center", title="Season", frameon=False)
-        fig.suptitle("Cumulative distribution of hourly irradiance ramps (daylight)",
-                     x=0.03, ha="left", fontsize=11, fontweight="semibold")
-        fig.tight_layout(rect=(0.03, 0, 1, 0.94))
         save_figure(fig, save_path)
 
 
@@ -1299,36 +1296,35 @@ def plot_persistence_baseline(baseline: pd.DataFrame, save_path: Path) -> None:
     plt = _plt()
 
     refs = ["persistence", "climatology"]
+    ref_labels = {"persistence": "Persistence (same hour, previous day)",
+                  "climatology": "Climatology (monthly-hourly mean)"}
     colors = [SEASON_COLORS["Winter"], SEASON_COLORS["Summer"]]
     sub = baseline[baseline["scope"] == "daylight"]
     order = CITIES + [POOLED_LABEL]
+    tick_labels = CITIES + ["All provinces"]
     x = np.arange(len(order))
-    width = 0.34
+    width = 0.38
     with plt.rc_context(PAPER_RC):
-        fig, axes = plt.subplots(1, 2, figsize=(FULL_WIDTH_IN, 2.9))
+        fig, axes = plt.subplots(1, 2, figsize=(FULL_WIDTH_IN, 2.5), layout="constrained")
         for ax, metric, label in zip(axes, ["RMSE", "R2"],
-                                     ["RMSE (W/m²)", "R² (daylight)"]):
+                                     ["Root-mean-square error (W/m²)",
+                                      "Coefficient of determination R²"]):
             for i, (ref, color) in enumerate(zip(refs, colors)):
                 vals = [sub[(sub["city"] == c) & (sub["reference"] == ref)][metric].iloc[0]
                         for c in order]
-                ax.bar(x + (i - 1) * width, vals, width * 0.92, color=color, alpha=0.85,
-                       label=ref)
+                ax.bar(x + (i - 0.5) * width, vals, width * 0.92, color=color, alpha=0.85,
+                       label=ref_labels[ref])
             ax.set_xticks(x)
-            ax.set_xticklabels(order, rotation=30, ha="right", fontsize=8)
+            ax.set_xticklabels(tick_labels, rotation=30, ha="right", rotation_mode="anchor")
             ax.set_ylabel(label)
             grid_y_only(ax)
             if metric == "R2":
                 ax.set_ylim(0.6, 1.0)
         handles, labels = axes[0].get_legend_handles_labels()
-        # On its own line under the title. With three references the title was short enough to
-        # sit beside the legend; with two it runs the width of the figure and they collided.
-        fig.legend(handles, labels, loc="upper right", ncol=len(labels), frameon=False,
-                   fontsize=8, bbox_to_anchor=(0.99, 0.90))
-        fig.suptitle(
-            "Reference forecast floor: 24 h ahead, the model's test window, daylight hours",
-            x=0.02, y=0.99, ha="left", va="top", fontsize=11, fontweight="semibold",
-        )
-        fig.tight_layout(rect=(0, 0, 1, 0.83))
+        fig.legend(handles, labels, loc="outside lower center", ncol=len(labels),
+                   frameon=False)
+        fig.suptitle("Reference forecasts, 24 h ahead, on the test period (daylight hours)",
+                     x=0.01, ha="left")
         save_figure(fig, save_path)
 
 
@@ -1353,50 +1349,50 @@ def plot_rize_comparison(kt_table: pd.DataFrame, seasonal: pd.DataFrame,
     daily = daily.reset_index()
     daily["month"] = daily["_date"].dt.month
 
+    def style(city):
+        is_rize = city == "Rize"
+        return {"color": rize_color if is_rize else other_color,
+                "linewidth": 1.6 if is_rize else 1.0, "alpha": 1.0 if is_rize else 0.55}
+
     with plt.rc_context(PAPER_RC):
-        fig, axes = plt.subplots(2, 2, figsize=(FULL_WIDTH_IN, 5.0))
+        fig, axes = plt.subplots(2, 2, figsize=(FULL_WIDTH_IN, 4.2), layout="constrained")
 
         ax = axes[0, 0]
         for city in CITIES:
             v = np.sort(daily.loc[daily["city"] == city, "kt_daily"].dropna().to_numpy())
-            is_rize = city == "Rize"
-            ax.plot(v, np.arange(1, len(v) + 1) / len(v),
-                    color=rize_color if is_rize else other_color,
-                    linewidth=2.0 if is_rize else 1.2, alpha=1.0 if is_rize else 0.55,
-                    label="Rize" if is_rize else ("Other 4 provinces" if city == others[0] else None))
-        ax.set_xlabel("Daily clearness index kt")
-        ax.set_ylabel("Cumulative share")
-        ax.set_title("Clearness distribution")
-        ax.legend(fontsize=8)
+            ax.plot(v, np.arange(1, len(v) + 1) / len(v), **style(city),
+                    label="Rize" if city == "Rize"
+                    else ("Other four provinces" if city == others[0] else None))
+        ax.set_xlabel("Daily clearness index")
+        ax.set_ylabel("Cumulative fraction of days")
+        ax.set_title("(a) Distribution of daily clearness")
+        ax.legend(loc="upper left")
         grid_y_only(ax)
 
         ax = axes[0, 1]
         for city in CITIES:
             m = daily[daily["city"] == city].groupby("month", observed=True)["kt_daily"].mean()
-            is_rize = city == "Rize"
-            ax.plot(m.index, m.to_numpy(), color=rize_color if is_rize else other_color,
-                    linewidth=2.0 if is_rize else 1.2, alpha=1.0 if is_rize else 0.55,
-                    marker="o" if is_rize else None, markersize=3)
-        ax.set_xticks(range(1, 13))
-        ax.set_xticklabels([str(m) for m in range(1, 13)], fontsize=7)
+            ax.plot(m.index, m.to_numpy(), **style(city),
+                    marker="o" if city == "Rize" else None, markersize=2.5)
+        _month_initial_ticks(ax, range(1, 13))
         ax.set_xlabel("Month")
-        ax.set_ylabel("Mean kt")
-        ax.set_title("Clearness by month")
+        ax.set_ylabel("Mean daily clearness index")
+        ax.set_title("(b) Clearness by month")
         grid_y_only(ax)
 
         ax = axes[1, 0]
         x = np.arange(len(SEASONS))
-        for i, city in enumerate(CITIES):
+        for city in CITIES:
             vals = [seasonal[(seasonal["city"] == city) & (seasonal["season"] == s)]
                     ["daily_kwh_cv"].iloc[0] for s in SEASONS]
-            is_rize = city == "Rize"
-            ax.plot(x, vals, color=rize_color if is_rize else other_color,
-                    linewidth=2.0 if is_rize else 1.2, alpha=1.0 if is_rize else 0.55,
-                    marker="o" if is_rize else None, markersize=3)
+            ax.plot(x, vals, **style(city),
+                    marker="o" if city == "Rize" else None, markersize=2.5)
         ax.set_xticks(x)
-        ax.set_xticklabels(SEASONS, fontsize=8)
-        ax.set_ylabel("Between-day CV")
-        ax.set_title("Seasonal variability")
+        ax.set_xticklabels(SEASONS)
+        ax.set_xlim(-0.3, len(SEASONS) - 0.7)
+        ax.set_xlabel("Season")
+        ax.set_ylabel("CV of daily irradiation")
+        ax.set_title("(c) Day-to-day variability")
         grid_y_only(ax)
 
         ax = axes[1, 1]
@@ -1407,13 +1403,13 @@ def plot_rize_comparison(kt_table: pd.DataFrame, seasonal: pd.DataFrame,
                color=[rize_color if c == "Rize" else other_color for c in CITIES],
                alpha=0.85, width=0.6)
         ax.set_xticks(range(len(CITIES)))
-        ax.set_xticklabels(CITIES, rotation=30, ha="right", fontsize=8)
-        ax.set_ylabel("R² (climatology)")
+        ax.set_xticklabels(CITIES)
+        ax.set_xlabel("Province")
+        ax.set_ylabel("R² of climatology forecast")
         ax.set_ylim(0.6, 1.0)
-        ax.set_title("Reference predictability")
+        ax.set_title("(d) Predictability by climatology")
         grid_y_only(ax)
 
-        fig.suptitle("Rize is a separate regime from the other four provinces", x=0.02, ha="left",
-                     fontsize=11, fontweight="semibold")
-        fig.tight_layout(rect=(0, 0, 1, 0.94))
+        fig.suptitle("Rize forms a separate climate regime from the other four provinces",
+                     x=0.01, ha="left")
         save_figure(fig, save_path)

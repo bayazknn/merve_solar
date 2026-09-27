@@ -159,8 +159,12 @@ result.
   `outputs/eda/`, styled by `paper_style.py` (300 dpi PNG plus vector PDF, white background).
   `paper_style.py` exposes `PAPER_RC` for `plt.rc_context` and never mutates global rcParams.
   Keep `outputs/eda/README.md` and `EDA.md` in step with the numbers.
-- Variables are labelled by their raw NASA POWER names (`T2M (°C)`) via
-  `paper_style.VARIABLE_LABELS`; everything else, table string values included, is English.
+- Figure axes use plain-English names with units (`paper_style.AXIS_LABELS`, e.g.
+  "Air temperature at 2 m (°C)"); tables keep the raw NASA POWER codes
+  (`paper_style.VARIABLE_LABELS`, `T2M (°C)`). Everything else, table string values included, is
+  English.
+- Figures are sized for pasting into Word: `FULL_WIDTH_IN` = 6.3 in, fonts set in `PAPER_RC`,
+  and multi-panel figures built with `layout="constrained"` and x tick labels on every panel.
   Those values are join keys, so changing them is a breaking change.
 - Manuscript sections are Markdown at the repo root (e.g. `DATASET_DESCRIPTION.md`), rendered by
   `scripts/render_pdf.py`. They contain no internal references (no file paths, config field names

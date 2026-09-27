@@ -11,8 +11,12 @@ plotting function instead wraps its body in `with plt.rc_context(PAPER_RC):`.
 from pathlib import Path
 
 # --- print geometry -------------------------------------------------------------------
-COL_WIDTH_IN = 3.46   # 88 mm, single journal column
-FULL_WIDTH_IN = 7.09  # 180 mm, double column
+# Sized for a Word page, where the figures are pasted: the text block is 6.30 in on A4 with
+# 2.5 cm margins and 6.50 in on Letter with 1 in margins. A figure wider than the text block is
+# scaled down on paste, which shrinks every font with it, so FULL_WIDTH_IN is the narrower of
+# the two and the font sizes below are the sizes that actually print.
+COL_WIDTH_IN = 3.10   # half the text block, for side-by-side placement
+FULL_WIDTH_IN = 6.30  # full text block, A4 / 2.5 cm margins
 DPI = 300
 
 # --- ink and chrome -------------------------------------------------------------------
@@ -59,11 +63,8 @@ MONTH_ABBR = {
     7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
 }
 
-# Variable labels. These are the RAW NASA POWER column names, not translations: a reader of
-# the manuscript has to be able to match a figure axis to the dataset documentation and to the
-# feature list in the methods section, and a gloss breaks that chain. The unit stays, because an
-# irradiance axis without W/m² is not readable -- the project's figure contract requires it and
-# the name alone does not carry it.
+# Table variable labels: the RAW NASA POWER column names plus unit. These values are join keys
+# in the descriptive tables (`variable_label`), so they stay raw; figures use AXIS_LABELS below.
 VARIABLE_LABELS = {
     "ALLSKY_SFC_SW_DWN": "ALLSKY_SFC_SW_DWN (W/m²)",
     "T2M": "T2M (°C)",
@@ -82,9 +83,53 @@ VARIABLE_LABELS = {
     "WD50M": "WD50M (°)",
 }
 
-# Bare identifiers, for places where the axis is too tight for a unit -- correlation-matrix
-# tick labels above all.
+# Bare identifiers, for places where the axis is too tight for a unit.
 VARIABLE_SHORT = {name: name for name in VARIABLE_LABELS}
+
+# Figure axis titles: plain-English physical quantity plus unit. VARIABLE_LABELS keeps the raw
+# NASA POWER codes because its values are join keys in the descriptive tables; a figure is read
+# by people, and "ALLSKY_SFC_SW_DWN" on an axis tells a reader nothing. The code-to-name mapping
+# belongs in the manuscript's variable table, which is where the traceability now lives.
+AXIS_LABELS = {
+    "ALLSKY_SFC_SW_DWN": "Global horizontal irradiance (W/m²)",
+    "T2M": "Air temperature at 2 m (°C)",
+    "RH2M": "Relative humidity at 2 m (%)",
+    "T2MDEW": "Dew-point temperature at 2 m (°C)",
+    "PS": "Surface pressure (kPa)",
+    "WS2M": "Wind speed at 2 m (m/s)",
+    "PRECTOTCORR": "Precipitation (mm/h)",
+    "WD2M": "Wind direction at 2 m (°)",
+    "WS10M": "Wind speed at 10 m (m/s)",
+    "WD10M": "Wind direction at 10 m (°)",
+    "QV2M": "Specific humidity at 2 m (g/kg)",
+    "WS50M": "Wind speed at 50 m (m/s)",
+    "WD50M": "Wind direction at 50 m (°)",
+}
+
+# Unit-less English names for tight spots: correlation-matrix ticks and heatmap rows.
+AXIS_SHORT = {
+    "ALLSKY_SFC_SW_DWN": "Irradiance (GHI)",
+    "T2M": "Air temperature",
+    "RH2M": "Relative humidity",
+    "T2MDEW": "Dew point",
+    "PS": "Surface pressure",
+    "WS2M": "Wind speed",
+    "PRECTOTCORR": "Precipitation",
+    "WD2M": "Wind direction",
+    "WS10M": "Wind speed (10 m)",
+    "WD10M": "Wind direction (10 m)",
+    "QV2M": "Specific humidity",
+    "WS50M": "Wind speed (50 m)",
+    "WD50M": "Wind direction (50 m)",
+}
+
+# Derived quantities that appear on several figures.
+DAILY_IRRADIATION_LABEL = "Daily irradiation (kWh/m²)"
+HOUR_LST_LABEL = "Hour of day (local solar time)"
+
+# One-letter month ticks: twelve three-letter abbreviations do not fit unrotated under a
+# 2-inch panel, and rotated ones collide with the panel below.
+MONTH_INITIAL = {m: "JFMAMJJASOND"[m - 1] for m in range(1, 13)}
 
 PAPER_RC = {
     "figure.facecolor": WHITE,
@@ -101,12 +146,20 @@ PAPER_RC = {
     "ps.fonttype": 42,
     "font.family": "sans-serif",
     "font.sans-serif": ["DejaVu Sans"],  # ships with matplotlib, full Latin-1 coverage
-    "font.size": 9,
-    "axes.titlesize": 11,
+    # Sizes are as printed at FULL_WIDTH_IN: 7 pt ticks and 8 pt labels against a 10-11 pt
+    # body text, the usual journal ratio.
+    "font.size": 7.5,
+    "figure.titlesize": 9,
+    "figure.titleweight": "semibold",
+    "figure.labelsize": 8,
+    "figure.constrained_layout.h_pad": 0.03,
+    "figure.constrained_layout.w_pad": 0.03,
+    "axes.titlesize": 8,
     "axes.titleweight": "semibold",
     "axes.titlelocation": "left",
-    "axes.titlepad": 6,
-    "axes.labelsize": 10,
+    "axes.titlepad": 4,
+    "axes.labelsize": 8,
+    "axes.labelpad": 3,
     "axes.labelcolor": INK_SECONDARY,
     "axes.edgecolor": AXIS,
     "axes.linewidth": 0.8,
@@ -117,13 +170,18 @@ PAPER_RC = {
     "text.color": INK,
     "xtick.color": INK_MUTED,
     "ytick.color": INK_MUTED,
-    "xtick.labelsize": 9,
-    "ytick.labelsize": 9,
+    "xtick.labelsize": 7,
+    "ytick.labelsize": 7,
+    "xtick.major.size": 2.5,
+    "ytick.major.size": 2.5,
+    "xtick.major.pad": 2,
+    "ytick.major.pad": 2,
     "xtick.direction": "out",
     "ytick.direction": "out",
     "legend.frameon": False,
-    "legend.fontsize": 9,
-    "lines.linewidth": 1.6,
+    "legend.fontsize": 7,
+    "legend.title_fontsize": 7.5,
+    "lines.linewidth": 1.2,
     "lines.solid_capstyle": "round",
 }
 

@@ -91,12 +91,19 @@ the correlation after removing the (province, month, hour) cell mean, which sepa
 weather signal from solar geometry. The difference is not merely large, it is **large enough to
 flip signs** (`EDA.md` §6.1).
 
-**6. Variable names are the raw column identifiers, not translations.** Figure axes and table
-rows read `ALLSKY_SFC_SW_DWN`, `T2M`, `RH2M`, … with the unit in parentheses. The reason: a
-reader has to be able to match an axis one-to-one with the NASA POWER documentation and with the
-methods section's feature list, and a gloss breaks that chain. The mapping lives in
-`paper_style.VARIABLE_LABELS` (with unit) and `VARIABLE_SHORT` (bare); in the descriptive tables
-the column is called `variable_label`.
+**6. Figures use plain-English names; tables keep the raw column identifiers.** Figure axes
+read "Air temperature at 2 m (°C)", "Global horizontal irradiance (W/m²)", … because a figure is
+read by people and a raw code such as `ALLSKY_SFC_SW_DWN` tells a reader nothing. Table rows keep
+`ALLSKY_SFC_SW_DWN`, `T2M`, `RH2M`, … because those values are join keys. The one-to-one link
+between the two is the manuscript's variable table, which lists each NASA POWER code next to its
+English name. The mappings live in `paper_style.AXIS_LABELS` (with unit) and `AXIS_SHORT` (bare,
+for correlation-matrix ticks) for figures, and `paper_style.VARIABLE_LABELS` for tables, where the
+column is called `variable_label`.
+
+Figures are sized for a Word page: 6.3 in wide (the A4 text block at 2.5 cm margins; Letter's is
+6.5 in), with 7 pt ticks, 8 pt axis titles and a 9 pt figure title, so they paste at 100% and
+print at those sizes. Every panel of a multi-panel figure carries its own x tick labels; months
+are ticked by initial (J F M …) so twelve of them fit unrotated under a 2 in panel.
 
 **7. Partial years do not enter the 3-D surface.** 2019 (starting 30 June) and 2026 (ending
 30 May) are partial; `month_year_surface_*` and `month_year_anomaly_panel` use complete calendar
