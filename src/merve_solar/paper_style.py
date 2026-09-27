@@ -168,8 +168,11 @@ PAPER_RC = {
     "grid.color": GRID,
     "grid.linewidth": 0.6,
     "text.color": INK,
+    # Tick marks stay grey chrome; tick LABELS are data values and print in black.
     "xtick.color": INK_MUTED,
     "ytick.color": INK_MUTED,
+    "xtick.labelcolor": INK,
+    "ytick.labelcolor": INK,
     "xtick.labelsize": 7,
     "ytick.labelsize": 7,
     "xtick.major.size": 2.5,
@@ -179,8 +182,9 @@ PAPER_RC = {
     "xtick.direction": "out",
     "ytick.direction": "out",
     "legend.frameon": False,
-    "legend.fontsize": 7,
-    "legend.title_fontsize": 7.5,
+    "legend.fontsize": 6,
+    "legend.title_fontsize": 6.5,
+    "legend.labelcolor": INK,
     "lines.linewidth": 1.2,
     "lines.solid_capstyle": "round",
 }
@@ -206,6 +210,21 @@ def diverging_cmap():
     return LinearSegmentedColormap.from_list(
         "corr_bwr", ["#184f95", "#2a78d6", "#a8c8ee", "#f0efec", "#f0a9a9", "#d03b3b", "#8f2020"]
     )
+
+
+# Colour bars act as legends here, so their text matches the legend size and colour.
+COLORBAR_LABEL_SIZE = 6.5
+COLORBAR_TICK_SIZE = 6
+
+
+def style_colorbar(cbar) -> None:
+    """Legend-sized black text on a colour bar (label and tick values), hairline outline."""
+    cbar.ax.tick_params(labelsize=COLORBAR_TICK_SIZE, labelcolor=INK, color=INK_MUTED)
+    cbar.ax.yaxis.label.set_size(COLORBAR_LABEL_SIZE)
+    cbar.ax.yaxis.label.set_color(INK)
+    cbar.ax.xaxis.label.set_size(COLORBAR_LABEL_SIZE)
+    cbar.ax.xaxis.label.set_color(INK)
+    cbar.outline.set_linewidth(0.5)
 
 
 def grid_y_only(ax):

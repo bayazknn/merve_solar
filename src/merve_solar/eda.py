@@ -48,6 +48,7 @@ from merve_solar.paper_style import (
     VARIABLE_LABELS,
     diverging_cmap,
     grid_y_only,
+    style_colorbar,
     radiation_cmap,
     save_figure,
     white_3d_panes,
@@ -627,7 +628,7 @@ def _median_colorbar(fig, cax_host, norm, orientation="horizontal", **kwargs):
     cbar = fig.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=_box_cmap()),
                         cax=cax_host, orientation=orientation, **kwargs)
     cbar.set_label("Monthly median of daily\nsolar irradiation (kWh/m²)")
-    cbar.outline.set_linewidth(0.5)
+    style_colorbar(cbar)
     return cbar
 
 
@@ -648,6 +649,7 @@ def plot_correlation_heatmap(corr: pd.DataFrame, title: str, save_path: Path) ->
         ax.set_title(title)
         ax.tick_params(length=0)
         plt.setp(ax.get_xticklabels(), rotation=40, ha="right", rotation_mode="anchor")
+        style_colorbar(ax.collections[0].colorbar)
         save_figure(fig, save_path)
 
 
@@ -667,6 +669,7 @@ def plot_target_correlation_panel(target_df: pd.DataFrame, save_path: Path) -> N
             cbar_kws={"shrink": 0.9, "label": "Pearson correlation coefficient"},
         )
         ax.set_title("Correlation of each variable with irradiance (daylight hours)")
+        style_colorbar(ax.collections[0].colorbar)
         ax.set_xlabel("")
         ax.set_ylabel("")
         ax.tick_params(length=0)
@@ -838,6 +841,7 @@ def plot_month_year_anomaly(grids: dict, save_path: Path) -> None:
         cax = flat[5].inset_axes([0.1, 0.45, 0.8, 0.09])
         cbar = fig.colorbar(flat[0].collections[0], cax=cax, orientation="horizontal")
         cbar.set_label("Daily solar irradiation\nanomaly (kWh/m²)")
+        style_colorbar(cbar)
         _finish_city_panels(fig, flat, "Month", "Year",
                             "Monthly solar irradiation anomaly: departure from that month's "
                             "2020–2025 mean")
