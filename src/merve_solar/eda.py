@@ -579,36 +579,56 @@ def _month_abbr_ticks(ax, months) -> None:
     ax.tick_params(axis="x", length=0, pad=2)
 
 
-def _box_over_days(ax, data: pd.DataFrame, x: str, order, point_size: float,
-                   point_alpha: float) -> None:
-    """Every day as a jittered dot, with a hollow, thin-lined box drawn over it.
+def _box_cmap():
+    """plasma, stopped short of its palest yellow, which vanishes against a white page."""
+    import matplotlib as mpl
+    from matplotlib.colors import ListedColormap
 
-    The dots are the data: they show each box's sample size and any bimodality a box would
-    hide (a spring month mixing clear and overcast days). The box is only a guide to median
-    and quartiles, so it is unfilled and hairline; fliers are off because every day is
-    already drawn. A strip rather than a swarm plot: a box here holds up to ~210 days in a
-    ~0.15 in column, which a swarm cannot lay out without overlap. Boxen (letter-value) plots
-    pay off at thousands of points per group, not hundreds.
+    return ListedColormap(mpl.colormaps["plasma"](np.linspace(0.0, 0.88, 256)))
+
+
+def _median_norm(data: pd.DataFrame, x: str):
+    """One colour scale for every panel of a figure, from the largest monthly median."""
+    from matplotlib.colors import Normalize
+
+    top = float(data.groupby(["city", x], observed=True)["daily_kwh"].median().max())
+    return Normalize(vmin=0.0, vmax=float(np.ceil(top)))
+
+
+def _plasma_boxes(ax, data: pd.DataFrame, x: str, order, norm) -> None:
+    """Box plot whose fill encodes each month's median daily irradiation on plasma.
+
+    Colour is tied to the median rather than to the month: plasma is a sequential map, and
+    colouring by month would put January and December at opposite ends of it although they
+    are climatologically alike. With one norm shared across the panels, a cloudier province
+    reads as darker at a glance. The median line is white, which stays visible from the dark
+    end of the map to the orange where it is cut off. `dodge=False` because hue repeats x:
+    seaborn would otherwise reserve a slot per hue level and draw hairline boxes.
     """
     import seaborn as sns
 
-    # stripplot jitters with numpy's global RNG; pin it so re-running the analysis redraws
-    # byte-identical figures, then restore the caller's state.
-    state = np.random.get_state()
-    np.random.seed(0)
-    try:
-        sns.stripplot(
-            data=data, x=x, y="daily_kwh", order=order, ax=ax, color=ACCENT,
-            size=point_size, alpha=point_alpha, jitter=0.3, linewidth=0,
-            rasterized=True, zorder=1, legend=False,
-        )
-    finally:
-        np.random.set_state(state)
+    cmap = _box_cmap()
+    medians = data.groupby(x, observed=True)["daily_kwh"].median()
+    palette = {k: cmap(norm(medians[k])) for k in order}
     sns.boxplot(
-        data=data, x=x, y="daily_kwh", order=order, ax=ax, width=0.7, fill=False,
-        color=INK_SECONDARY, linewidth=0.5, showfliers=False, showcaps=False,
-        medianprops={"color": "#7a2d0f", "linewidth": 1.2}, zorder=2,
+        data=data, x=x, y="daily_kwh", order=order, hue=x, hue_order=order,
+        palette=palette, legend=False, dodge=False, ax=ax, width=0.7, saturation=1.0,
+        linewidth=0.5, linecolor=INK_SECONDARY, fliersize=1.0,
+        boxprops={"alpha": 0.9},
+        medianprops={"color": "white", "linewidth": 1.4},
+        flierprops={"marker": "o", "markerfacecolor": INK_SECONDARY,
+                    "markeredgewidth": 0, "alpha": 0.5},
     )
+
+
+def _median_colorbar(fig, cax_host, norm, orientation="horizontal", **kwargs):
+    import matplotlib as mpl
+
+    cbar = fig.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=_box_cmap()),
+                        cax=cax_host, orientation=orientation, **kwargs)
+    cbar.set_label("Monthly median of daily\nsolar irradiation (kWh/m²)")
+    cbar.outline.set_linewidth(0.5)
+    return cbar
 
 
 def plot_correlation_heatmap(corr: pd.DataFrame, title: str, save_path: Path) -> None:
@@ -691,7 +711,7 @@ def plot_scatter_vs_target(df_daylight: pd.DataFrame, city: str, save_path: Path
 
 
 def plot_monthly_boxplot(daily_12m: pd.DataFrame, city, save_path: Path) -> None:
-    """Last 12 months of DAILY TOTALS, one dot per day (~30 per month).
+    """Last 12 months of DAILY TOTALS (~30 days per box).
 
     Deliberately not hourly values: a box of daylight-hourly irradiance is ~91% solar
     geometry and makes winter look less variable than summer, which is backwards.
@@ -709,18 +729,21 @@ def plot_monthly_boxplot(daily_12m: pd.DataFrame, city, save_path: Path) -> None
         else:
             fig, ax = plt.subplots(figsize=(FULL_WIDTH_IN * 0.7, 2.6), layout="constrained")
             panels = [(ax, city)]
+        norm = _median_norm(daily_12m, "ym_label")
         for ax, c in panels:
-            _box_over_days(ax, daily_12m[daily_12m["city"] == c], "ym_label", order,
-                           point_size=1.8, point_alpha=0.55)
+            _plasma_boxes(ax, daily_12m[daily_12m["city"] == c], "ym_label", order, norm)
             ax.set_title(c)
             _month_abbr_ticks(ax, [p.month for p in periods])
             ax.set_xlabel("")
             ax.set_ylabel(DAILY_IRRADIATION_LABEL)
             grid_y_only(ax)
         if city is None:
+            _median_colorbar(fig, flat[5].inset_axes([0.1, 0.45, 0.8, 0.09]), norm)
             _finish_city_panels(fig, flat, "", DAILY_IRRADIATION_LABEL,
                                 f"Daily solar irradiation over the last 12 months ({span})")
         else:
+            _median_colorbar(fig, None, norm, orientation="vertical", ax=ax,
+                             fraction=0.04, pad=0.02)
             ax.set_title(f"{city}: daily solar irradiation over the last 12 months ({span})")
         save_figure(fig, save_path)
 
@@ -1212,7 +1235,7 @@ def plot_target_histogram(df: pd.DataFrame, save_path: Path) -> None:
 
 
 def plot_monthly_boxplot_all_years(daily: pd.DataFrame, save_path: Path) -> None:
-    """Month-of-year distribution pooled over every year, one dot per day (~210 per month).
+    """Month-of-year distribution pooled over every year (~210 days per box).
 
     Complements the last-12-months figure: that one shows the year actually observed, this
     one shows the seasonal regime free of a single year's weather.
@@ -1223,12 +1246,13 @@ def plot_monthly_boxplot_all_years(daily: pd.DataFrame, save_path: Path) -> None
     months = list(range(1, 13))
     with plt.rc_context(PAPER_RC):
         fig, flat = _city_panels(plt, 3.7)
+        norm = _median_norm(daily, "MO")
         for ax, city in zip(flat[:5], CITIES):
-            _box_over_days(ax, daily[daily["city"] == city], "MO", months,
-                           point_size=0.9, point_alpha=0.25)
+            _plasma_boxes(ax, daily[daily["city"] == city], "MO", months, norm)
             ax.set_title(city)
             _month_abbr_ticks(ax, months)
             grid_y_only(ax)
+        _median_colorbar(fig, flat[5].inset_axes([0.1, 0.45, 0.8, 0.09]), norm)
         _finish_city_panels(
             fig, flat, "", DAILY_IRRADIATION_LABEL,
             f"Daily solar irradiation by month ({MONTH_ABBR[first.month]} {first.year} – "

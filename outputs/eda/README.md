@@ -104,9 +104,11 @@ Figures are sized for a Word page: 6.3 in wide (the A4 text block at 2.5 cm marg
 6.5 in), with 7 pt ticks, 8 pt axis titles and a 9 pt figure title, so they paste at 100% and
 print at those sizes. Every panel of a multi-panel figure carries its own x tick labels. Box
 plots tick months by three-letter name at 5.5 pt and carry no x title; other month axes use
-initials (J F M …). Box plots draw every day as a jittered dot under a hollow, hairline box, so
-each box's sample size and any bimodality stay visible; the jitter is seeded, so re-running the
-analysis redraws identical files.
+initials (J F M …). Each box is filled by its month's median daily irradiation on the plasma
+colour map (cut before its palest yellow), with one scale shared by every panel of a figure and
+a colour bar alongside, so a cloudier province reads as darker. Colour follows the median, not
+the month, because plasma is sequential and would otherwise set January and December at
+opposite ends.
 
 **7. Partial years do not enter the 3-D surface.** 2019 (starting 30 June) and 2026 (ending
 30 May) are partial; `month_year_surface_*` and `month_year_anomaly_panel` use complete calendar
