@@ -803,7 +803,10 @@ def plot_month_year_surface_3d(grids: dict, city, save_path: Path, zlim=None) ->
             ax.view_init(elev=26, azim=-58)
             ax.set_box_aspect(None, zoom=1.1 if city is None else 0.95)
             if city is None:  # a single-city figure names the city in its suptitle
-                ax.set_title(c, pad=-4)
+                # Left-aligned like every 2-D panel title, and pulled down onto the cube: a
+                # 3-D axes' box is much taller than the cube drawn in it, so a title at the
+                # default height floats well above its own chart.
+                ax.set_title(c, loc="left", x=0.08, y=0.86)
             white_3d_panes(ax)
         # tight_layout cannot fit 3-D axis decorations; set the margins explicitly instead.
         if city is None:
