@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import argparse
+import math
 
 import pandas as pd
 
@@ -151,7 +152,8 @@ def main() -> None:
     grids = {city: eda.month_year_grid(daily, city) for city in CITIES}
     zlo = min(float(g.to_numpy().min()) for g in grids.values())
     zhi = max(float(g.to_numpy().max()) for g in grids.values())
-    zlim = (0.0, zhi * 1.02) if zlo > 0 else (zlo, zhi)
+    # Whole-number top so the colour bar ends on a labelled tick, as the box plots' does.
+    zlim = (0.0, float(math.ceil(zhi))) if zlo > 0 else (zlo, zhi)
     for city in CITIES:
         eda.plot_month_year_surface_3d(grids, city, _figure(f"month_year_surface_{city}"),
                                        zlim=zlim)

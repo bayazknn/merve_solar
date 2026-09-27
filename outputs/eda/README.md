@@ -168,7 +168,7 @@ identity survives greyscale printing and colour-vision deficiency.
 | `target_correlation_panel` | Variable × province, correlation with the target | daylight |
 | `scatter_vs_target_<province>` | Each variable against the target plus a binned-median trend | daylight |
 | `monthly_boxplot_last12m_<province>`, `_panel` | Daily totals over the last 12 months | 24 h (totals) |
-| `month_year_surface_<province>`, `_panel` | 3-D month × year × irradiance surface, 2020–2025 | 24 h (totals) |
+| `month_year_surface_<province>`, `_panel` | 3-D month × year × irradiance surface, 2020–2025, coloured by height on the box plots' plasma scale; `_panel` is two columns × three rows with the colour bar in the sixth cell | 24 h (totals) |
 | `month_year_anomaly_panel` | The same data as a 2-D anomaly view | 24 h (totals) |
 | `seasonal_diurnal_profile` | Diurnal profile by season, LST hour | **24 h** |
 | `seasonal_dayofyear` | Day of year × daily total, banded by season | 24 h (totals) |

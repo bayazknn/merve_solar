@@ -622,12 +622,13 @@ def _plasma_boxes(ax, data: pd.DataFrame, x: str, order, norm) -> None:
     )
 
 
-def _median_colorbar(fig, cax_host, norm, orientation="horizontal", **kwargs):
+def _median_colorbar(fig, cax_host, norm, orientation="horizontal",
+                     label="Monthly median of daily\nsolar irradiation (kWh/m²)", **kwargs):
     import matplotlib as mpl
 
     cbar = fig.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=_box_cmap()),
                         cax=cax_host, orientation=orientation, **kwargs)
-    cbar.set_label("Monthly median of daily\nsolar irradiation (kWh/m²)")
+    cbar.set_label(label)
     style_colorbar(cbar)
     return cbar
 
@@ -751,64 +752,74 @@ def plot_monthly_boxplot(daily_12m: pd.DataFrame, city, save_path: Path) -> None
         save_figure(fig, save_path)
 
 
-def plot_month_year_surface_3d(grids: dict, city, save_path: Path, zlim=None) -> None:
-    """x = month, z (depth) = year, y (height) = monthly mean daily total."""
-    plt = _plt()
-    from matplotlib import cm  # noqa: F401  (registers 3-D projection deps)
-    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+SURFACE_MONTH_TICKS = (1, 3, 5, 7, 9, 11)  # every other month: twelve collide on the slant
 
-    cmap = radiation_cmap()
+
+def plot_month_year_surface_3d(grids: dict, city, save_path: Path, zlim=None) -> None:
+    """x = month, depth = year, height = monthly mean of daily irradiation.
+
+    Styled like the monthly box plots: height is also encoded on the cut-off plasma map with
+    one scale for every province, a colour bar replaces the axis titles, and months are
+    three-letter names. The all-province figure is two columns by three rows, so each surface
+    gets half the page width; the sixth cell holds the colour bar.
+    """
+    plt = _plt()
+    from matplotlib.colors import Normalize
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401  (registers the 3-D projection)
+
+    if zlim is None:
+        top = max(float(g.to_numpy().max()) for g in grids.values())
+        zlim = (0.0, float(np.ceil(top)))
+    norm = Normalize(vmin=zlim[0], vmax=zlim[1])
+    cmap = _box_cmap()
+    label = "Monthly mean of daily\nsolar irradiation (kWh/m²)"
     with plt.rc_context(PAPER_RC):
         if city is None:
-            fig = plt.figure(figsize=(FULL_WIDTH_IN, 4.4))
-            items = [(fig.add_subplot(2, 3, i + 1, projection="3d"), c)
+            fig = plt.figure(figsize=(FULL_WIDTH_IN, 7.7))
+            items = [(fig.add_subplot(3, 2, i + 1, projection="3d"), c)
                      for i, c in enumerate(CITIES)]
         else:
-            fig = plt.figure(figsize=(FULL_WIDTH_IN * 0.7, 3.2))
+            fig = plt.figure(figsize=(FULL_WIDTH_IN * 0.75, 3.3))
             items = [(fig.add_subplot(111, projection="3d"), city)]
         for ax, c in items:
             grid = grids[c]
             months = np.array(grid.columns, dtype=float)
             years = np.array(grid.index, dtype=float)
             mm, yy = np.meshgrid(months, years)
-            zz = grid.to_numpy()
             ax.plot_surface(
-                mm, yy, zz, cmap=cmap, rstride=1, cstride=1,
+                mm, yy, grid.to_numpy(), cmap=cmap, norm=norm, rstride=1, cstride=1,
                 edgecolor="white", linewidth=0.3, antialiased=True, shade=False,
-                vmin=zlim[0] if zlim else None, vmax=zlim[1] if zlim else None,
             )
-            ax.set_xticks([1, 4, 7, 10])
-            ax.set_xticklabels([MONTH_ABBR[m] for m in (1, 4, 7, 10)], fontsize=6)
-            ax.set_yticks(list(range(int(years.min()), int(years.max()) + 1, 2)))
-            ax.set_yticklabels([str(int(y)) for y in range(int(years.min()),
-                                                           int(years.max()) + 1, 2)],
-                               fontsize=6)
-            ax.tick_params(axis="z", labelsize=6, pad=0)
-            ax.tick_params(axis="x", pad=-3)
+            ax.set_xticks(list(SURFACE_MONTH_TICKS))
+            ax.set_xticklabels([MONTH_ABBR[m] for m in SURFACE_MONTH_TICKS],
+                               fontsize=MONTH_ABBR_TICK_SIZE)
+            year_ticks = list(range(int(years.min()), int(years.max()) + 1, 2))
+            ax.set_yticks(year_ticks)
+            ax.set_yticklabels([str(y) for y in year_ticks], fontsize=MONTH_ABBR_TICK_SIZE)
+            ax.tick_params(axis="z", labelsize=MONTH_ABBR_TICK_SIZE, pad=0)
+            ax.tick_params(axis="x", pad=-4)
             ax.tick_params(axis="y", pad=-3)
-            ax.set_xlabel("Month", fontsize=7, labelpad=-8)
-            ax.set_ylabel("Year", fontsize=7, labelpad=-6)
-            if city is not None:  # the panel figure carries the unit in its title
-                ax.set_zlabel("kWh/m²", fontsize=7, labelpad=-6)
-            if zlim:
-                ax.set_zlim(*zlim)
+            ax.set_zlim(*zlim)
             ax.view_init(elev=26, azim=-58)
-            # Shrink the cube inside its cell so the z label of the right-hand panel is
-            # not clipped by the figure edge.
-            ax.set_box_aspect(None, zoom=0.92)
+            ax.set_box_aspect(None, zoom=1.1 if city is None else 0.95)
             if city is None:  # a single-city figure names the city in its suptitle
-                ax.set_title(c, fontsize=8, pad=-2)
+                ax.set_title(c, pad=-4)
             white_3d_panes(ax)
         # tight_layout cannot fit 3-D axis decorations; set the margins explicitly instead.
         if city is None:
-            fig.suptitle("Monthly mean of daily solar irradiation, 2020–2025 (kWh/m²)",
+            cell = fig.add_subplot(3, 2, 6)
+            cell.axis("off")
+            _median_colorbar(fig, cell.inset_axes([0.15, 0.5, 0.7, 0.07]), norm, label=label)
+            fig.suptitle("Monthly mean of daily solar irradiation, 2020–2025",
                          x=0.01, ha="left")
-            fig.subplots_adjust(left=0.0, right=0.96, top=0.91, bottom=0.0,
-                                wspace=0.0, hspace=0.08)
+            fig.subplots_adjust(left=-0.02, right=0.97, top=0.93, bottom=0.01,
+                                wspace=-0.05, hspace=0.08)
         else:
+            cax = fig.add_axes([0.86, 0.22, 0.025, 0.56])
+            _median_colorbar(fig, cax, norm, orientation="vertical", label=label)
             fig.suptitle(f"{city}: monthly mean of daily solar irradiation, 2020–2025",
                          x=0.01, ha="left")
-            fig.subplots_adjust(left=0.02, right=0.95, top=0.95, bottom=0.04)
+            fig.subplots_adjust(left=0.0, right=0.84, top=0.93, bottom=0.02)
         save_figure(fig, save_path)
 
 
