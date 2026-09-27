@@ -25,18 +25,11 @@ from merve_solar.data import load_base_features
 
 WRITTEN = []
 
-# The EDA tables are opened by hand in Excel under a Turkish (Istanbul) regional format, where
-# the decimal mark is "," and the list separator is ";". Written that way, a double-click opens
-# them as numbers in columns instead of one text column. The BOM makes Excel read the file as
-# UTF-8, without which "°C" and "W/m²" come out garbled. No code reads these tables back; the
-# experiment CSVs and the ledger, which the pipeline does read, stay in the default format.
-CSV_OPTIONS = {"sep": ";", "decimal": ",", "encoding": "utf-8-sig", "index": False}
-
 
 def _write_csv(df: pd.DataFrame, name: str) -> None:
     path = EDA_TABLES_DIR / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(path, **CSV_OPTIONS)
+    df.to_csv(path, index=False)
     WRITTEN.append(path)
 
 

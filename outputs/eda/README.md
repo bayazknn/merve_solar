@@ -142,12 +142,6 @@ is deliberately limited to 2025-06 → 2026-05. Two exceptions exist among the f
 
 Three reading notes:
 
-**CSV format is Excel-Turkish:** `;` separates fields and `,` is the decimal mark, UTF-8 with a
-byte-order mark, so the files open directly in Excel under a Turkish regional setting. Read them
-in pandas with `pd.read_csv(path, sep=";", decimal=",", encoding="utf-8-sig")`. The `.md` and
-`.tex` copies of the descriptive tables use the English decimal point, because they feed the
-manuscript.
-
 **The pooled ("All") block's standard deviation** mixes within-province and between-province
 variance, so it is larger than any single province's.
 
