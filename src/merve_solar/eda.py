@@ -568,6 +568,49 @@ def _month_initial_ticks(ax, positions) -> None:
     ax.set_xticklabels([MONTH_INITIAL[m] for m in range(1, 13)], rotation=0)
 
 
+# Twelve three-letter month names fit unrotated under a ~1.9 in panel only at this size.
+MONTH_ABBR_TICK_SIZE = 5.5
+
+
+def _month_abbr_ticks(ax, months) -> None:
+    ax.set_xticks(range(len(months)))
+    ax.set_xticklabels([MONTH_ABBR[m] for m in months], rotation=0,
+                       fontsize=MONTH_ABBR_TICK_SIZE)
+    ax.tick_params(axis="x", length=0, pad=2)
+
+
+def _box_over_days(ax, data: pd.DataFrame, x: str, order, point_size: float,
+                   point_alpha: float) -> None:
+    """Every day as a jittered dot, with a hollow, thin-lined box drawn over it.
+
+    The dots are the data: they show each box's sample size and any bimodality a box would
+    hide (a spring month mixing clear and overcast days). The box is only a guide to median
+    and quartiles, so it is unfilled and hairline; fliers are off because every day is
+    already drawn. A strip rather than a swarm plot: a box here holds up to ~210 days in a
+    ~0.15 in column, which a swarm cannot lay out without overlap. Boxen (letter-value) plots
+    pay off at thousands of points per group, not hundreds.
+    """
+    import seaborn as sns
+
+    # stripplot jitters with numpy's global RNG; pin it so re-running the analysis redraws
+    # byte-identical figures, then restore the caller's state.
+    state = np.random.get_state()
+    np.random.seed(0)
+    try:
+        sns.stripplot(
+            data=data, x=x, y="daily_kwh", order=order, ax=ax, color=ACCENT,
+            size=point_size, alpha=point_alpha, jitter=0.3, linewidth=0,
+            rasterized=True, zorder=1, legend=False,
+        )
+    finally:
+        np.random.set_state(state)
+    sns.boxplot(
+        data=data, x=x, y="daily_kwh", order=order, ax=ax, width=0.7, fill=False,
+        color=INK_SECONDARY, linewidth=0.5, showfliers=False, showcaps=False,
+        medianprops={"color": "#7a2d0f", "linewidth": 1.2}, zorder=2,
+    )
+
+
 def plot_correlation_heatmap(corr: pd.DataFrame, title: str, save_path: Path) -> None:
     plt = _plt()
     import seaborn as sns
@@ -648,19 +691,17 @@ def plot_scatter_vs_target(df_daylight: pd.DataFrame, city: str, save_path: Path
 
 
 def plot_monthly_boxplot(daily_12m: pd.DataFrame, city, save_path: Path) -> None:
-    """Last 12 months of DAILY TOTALS.
+    """Last 12 months of DAILY TOTALS, one dot per day (~30 per month).
 
     Deliberately not hourly values: a box of daylight-hourly irradiance is ~91% solar
     geometry and makes winter look less variable than summer, which is backwards.
     """
     plt = _plt()
-    import seaborn as sns
 
     periods = list(daily_12m["ym"].cat.categories)
     order = list(daily_12m["ym_label"].cat.categories)
     span = (f"{MONTH_ABBR[periods[0].month]} {periods[0].year} – "
             f"{MONTH_ABBR[periods[-1].month]} {periods[-1].year}")
-    xlabel = f"Month ({span})"
     with plt.rc_context(PAPER_RC):
         if city is None:
             fig, flat = _city_panels(plt, 3.9)
@@ -669,26 +710,18 @@ def plot_monthly_boxplot(daily_12m: pd.DataFrame, city, save_path: Path) -> None
             fig, ax = plt.subplots(figsize=(FULL_WIDTH_IN * 0.7, 2.6), layout="constrained")
             panels = [(ax, city)]
         for ax, c in panels:
-            sub = daily_12m[daily_12m["city"] == c]
-            sns.boxplot(
-                data=sub, x="ym_label", y="daily_kwh", order=order, ax=ax,
-                color=ACCENT, width=0.62, fliersize=1.2, linewidth=0.6,
-                boxprops={"alpha": 0.55},
-                medianprops={"color": "#7a2d0f", "linewidth": 1.1},
-                flierprops={"markerfacecolor": INK_SECONDARY, "markeredgewidth": 0,
-                            "alpha": 0.5},
-            )
+            _box_over_days(ax, daily_12m[daily_12m["city"] == c], "ym_label", order,
+                           point_size=1.8, point_alpha=0.55)
             ax.set_title(c)
-            ax.set_xticks(range(len(periods)))
-            ax.set_xticklabels([MONTH_INITIAL[p.month] for p in periods], rotation=0)
-            ax.set_xlabel(xlabel)
+            _month_abbr_ticks(ax, [p.month for p in periods])
+            ax.set_xlabel("")
             ax.set_ylabel(DAILY_IRRADIATION_LABEL)
             grid_y_only(ax)
         if city is None:
-            _finish_city_panels(fig, flat, xlabel, DAILY_IRRADIATION_LABEL,
-                                "Daily irradiation over the last 12 months")
+            _finish_city_panels(fig, flat, "", DAILY_IRRADIATION_LABEL,
+                                f"Daily solar irradiation over the last 12 months ({span})")
         else:
-            ax.set_title(f"{city}: daily irradiation over the last 12 months")
+            ax.set_title(f"{city}: daily solar irradiation over the last 12 months ({span})")
         save_figure(fig, save_path)
 
 
@@ -742,12 +775,12 @@ def plot_month_year_surface_3d(grids: dict, city, save_path: Path, zlim=None) ->
             white_3d_panes(ax)
         # tight_layout cannot fit 3-D axis decorations; set the margins explicitly instead.
         if city is None:
-            fig.suptitle("Monthly mean of daily irradiation, 2020–2025 (kWh/m²)",
+            fig.suptitle("Monthly mean of daily solar irradiation, 2020–2025 (kWh/m²)",
                          x=0.01, ha="left")
             fig.subplots_adjust(left=0.0, right=0.96, top=0.91, bottom=0.0,
                                 wspace=0.0, hspace=0.08)
         else:
-            fig.suptitle(f"{city}: monthly mean of daily irradiation, 2020–2025",
+            fig.suptitle(f"{city}: monthly mean of daily solar irradiation, 2020–2025",
                          x=0.01, ha="left")
             fig.subplots_adjust(left=0.02, right=0.95, top=0.95, bottom=0.04)
         save_figure(fig, save_path)
@@ -781,9 +814,9 @@ def plot_month_year_anomaly(grids: dict, save_path: Path) -> None:
         # Horizontal colourbar inside the spare sixth cell, so it takes no width from the maps.
         cax = flat[5].inset_axes([0.1, 0.45, 0.8, 0.09])
         cbar = fig.colorbar(flat[0].collections[0], cax=cax, orientation="horizontal")
-        cbar.set_label("Daily irradiation anomaly\n(kWh/m²)")
+        cbar.set_label("Daily solar irradiation\nanomaly (kWh/m²)")
         _finish_city_panels(fig, flat, "Month", "Year",
-                            "Monthly irradiation anomaly: departure from that month's "
+                            "Monthly solar irradiation anomaly: departure from that month's "
                             "2020–2025 mean")
         save_figure(fig, save_path)
 
@@ -867,7 +900,7 @@ def plot_seasonal_dayofyear(daily: pd.DataFrame, save_path: Path) -> None:
             ax.set_xticks([1, 91, 182, 274, 365])
             grid_y_only(ax)
         _finish_city_panels(fig, flat, "Day of year", DAILY_IRRADIATION_LABEL,
-                            "Daily irradiation through the year (all years pooled)")
+                            "Daily solar irradiation through the year (all years pooled)")
         handles = [
             plt.Line2D([], [], color=SEASON_COLORS[s], alpha=0.5, linewidth=6, label=s)
             for s in SEASONS
@@ -1179,32 +1212,26 @@ def plot_target_histogram(df: pd.DataFrame, save_path: Path) -> None:
 
 
 def plot_monthly_boxplot_all_years(daily: pd.DataFrame, save_path: Path) -> None:
-    """Month-of-year box plot pooled over every year (~200 days per box).
+    """Month-of-year distribution pooled over every year, one dot per day (~210 per month).
 
     Complements the last-12-months figure: that one shows the year actually observed, this
     one shows the seasonal regime free of a single year's weather.
     """
     plt = _plt()
-    import seaborn as sns
 
     first, last = daily["date"].min(), daily["date"].max()
+    months = list(range(1, 13))
     with plt.rc_context(PAPER_RC):
         fig, flat = _city_panels(plt, 3.7)
         for ax, city in zip(flat[:5], CITIES):
-            sns.boxplot(
-                data=daily[daily["city"] == city], x="MO", y="daily_kwh",
-                order=list(range(1, 13)), ax=ax, color=ACCENT, width=0.62, fliersize=1.0,
-                linewidth=0.6, boxprops={"alpha": 0.55},
-                medianprops={"color": "#7a2d0f", "linewidth": 1.1},
-                flierprops={"markerfacecolor": INK_SECONDARY, "markeredgewidth": 0,
-                            "alpha": 0.35},
-            )
+            _box_over_days(ax, daily[daily["city"] == city], "MO", months,
+                           point_size=0.9, point_alpha=0.25)
             ax.set_title(city)
-            _month_initial_ticks(ax, range(12))
+            _month_abbr_ticks(ax, months)
             grid_y_only(ax)
         _finish_city_panels(
-            fig, flat, "Month", DAILY_IRRADIATION_LABEL,
-            f"Daily irradiation by month ({MONTH_ABBR[first.month]} {first.year} – "
+            fig, flat, "", DAILY_IRRADIATION_LABEL,
+            f"Daily solar irradiation by month ({MONTH_ABBR[first.month]} {first.year} – "
             f"{MONTH_ABBR[last.month]} {last.year}, all years pooled)",
         )
         save_figure(fig, save_path)

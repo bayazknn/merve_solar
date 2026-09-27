@@ -102,8 +102,11 @@ column is called `variable_label`.
 
 Figures are sized for a Word page: 6.3 in wide (the A4 text block at 2.5 cm margins; Letter's is
 6.5 in), with 7 pt ticks, 8 pt axis titles and a 9 pt figure title, so they paste at 100% and
-print at those sizes. Every panel of a multi-panel figure carries its own x tick labels; months
-are ticked by initial (J F M …) so twelve of them fit unrotated under a 2 in panel.
+print at those sizes. Every panel of a multi-panel figure carries its own x tick labels. Box
+plots tick months by three-letter name at 5.5 pt and carry no x title; other month axes use
+initials (J F M …). Box plots draw every day as a jittered dot under a hollow, hairline box, so
+each box's sample size and any bimodality stay visible; the jitter is seeded, so re-running the
+analysis redraws identical files.
 
 **7. Partial years do not enter the 3-D surface.** 2019 (starting 30 June) and 2026 (ending
 30 May) are partial; `month_year_surface_*` and `month_year_anomaly_panel` use complete calendar

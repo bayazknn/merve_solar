@@ -124,7 +124,7 @@ AXIS_SHORT = {
 }
 
 # Derived quantities that appear on several figures.
-DAILY_IRRADIATION_LABEL = "Daily irradiation (kWh/m²)"
+DAILY_IRRADIATION_LABEL = "Daily solar irradiation (kWh/m²)"
 HOUR_LST_LABEL = "Hour of day (local solar time)"
 
 # One-letter month ticks: twelve three-letter abbreviations do not fit unrotated under a
