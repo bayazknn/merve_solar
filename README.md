@@ -4,7 +4,7 @@ Forecasts hourly solar irradiance (`ALLSKY_SFC_SW_DWN`, W/m²) 24 hours ahead
 for 5 Turkish cities (Ankara, Antalya, Konya, Rize, Van) using an LSTM, with
 uncertainty quantification via a **Bootstrap Ensemble × Monte Carlo Dropout**
 hybrid — adapted from the reference paper's PCNN + UQ methodology
-(`main_methodology.md`, `main_methodology_paper.pdf`), substituting the PCNN
+(`main_methodology_paper.pdf`), substituting the PCNN
 backbone with an LSTM and the target from PV power output to solar
 irradiance.
 
@@ -15,9 +15,9 @@ training+evaluation run is a **configuration** (a "facet") that gets its own
 persisted directory and a row in a shared comparison ledger — see
 [Interpreting results](#interpreting-results) below.
 
-`main_methodology.md` (Turkish) is the paper's Method text and the source of
-truth for every formula and design justification; this README is the operating
-manual and does not repeat its derivations.
+This README is the operating manual. The paper's methodology write-up is being
+redone from scratch; `main_methodology.md`, `ABLATION*.md` and `TODOs.md` are
+legacy documents (in Turkish) about an earlier dataset and are not current.
 
 ## Installation
 
@@ -32,7 +32,7 @@ no code changes needed.
 # install uv, if you don't have it
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-cd merve_makale
+cd merve_solar
 uv sync --dev
 ```
 
@@ -49,7 +49,7 @@ uv sync --dev
 ### Option B — plain `venv` + `pip`
 
 ```bash
-cd merve_makale
+cd merve_solar
 python3 -m venv .venv
 source .venv/bin/activate      # macOS/Linux
 pip install -e .
@@ -144,11 +144,8 @@ uv run python scripts/run_experiment.py --config configs/config_000_smoke.json
 [Configuration reference](#configuration-reference) below). A few example
 configs already exist in `configs/` — `config_000_smoke.json` is a fast
 (~a few minutes) sanity-check config, `config_002_default_full.json` is the
-full-fidelity default (8 bootstrap replicas × 100 MC-Dropout passes). Budget
-generously for the latter: it has not yet been run to completion, and the one
-measurement available (CPU-only, 12 cores) is 25.7 s/epoch and 1.83 s per MC
-pass on the pooled five-province split, which puts a full run in the many-hours
-range and a multi-arm study in days. On MPS/CUDA it is hours.
+full-fidelity default (8 bootstrap replicas × 100 MC-Dropout passes), which
+takes hours; a multi-arm study takes much longer, especially on CPU.
 
 Always smoke-test a changed code path first (`n_bootstrap=1, max_epochs=5,
 mc_dropout_passes=10`). A crash at the metrics step after two hours of training
@@ -188,18 +185,15 @@ uv run python scripts/run_experiment.py --config configs/config_002_default_full
 
 `configs/experiment_grid.py` enumerates the `ExperimentConfig`s in **named
 groups**, so an hours-long study can be selected precisely instead of running
-everything: `smoke` (minutes, proves the code path), `main` (the hyperparameter
-sweep — hidden sizes, lookback, dropout, split ratio), `ablation`
-(global vs. per-province over 3 seeds, plus two sensitivity arms),
-`rize_curve` / `rize_curve_b1` / `rize_curve_smoke` (the province-exclusion
-transfer curve at full, reduced and smoke fidelity). Edit this file to add
-your own.
+everything: `smoke` (minutes, proves the code path) and `main` (the
+hyperparameter sweep — hidden sizes, lookback, dropout, split ratio). The other
+groups were built for an ablation programme on an earlier dataset and have not
+been run on the current one. Edit this file to add your own.
 
 ```bash
 uv run python scripts/run_all_experiments.py --list                # print what would run, exit
 uv run python scripts/run_all_experiments.py --group smoke         # one group
-uv run python scripts/run_all_experiments.py --group ablation --skip-existing --continue-on-error
-uv run python scripts/run_all_experiments.py --only abl_loss_mae_s42 abl_loss_huber_s42
+uv run python scripts/run_all_experiments.py --group main --skip-existing --continue-on-error
 ```
 
 | Flag | Meaning |
@@ -211,8 +205,8 @@ uv run python scripts/run_all_experiments.py --only abl_loss_mae_s42 abl_loss_hu
 | `--continue-on-error` | Keep going if one config raises; the failures are listed at the end and the script exits non-zero. |
 
 Every selected config runs one after another, each writing to its own
-`outputs/experiments/<experiment_id>/` and appending one row to
-`outputs/experiments_ledger.csv`. The ledger schema is checked once up front,
+`outputs/experiments/<experiment_id>/` and one row to
+`outputs/experiments_ledger.csv` (rerunning an id replaces its row). The ledger schema is checked once up front,
 so a header mismatch fails in milliseconds instead of after hours of training.
 
 ### 5. Naive reference baselines (seconds)
@@ -225,7 +219,8 @@ Scores two reference forecasts — **climatology** (the training-rows
 `(city, month, hour)` mean) and **persistence** (the same hour one day earlier)
 — through the same windows, the same chronological splits and the same
 `metrics.py` as every model run, writing
-`outputs/experiments/baseline_<name>/` and one ledger row each. They are the
+`outputs/experiments/baseline_<name>/` and one ledger row each (a rerun
+replaces those rows rather than adding new ones). They are the
 floor the LSTM has to clear; the script also prints the all-hours numbers next
 to the daylight ones to show how much night inflates them.
 
@@ -249,15 +244,10 @@ uv run python scripts/07_conformal_diagnostic.py            # which conformal gr
 the pipeline emits — and cross-checks it against them, so a transposed slice
 fails loudly instead of silently swapping two provinces' numbers.
 
-`07` fits every `conformal_mode` on half of each run's test windows and scores
-the other half, under four calibration geometries (a random half; the
-chronologically first half; alternating months; and a random half with April and
-May removed, which mimics the real validation split's seasonal hole). It writes
-`outputs/tables/conformal_mode_selection.csv` and
-`conformal_month_stability_test.csv`. **Superseded by `08`:** it fits and scores
-inside the test period, which selects a hyperparameter on the test set.
+`07` is **superseded by `08`**: it fits and scores conformal modes inside the
+test period, which selects a hyperparameter on the test set.
 
-`08` is the honest version and the one to use. It reads a finished conformal
+`08` (`scripts/08_conformal_mode_selection.py`) is the one to use. It reads a finished conformal
 run's `calibration_predictions.npz` and `test_predictions.npz`, fits every mode
 on the former (the **validation** split, which is what production calibrates on),
 applies it to the latter, and scores three conditionals rather than one —
@@ -315,7 +305,7 @@ All fields live in the `ExperimentConfig` dataclass
 
 | Field | Default | What it controls |
 |---|---|---|
-| `experiment_id` | *(required)* | Name for this run — becomes its output directory name (`outputs/experiments/<experiment_id>/`) and its row's identifier in the ledger. Must be unique per run (a rerun with the same id overwrites that run's outputs). |
+| `experiment_id` | *(required)* | Name for this run — becomes its output directory name (`outputs/experiments/<experiment_id>/`) and its row's identifier in the ledger. Must be unique per run (a rerun with the same id overwrites that run's outputs and replaces its ledger row). |
 | `lookback_hours` | `24` | How many past hours of data the model sees as input ("time lag"). |
 | `horizon_hours` | `24` | How many future hours the model forecasts in one shot (a single forward pass predicts all of them at once). |
 | `window_stride` | `1` | Step size (in hours) between consecutive training windows. `1` = a new window every hour (more training data, slower to build); `24` = one window per calendar day. |
@@ -336,9 +326,9 @@ All fields live in the `ExperimentConfig` dataclass
 | `training_scope` | `"global"` | `"global"` = one model over all active provinces, city identity entering as a learned embedding (the headline configuration). `"per_city"` = an independent model set per province, assembled back into the same pooled test layout; this exists only as the ablation arm that tests the cross-city transfer claim. |
 | `per_city_scaler` | `True` | Only meaningful when `training_scope="per_city"`. `True` gives each province its own scaler, so the isolated arm contains no cross-province information at all. `False` reuses the pooled scaler, which separates "a per-province model" from "a per-province normalisation of the loss and the early-stopping signal". Either way the scaler is fit on train rows only. |
 | `excluded_cities` | `[]` | Provinces dropped from this run **entirely** — train, val and test alike — so the metric table covers only the remainder. City ids are *not* renumbered (the embedding table keeps a row per province; the excluded row simply never receives a gradient), so checkpoints and predictions stay comparable across runs. Split boundaries are computed on the full frame before the exclusion, so every arm splits on identical dates. Leaving a single province is allowed only with `training_scope="per_city"`. |
-| `model_family` | `"lstm"` | Which model produced the row. `"lstm"` is the only value `run_experiment` trains; `"climatology"` and `"persistence"` are written by `scripts/03_run_naive_baselines.py` so their rows are identifiable in the ledger. (`"smart_persistence"` was removed with the 14-Sep-2026 export: it needs a clear-sky *magnitude*, and rebuilt on top-of-atmosphere it scores identically to plain persistence — see `outputs/eda/EDA.md` §0.3.) |
-| `clamp_night_to_zero` | `True` | Zero every prediction at hours where `solar_elevation <= 0`, applied after the inverse transform to W/m². Not a heuristic: below the horizon the target is exactly `0` and this is known from solar geometry alone, without reading the target. It improves all-hours MAE by ~27% at no cost, **but it also inflates all-hours CP by construction** — see [Metrics explained](#metrics-explained). |
-| `conformal_mode` | `"none"` | Granularity of the split-conformal recalibration of the predictive interval: `"none"`, `"global"`, `"per_horizon"`, `"per_city"`, `"per_season"`, `"city_horizon"`, `"city_season"`, `"season_horizon"`, `"city_season_horizon"`. Anything but `"none"` makes the run additionally predict the **validation** split, pooled over the same `n_bootstrap × mc_dropout_passes` passes, and fit one factor `k` per grid cell; the predictive distribution is then rescaled about its own mean, `x → m + k(x − m)`. That rescales the interval and CRPS coherently and leaves the mean — hence RMSE/MAE/R² — bit-identical, so a conformal row differs from its uncorrected twin in the interval alone. Costs roughly 13% wall clock. The recommended value is `"city_season_horizon"`, selected by `scripts/08_conformal_mode_selection.py` over all six full-fidelity arms — fitted on validation, scored on test, on three conditionals. The three axes have three separate jobs: city fixes the province conditional, horizon fixes the horizon conditional (each axis fixes only its own — a grid is only as good as the conditionals it was scored on), and season reduces the *calibration transfer error* by 30% while fixing neither conditional. The first six full runs used `"city_season"`, whose numbers are valid but whose coverage stays 5.6 pp apart across the 24 horizon steps. Note what no grid can do: the residual gap from CP 0.9404 to nominal 0.95 is entirely transfer error, so a richer grid does not close it — an out-of-bag calibration set is what would. Night is never calibrated and never corrected. Two limitations are real and stated: the calibration set is the same validation split early stopping used, and it covers ten of twelve months — no April, no May. See `ABLATION.md` §8 and `main_methodology.md` §11.6. |
+| `model_family` | `"lstm"` | Which model produced the row. `"lstm"` is the only value `run_experiment` trains; `"climatology"` and `"persistence"` are written by `scripts/03_run_naive_baselines.py` so their rows are identifiable in the ledger. |
+| `clamp_night_to_zero` | `True` | Zero every prediction at hours where `solar_elevation <= 0`, applied after the inverse transform to W/m². Not a heuristic: below the horizon the target is exactly `0` and this is known from solar geometry alone, without reading the target. It lowers all-hours error at no cost, **but it also inflates all-hours CP by construction** — see [Metrics explained](#metrics-explained). |
+| `conformal_mode` | `"none"` | Granularity of the split-conformal recalibration of the predictive interval: `"none"`, `"global"`, `"per_horizon"`, `"per_city"`, `"per_season"`, `"city_horizon"`, `"city_season"`, `"season_horizon"`, `"city_season_horizon"`. Anything but `"none"` makes the run additionally predict the **validation** split, pooled over the same `n_bootstrap × mc_dropout_passes` passes, and fit one factor `k` per grid cell; the predictive distribution is then rescaled about its own mean, `x → m + k(x − m)`. That rescales the interval and CRPS coherently and leaves the mean — hence RMSE/MAE/R² — bit-identical, so a conformal row differs from its uncorrected twin in the interval alone. Costs roughly 13% wall clock. Each grid axis fixes only its own conditional (province, season or horizon coverage), so choose the mode with `scripts/08_conformal_mode_selection.py`, which fits on validation and scores several conditionals. No mode has been selected on the current dataset. Night is never calibrated and never corrected. Two limitations: the calibration set is the same validation split early stopping used, and it covers ten of twelve months — no June, no July. |
 | `n_bootstrap` | `8` | Number of bootstrap-resampled model replicas trained for the ensemble (the paper recommends 5–10). **Set to `1` for a fast sanity-check run** — with only one replica there's no resampling, just a single trained LSTM, still scored via MC-Dropout alone. |
 | `mc_dropout_passes` | `100` | Number of stochastic forward passes per replica at inference time (the paper recommends 50–100). Total predictions pooled per test point = `n_bootstrap × mc_dropout_passes` (e.g. 8×100=800 by default). |
 | `bootstrap_block_length` | `168` | Block length (in windows) for the moving-block bootstrap resampling — resampling in contiguous blocks (default ≈1 week) rather than individually preserves the data's temporal autocorrelation. Only relevant when `n_bootstrap > 1`. |
@@ -404,7 +394,7 @@ misalign against the header. The columns, in order:
 - **UQ / training budget** — `n_bootstrap`, `bootstrap_block_length`,
   `mc_dropout_passes`, `max_epochs`, `early_stop_patience`
 - **optimizer** — `batch_size`, `learning_rate`, `lr_reduce_factor`,
-  `lr_reduce_patience` (swept by the `abl_arch_lr3e4*` arms)
+  `lr_reduce_patience`
 - **criterion / post-processing** — `loss_function`, `huber_delta`, `nonneg_penalty_weight`,
   `loss_daylight_only`, `per_city_scaler`, `clamp_night_to_zero`, `conformal_mode`, `seed`,
   `device` (which torch backend actually produced the row — `cpu`/`cuda`/`mps`,
@@ -434,12 +424,10 @@ using it:
   the global scope, `5B` per-city), of each model's loss at its **best** epoch —
   not its last. `train_model` restores the best epoch's weights before
   returning, so the last epoch's loss describes weights that were discarded;
-  with `early_stop_patience=15` the two can be far apart. Per-model values and
+  the two can be up to `early_stop_patience` epochs apart. Per-model values and
   both numbers per replica are in the run's `log.txt`
-  (`best_val_loss=… best_epoch=… last_val_loss=… epochs=…`). There is
-  deliberately no spread column: the planned sweep runs at `n_bootstrap=1`,
-  where a spread is zero or undefined, so it would be empty in exactly the rows
-  that would want it.
+  (`best_val_loss=… best_epoch=… last_val_loss=… epochs=…`). There is no
+  spread column: at `n_bootstrap=1` a spread is zero or undefined.
 - **When it is comparable.** It is computed in **scaled** target space, so it
   only compares between runs sharing (a) `loss_function` / `huber_delta`,
   (b) the same pooled provinces — those fix the scaler — and (c)
@@ -448,12 +436,9 @@ using it:
   the per-city scope with `per_city_scaler=True` each city's loss is in its own
   scaled space, so the mean summarises that arm and does not compare to a
   global-scope row.
-- **Empty, `n/a` and `unknown` mean different things.** Empty = the row was
-  written before this column existed (2026-08-29). Those runs are **not**
-  backfilled: their `log.txt` recorded the *last* epoch's loss, and filling the
-  cells from it would put two different quantities in one column. `n/a` = no
-  model was trained at all (the naive baselines). `unknown` = a model was
-  trained but its loss was not recorded, i.e. a bug.
+- **`n/a` and `unknown` mean different things.** `n/a` = no model was trained
+  at all (the naive baselines). `unknown` = a model was trained but its loss was
+  not recorded, i.e. a bug.
 
 ### Metrics explained
 
@@ -472,20 +457,21 @@ and every one of those, twice, for two **subsets**.
 Daylight is defined geometrically, from the sun's computed position, so the mask
 never reads the realised target. Roughly 49.6% of target elements are exactly `0`
 because the sun is below the horizon, and they are trivially easy to predict —
-so all-hours numbers flatter the model. The daylight share is 0.515 at *every*
-one of the 24 horizon steps, so the per-horizon daylight comparison is not
-distorted by a shifting day/night mix.
+so all-hours numbers flatter the model. Of the scored test elements, 50.8% are
+daylight, and with stride-1 windows every horizon step covers almost the same
+hours, so the per-horizon daylight comparison is not distorted by a shifting
+day/night mix.
 
 **All-hours R² is the most misleading number in the table.** R² is normalised
 by the subset's own variance, and the day/night swing dominates total variance:
 on this dataset a plain `(city, month, hour)` climatological lookup table
-scores R² = 0.923 over all 24 hours but only 0.856 on daylight hours. An
+scores R² = 0.920 over all 24 hours but only 0.846 on daylight hours. An
 all-hours R² above 0.9 is therefore not evidence of anything. Quote the
 daylight value. The same normalisation argument applies to `PINW`.
 
 `results_summary.csv` also carries an **`Aggregate_excl_Rize`** group row
-alongside `Aggregate`. Rize is a separate climatic regime (daily clear-sky
-index 0.697 against 0.806–0.840 elsewhere), and the plain aggregate buries it
+alongside `Aggregate`. Rize is a separate climatic regime (daily clearness
+index 0.463 against 0.574–0.609 elsewhere), and the plain aggregate buries it
 four-to-one — which is exactly where the city embedding has to do its work, so
 cross-city transfer is invisible in the headline number without this row. The
 row is omitted when the run already excluded Rize (it would be a byte-for-byte
@@ -546,8 +532,7 @@ below 0.95.
 > mixture whose night half is 1.0 by construction, and it comes out far above
 > the daylight CP for reasons that have nothing to do with calibration. If an
 > all-hours CP is reported at all, it must be reported together with this
-> structural inflation. `main_methodology.md` §11.3 and §11.5 give the full
-> argument, including a second known limit: the pooled distribution carries no
+> structural inflation. There is a second known limit: the pooled distribution carries no
 > aleatoric (observation-noise) term, so the intervals answer "where could the
 > model's mean be", not "where could the observation be", and can under-cover
 > for that reason alone.

@@ -36,8 +36,7 @@ comes from `solar.py` instead. `outputs/eda/EDA.md` describes the dataset.
 **Legacy material, do not cite or build on it:** `ABLATION.md`, `ABLATION_REVIEW*.md`,
 `main_methodology.md` and `TODOs.md` are in Turkish and describe experiments on a retired dataset
 with a different column set; `outputs/archive/` holds that dataset's ledger. The methodology and
-ablation documents will be rewritten from scratch, in English. `README.md` still cites them in
-places.
+ablation documents will be rewritten from scratch, in English.
 
 ## Commands
 
