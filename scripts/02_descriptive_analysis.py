@@ -72,8 +72,8 @@ def _figure(path_stem: str) -> Path:
     return path
 
 
-def _descriptive_outputs(df: pd.DataFrame, is_pos: pd.Series) -> None:
-    for scope, sub in (("positive", df[is_pos]), ("24h", df)):
+def _descriptive_outputs(df_pos: pd.DataFrame) -> None:
+    for scope, sub in (("positive", df_pos),):
         table = eda.descriptive_table(sub)
         _write_csv(table, f"descriptive_stats_by_city_{scope}.csv")
         pretty = table.rename(columns={"city": "Province", "statistic": "Statistic"})
@@ -84,7 +84,7 @@ def _descriptive_outputs(df: pd.DataFrame, is_pos: pd.Series) -> None:
         # Print each province name once, on the first row of its block.
         pretty["Province"] = pretty["Province"].where(
             pretty["Province"].ne(pretty["Province"].shift()), "")
-        label = "hours with target > 0" if scope == "positive" else "all 24 hours"
+        label = "hours with target > 0"
         _write_markdown_and_latex(
             pretty, f"descriptive_stats_by_city_{scope}",
             f"Descriptive statistics by province ({label}).",
@@ -98,7 +98,7 @@ def main() -> None:
     df = load_base_features(BASE_FEATURES_PATH)
     is_pos = eda.positive_mask(df)
     df_pos = df[is_pos]
-    daily = eda.daily_totals(df)
+    daily = eda.daily_totals(df_pos)
     daily_12m = eda.last_12_months(daily, date_col="date")
 
     print(f"{len(df):,} rows, {df['city'].nunique()} provinces, "
@@ -106,26 +106,30 @@ def main() -> None:
     print(f"target > 0 row share: {is_pos.mean():.3f}")
 
     # --- tables ---------------------------------------------------------------------
-    _descriptive_outputs(df, is_pos)
+    _descriptive_outputs(df_pos)
     _write_csv(eda.filter_audit_table(df), "target_positive_filter_audit.csv")
-    _write_csv(eda.temporal_coverage_table(df), "temporal_coverage_by_city.csv")
-    _write_csv(eda.target_by_hour_table(df), "target_by_hour_by_city.csv")
-    _write_csv(eda.time_explained_variance_table(df), "time_feature_explained_variance.csv")
-    _write_csv(eda.circular_wind_table(df), "wind_direction_circular_stats.csv")
+    _write_csv(eda.temporal_coverage_table(df_pos), "temporal_coverage_by_city.csv")
+    _write_csv(eda.target_by_hour_table(df_pos), "target_by_hour_by_city.csv")
+    _write_csv(eda.time_explained_variance_table(df_pos), "time_feature_explained_variance.csv")
+    _write_csv(eda.circular_wind_table(df_pos), "wind_direction_circular_stats.csv")
     _write_csv(eda.monthly_target_stats(daily_12m), "monthly_target_stats.csv")
-    _write_csv(eda.seasonal_target_stats(df, daily), "seasonal_target_stats.csv")
+    _write_csv(eda.seasonal_target_stats(df_pos, daily), "seasonal_target_stats.csv")
     _write_csv(eda.clearness_table(daily), "daily_clearness_by_city.csv")
 
     # Clearness index kt = GHI / (I0 cos theta_z); geometry only, never a model feature.
+    # Sequence-dependent analyses (ramps, lagged references, hourly ACF) need the full series
+    # to form their lags, so they take `df_kt` and restrict to target > 0 rows themselves; every
+    # other table and figure receives only the target > 0 rows (`df_pos`, `df_kt_pos`).
     df_kt = eda.attach_clearness(df)
-    kt_table = eda.clearness_index_table(df_kt)
+    df_kt_pos = df_kt[is_pos]
+    kt_table = eda.clearness_index_table(df_kt_pos)
     acf_table = eda.autocorrelation_table(df_kt)
     baseline = eda.persistence_baseline_table(df_kt)
-    seasonal = eda.seasonal_target_stats(df, daily)
+    seasonal = eda.seasonal_target_stats(df_pos, daily)
     _write_csv(kt_table, "clearness_index_by_city.csv")
     _write_csv(acf_table, "autocorrelation_clearness.csv")
     _write_csv(eda.ramp_table(df_kt), "ramp_stats_by_city.csv")
-    _write_csv(eda.positive_block_table(df), "positive_block_structure.csv")
+    _write_csv(eda.positive_block_table(df_pos), "positive_block_structure.csv")
     _write_csv(baseline, "persistence_baseline.csv")
 
     corr = eda.correlation_tables(df_pos)
@@ -161,16 +165,16 @@ def main() -> None:
     eda.plot_month_year_surface_3d(grids, None, _figure("month_year_surface_panel"), zlim=zlim)
     eda.plot_month_year_anomaly(grids, _figure("month_year_anomaly_panel"))
 
-    eda.plot_seasonal_diurnal_profile(df, _figure("seasonal_diurnal_profile"))
+    eda.plot_seasonal_diurnal_profile(df_pos, _figure("seasonal_diurnal_profile"))
     eda.plot_seasonal_dayofyear(daily, _figure("seasonal_dayofyear"))
 
-    eda.plot_target_histogram(df, _figure("target_histogram"))
+    eda.plot_target_histogram(df_pos, _figure("target_histogram"))
     eda.plot_monthly_boxplot_all_years(daily, _figure("monthly_boxplot_all_years"))
     eda.plot_autocorrelation(acf_table, "hourly", _figure("autocorrelation_hourly"))
     eda.plot_autocorrelation(acf_table, "daily", _figure("autocorrelation_daily"))
     eda.plot_ramp_distribution(df_kt, _figure("ramp_distribution"))
     eda.plot_persistence_baseline(baseline, _figure("persistence_baseline"))
-    eda.plot_rize_comparison(kt_table, seasonal, baseline, df_kt,
+    eda.plot_rize_comparison(kt_table, seasonal, baseline, df_kt_pos,
                              _figure("rize_comparison"))
 
     print(f"\n{len(WRITTEN)} files written → {EDA_DIR}")

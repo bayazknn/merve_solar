@@ -66,6 +66,18 @@ def test_positive_mask_is_the_target_condition():
     assert mask.sum() == (df[TARGET_COLUMN] > 0).sum()
 
 
+def test_positive_only_functions_refuse_the_full_record():
+    """Every descriptive table must be fed the same target > 0 rows; a full frame must fail."""
+    df = _synthetic(periods=24 * 5, cities=("Ankara",))
+    assert (df[TARGET_COLUMN] <= 0).any()
+    for fn in (eda.descriptive_table, eda.temporal_coverage_table, eda.target_by_hour_table,
+               eda.time_explained_variance_table, eda.circular_wind_table,
+               eda.correlation_tables):
+        with pytest.raises(ValueError, match="<= 0"):
+            fn(df)
+    eda.target_by_hour_table(df[eda.positive_mask(df)])  # the filtered frame is accepted
+
+
 def test_filter_audit_counts_the_two_masks_against_each_other():
     df = _synthetic(periods=24 * 5, cities=("Ankara",))
     night = df.index[df["HR"] == 0][0]
@@ -132,6 +144,7 @@ def test_descriptive_table_has_cities_and_statistics_on_rows_and_variables_on_co
     df = _synthetic(periods=24 * 40)
     df = df.assign(**{c: float(i + 1) for i, c in enumerate(RAW_METEO_COLUMNS)
                       if c != TARGET_COLUMN})
+    df = df[eda.positive_mask(df)]
     table = eda.descriptive_table(df)
     n_stats = len(eda.DESCRIPTIVE_STATISTICS)
     assert len(table) == 3 * n_stats  # 2 cities + pooled

@@ -65,26 +65,26 @@ and axes are labelled in local solar time.
 
 The retrieved dataset provides one radiation variable, which is used as the forecast target, and
 six meteorological variables used as predictors, together with the calendar fields required to
-construct the timestamp. Table 2 reports pooled descriptive statistics over the complete record.
+construct the timestamp. Table 2 reports pooled descriptive statistics over the hours with positive irradiance (Section 5).
 
 **Table 2.** Descriptive statistics of the retrieved variables, pooled over all five sites and
-all 306,840 hourly observations.
+the 158,111 hours with positive irradiance (target > 0).
 
 | Variable | Description | Unit | Mean | SD | Min | Max | Skewness |
 |---|---|---|---|---|---|---|---|
-| ALLSKY_SFC_SW_DWN | All-sky downward shortwave irradiance at the surface (target) | W/m² | 195.12 | 276.49 | 0.00 | 1215.88 | 1.27 |
-| T2M | Air temperature at 2 m | °C | 12.04 | 10.36 | −24.33 | 42.30 | 0.05 |
-| RH2M | Relative humidity at 2 m | % | 64.82 | 24.40 | 3.36 | 100.00 | −0.37 |
-| T2MDEW | Dew-point temperature at 2 m | °C | 4.01 | 7.38 | −30.33 | 23.81 | −0.21 |
-| PS | Surface pressure | kPa | 88.32 | 6.04 | 75.74 | 97.73 | −0.65 |
-| WS2M | Wind speed at 2 m | m/s | 2.14 | 1.41 | 0.00 | 13.65 | 1.39 |
+| ALLSKY_SFC_SW_DWN | All-sky downward shortwave irradiance at the surface (target) | W/m² | 378.67 | 280.80 | 0.80 | 1215.88 | 0.43 |
+| T2M | Air temperature at 2 m | °C | 15.56 | 10.29 | −23.59 | 42.30 | −0.08 |
+| RH2M | Relative humidity at 2 m | % | 53.98 | 23.66 | 3.36 | 100.00 | 0.05 |
+| T2MDEW | Dew-point temperature at 2 m | °C | 4.35 | 7.05 | −27.46 | 22.93 | −0.23 |
+| PS | Surface pressure | kPa | 88.28 | 6.03 | 75.76 | 97.73 | −0.65 |
+| WS2M | Wind speed at 2 m | m/s | 2.58 | 1.53 | 0.01 | 13.65 | 1.02 |
 | WD2M | Wind direction at 2 m | ° | — (circular; see Section 8.2) | | | | |
-| PRECTOTCORR | Bias-corrected total precipitation | mm/hour | 0.073 | 0.281 | 0.00 | 14.49 | 9.48 |
+| PRECTOTCORR | Bias-corrected total precipitation | mm/hour | 0.071 | 0.260 | 0.00 | 7.38 | 8.16 |
 
 Two variables require comment before any statistic drawn from them is interpreted.
 
 **Surface pressure does not behave as a meteorological variable in a pooled setting.** Its pooled
-standard deviation is 6.04 kPa while its between-site standard deviation is 6.73 kPa: essentially
+standard deviation is 6.03 kPa while its between-site standard deviation is 6.72 kPa: essentially
 all of its variance lies between sites rather than within them (site means range from 77.7 kPa at
 Van to 96.0 kPa at Antalya), reflecting elevation rather than weather. Its within-site variation,
 with a standard deviation of roughly 0.4–0.5 kPa, is the genuine synoptic signal. In a pooled
@@ -94,15 +94,15 @@ reason its apparent relationship with irradiance reverses once site and season a
 
 **Precipitation is effectively a binary variable at hourly resolution.** Exactly 66.7% of the
 hours with positive irradiance (Section 5) record zero precipitation, and the non-zero tail is
-strongly right-skewed (skewness +9.5 over all hours). Over those hours, a binary wet/dry indicator is more strongly correlated with
+strongly right-skewed (skewness +8.2). Over those hours, a binary wet/dry indicator is more strongly correlated with
 irradiance than either the recorded amount or its logarithmic transform at four of the five sites
 (Ankara, Antalya, Konya and Van), while at Rize the logarithmic transform is the strongest of the
 three.
 
 **Dew-point temperature is not an independent measurement.** It can be reconstructed from air
 temperature and relative humidity through the Magnus relation with a Pearson correlation of
-0.99919 and a root-mean-square deviation of 0.30 °C over all hours (0.99957 and 0.22 °C over
-hours with positive irradiance) — that is, at the level of the data's own rounding. It is retained for
+0.99957 and a root-mean-square deviation of 0.22 °C over the hours with positive irradiance —
+that is, at the level of the data's own rounding. It is retained for
 completeness but carries no information beyond the two variables from which it is derived. This
 redundancy is invisible to pairwise correlation analysis, because it is a two-variable
 relationship: the pairwise correlation between air temperature and dew point is only 0.61
@@ -200,11 +200,11 @@ evaluation of forecasts always refers to the geometric subset.
 Over hours with positive irradiance and pooled across sites, irradiance has a mean of 378.7 W/m²,
 a median of 334.6 W/m² and a standard deviation of 280.8 W/m², with skewness +0.43 and excess
 kurtosis −0.95.
-Over all 24 hours the mean falls to 195.1 W/m² and the median to 7.8 W/m², with skewness +1.27.
+The between-site standard deviation of the site means is 43.3 W/m².
 
-The contrast between these two summaries reflects the mixture structure of the unconditional
-distribution: a point mass of exact zeros at night superimposed on the distribution of daytime values. The
-daytime distribution itself is **platykurtic** — broad and flat rather than peaked — which is the
+Retaining the night hours would add a point mass of exact zeros — 48.47% of all observations
+(Section 5) — to the distribution of daytime values, which is why the night hours are excluded from
+every descriptive statistic. The daytime distribution itself is **platykurtic** — broad and flat rather than peaked — which is the
 direct consequence of solar geometry sweeping irradiance from zero to approximately 1000 W/m²
 within each day. Figure 1 shows the per-site distributions over hours with positive irradiance.
 
@@ -227,34 +227,35 @@ Site-level statistics are given in Table 3.
 
 ### 6.2 Diurnal and seasonal structure
 
-Hour of day alone accounts for 73.2% of the variance of the target over all 24 hours, and for
-50.4% within the subset of positive-irradiance hours; day of year accounts for 8.7% and 14.4%
-respectively. A harmonic
-(sine–cosine) representation of each recovers essentially the whole of this explained variance
-(for example 0.7291 against 0.7318 for hour of day over 24 hours), which supports the use of
-cyclical rather than categorical encodings of time.
+Within the hours of positive irradiance, hour of day alone accounts for 50.4% of the variance of
+the target and day of year for 14.4% (pooled over sites; by site, 43.4–57.1% and 14.0–17.3%). A
+harmonic (sine–cosine) representation of each recovers essentially the whole of this explained
+variance (for example 0.5035 against 0.5042 for hour of day), which supports the use of cyclical
+rather than categorical encodings of time.
 
-The practical implication is that roughly three quarters of an aggregate score computed over all
-24 hours reflects knowledge of the day–night cycle rather than any forecast skill, and that within
-the daytime hours the seasonal contribution rises from 8.7% to 14.4% of the variance.
+The practical implication is that even within the daytime hours half of the variance of the target
+is the position of the hour in the day, and the seasonal cycle accounts for a further 14.4%.
 
 Seasonal means and variability are summarised in Table 4, and the diurnal profile by season is
 shown in Figure 2.
 
 ![Figure 2](outputs/eda/figures/seasonal_diurnal_profile.png)
 
-**Figure 2.** Mean diurnal irradiance profile by season and site, plotted in local solar time. The
-shaded band shows the between-day interquartile range for winter and summer.
+**Figure 2.** Mean diurnal irradiance profile by season and site over the hours with positive
+irradiance, plotted in local solar time. Each hour's mean is conditional on that hour being positive,
+so every curve starts at the first and ends at the last hour of the day with positive irradiance
+rather than at an exact zero. The shaded band shows the between-day interquartile range for winter
+and summer.
 
 **Table 4.** Seasonal characteristics, averaged over sites. Meteorological seasons are used
 (winter = December–February).
 
-| Season | Mean irradiance, 24 h (W/m²) | Mean irradiance, target > 0 (W/m²) | Daily total (kWh/m²/day) | Between-day CV |
-|---|---|---|---|---|
-| Winter | 98.4 | 230.1 | 2.36 | 0.409 |
-| Spring | 218.7 | 393.8 | 5.25 | 0.340 |
-| Summer | 296.8 | 494.6 | 7.12 | 0.154 |
-| Autumn | 164.6 | 345.3 | 3.95 | 0.372 |
+| Season | Mean irradiance, target > 0 (W/m²) | Daily total (kWh/m²/day) | Between-day CV |
+|---|---|---|---|
+| Winter | 230.1 | 2.36 | 0.409 |
+| Spring | 393.8 | 5.25 | 0.340 |
+| Summer | 494.6 | 7.12 | 0.154 |
+| Autumn | 345.3 | 3.95 | 0.372 |
 
 A structurally important feature emerges from the last column: **irradiance and its predictability
 move in opposite directions across the year.** Summer days are not only brighter but markedly less
@@ -369,24 +370,25 @@ hours with positive irradiance, by season and site.
 
 Wind direction is a circular variable whose arithmetic mean is not meaningful, and it is
 summarised using speed-weighted circular statistics with calm hours (speed at or below 1 m/s)
-excluded. The resultant length R ranges from 0, for a completely dispersed distribution, to 1 for a
+excluded; they are computed over the hours with positive irradiance. The resultant length R ranges from 0, for a completely dispersed distribution, to 1 for a
 single prevailing direction.
 
 **Table 8.** Circular statistics of wind direction.
 
 | Site | Mean direction (°) | Resultant length R | Circular SD (°) |
 |---|---|---|---|
-| Van | 216 | 0.468 | 71 |
-| Rize | 271 | 0.246 | 96 |
-| Konya | 338 | 0.229 | 98 |
-| Antalya | 43 | 0.189 | 105 |
-| Ankara | 335 | 0.124 | 117 |
+| Van | 232 | 0.518 | 66 |
+| Rize | 315 | 0.432 | 74 |
+| Antalya | 82 | 0.232 | 98 |
+| Konya | 348 | 0.219 | 100 |
+| Ankara | 305 | 0.136 | 114 |
 
-Only Van exhibits a pronounced prevailing direction. At the remaining four sites the distribution
-is close to uniform, and wind direction carries correspondingly little information about
-irradiance. The share of calm hours differs substantially between sites (from 8,755 at Konya to
-16,407 at Rize), and direction in those hours is essentially noise; this exclusion should be borne
-in mind whenever direction statistics are compared across sites.
+Van and Rize exhibit a pronounced prevailing direction during the hours of positive irradiance. At
+the remaining three sites the distribution is close to uniform, and wind direction carries
+correspondingly little information about irradiance. The number of calm hours that were excluded
+differs substantially between sites (from 2,701 at Van to 7,712 at Rize), and direction in those
+hours is essentially noise; this exclusion should be borne in mind whenever direction statistics are
+compared across sites.
 
 ## 9. Relationships among variables
 
@@ -540,21 +542,19 @@ percent, and it is the subset on which a model has to improve on them.
 
 | Reference | Subset | RMSE (W/m²) | MAE (W/m²) | R² |
 |---|---|---|---|---|
-| Persistence | All 24 hours | 86.38 | 36.56 | 0.905 |
-| Climatology | All 24 hours | 77.17 | 37.94 | 0.924 |
 | Persistence | **Target > 0** | 119.76 | **70.27** | 0.822 |
 | Climatology | **Target > 0** | **106.99** | 72.84 | **0.858** |
 
 Three properties of this table govern how the model results in this paper should be read.
 
-**First, night observations inflate every metric.** The same climatological reference attains
-RMSE 77.2 W/m² and R² 0.924 when evaluated over all hours, but RMSE 107.0 W/m² and R² 0.858 over
-the hours with positive irradiance. Including night observations reduces RMSE by 28% and raises R²
-by 0.066 without any contribution from the forecast. Because R² is normalised by the variance of the subset over
-which it is computed, and that variance is dominated by the day–night oscillation, an all-hours
-R² above 0.9 on this dataset is not evidence of forecast skill. Daytime statistics (geometric
-daylight for forecasts, positive-irradiance hours for description) are reported throughout this work
-as the primary results.
+**First, the choice of subset decides the scale of every metric.** Night hours, which make up
+48.47% of the observations, are exactly zero and trivially predictable, so a score computed over all
+hours mixes the forecast's accuracy with knowledge of the day–night cycle. Because R² is normalised
+by the variance of the subset over which it is computed, and that variance is dominated by the
+day–night oscillation when night hours are included, a high R² over all hours
+is not evidence of forecast skill. For this reason the reference scores are reported on daytime
+hours only (Table 12), and daytime statistics (geometric daylight for forecasts, positive-irradiance
+hours for description) are reported throughout this work as the primary results.
 
 **Second, the reference to beat is climatology, not persistence.** At a horizon of 24 h,
 persistence is aligned with the diurnal cycle and therefore inherits the deterministic geometric

@@ -2,8 +2,8 @@
 
 **Data version:** `SolarData_Merve(031026_V3).xlsx` (3 October 2026, V3) — the file every
 number below comes from.
-**Document date:** 3 October 2026, revised 4 October 2026 (the descriptive subset changed from
-geometric daylight to `target > 0`: §0.2, §3.2). All earlier versions are superseded; the V2 export
+**Document date:** 3 October 2026, revised 4 October 2026 (every table and figure in this folder
+now uses the same rows, those with `target > 0`; the 24-hour statistics were removed: §0.2, §3.2). All earlier versions are superseded; the V2 export
 (`SolarData_Merve(140926_V2).xlsx`) is superseded as well and no number here may be mixed with it.
 
 This document explains **what the tables and figures under `outputs/eda/` say**. It is written
@@ -94,8 +94,9 @@ available: the climatology floor's daylight RMSE moved 108.78 → 109.86 W/m² a
 cannot be repeated on V3 and is quoted as a historical measurement.**
 
 **The descriptive subset is `target > 0`, not the geometric mask (changed 4 October 2026).** Every
-descriptive table and figure in this folder that restricts to daytime now keeps the rows whose
-recorded target is strictly positive (158,111 of 306,840 rows, 51.53%); the geometric mask has
+descriptive table and figure in this folder — without exception, so no all-hours or 24-hour
+statistic is reported any more — now uses only the rows whose recorded target is strictly positive
+(158,111 of 306,840 rows, 51.53%); the geometric mask has
 155,081 (50.54%). The two differ by 3,030 twilight rows that `target > 0` keeps and the geometric
 mask drops; no geometric-daylight row reads zero. Modelling, evaluation, the night clamp and the
 pipeline's naive baselines are **unchanged** and still use geometric daylight, because `target > 0`
@@ -189,11 +190,14 @@ share **28.6%** against 6.3–11.2%, its clear-day share 14.2% against 44.0–50
 between-day coefficient of variation 0.565 against 0.435–0.488. Rize is where the paper's
 cross-province transfer claim is actually tested.
 
-**(2) Night rows improve every metric for free.** 48.5% of rows read exactly zero (49.5% are
-geometrically night; the 3,030 twilight rows among them carry a few W/m², §3.2). The same
-climatology reference scores RMSE 77.2 W/m² / R² 0.924 over 24 hours and RMSE 107.0 / R² 0.858
-over the hours with `target > 0`. Night rows cut RMSE by 28% and inflate R² by 0.066. **The
-daytime figure is the one comparable to the literature.**
+**(2) Night rows would improve every metric for free, so no table here contains them.** 48.5% of
+rows read exactly zero (49.5% are geometrically night; the 3,030 twilight rows among them carry a
+few W/m², §3.2; counts in `target_positive_filter_audit.csv`). Because R² is normalised by the
+variance of the subset it is computed on, and with night rows that variance is dominated by the
+day/night swing, an all-hours R² is high for any reference forecast and says nothing about skill.
+Every reference score here (climatology RMSE 107.0 W/m² / R² 0.858 on the hours with `target > 0`)
+is therefore computed without night rows, **the daytime figure being the one comparable to the
+literature.**
 
 **(3) The floor to beat is climatology — and the winner depends on the metric.** On the hours with
 `target > 0`, in the model's own chronological test window (V3 split, §2), scored by the
@@ -276,7 +280,7 @@ altogether.
 ### 2.1 The clock is per-site local solar time, not a shared time zone
 
 The hour column is not a common time zone; each province is recorded in its own local solar
-time. Taking the centre of mass of mean irradiance as the peak hour gives
+time. Taking the centre of mass of the mean diurnal profile as the peak hour (`target_by_hour_by_city.csv`, each hour's conditional mean weighted by its count of `target > 0` rows) gives
 
 > Konya 11.25 ≈ Ankara 11.25 < Antalya 11.41 < Van 11.56 < Rize 11.89
 
@@ -302,11 +306,9 @@ Two consequences:
 Pooled, hours with `target > 0`: mean **378.7 W/m²**, median 334.6, sd 280.8, maximum 1215.9
 (Van). Skew +0.431, excess kurtosis −0.951. Between-province sd 43.3.
 
-Over all 24 hours: mean 195.1, median 7.8, skew +1.272.
-
-The gap between those two lines is the substance of §1(2). The 24-hour distribution is a mixture
-of two masses: a spike of exact zeros at night, and the daytime distribution. The daytime
-distribution itself has **negative excess kurtosis** — not peaked but broad and flat, the direct
+The 48.47% of rows removed by the filter are exact zeros (§3.2); including them would add a spike
+of exact zeros at night to the daytime distribution, which is the substance of §1(2) and the reason
+no all-hours moment is reported. The daytime distribution itself has **negative excess kurtosis** — not peaked but broad and flat, the direct
 consequence of geometry sweeping from 0 to ~1000 across the day.
 
 **Caveat — scaling.** The target is not normally distributed and no transform assuming otherwise
@@ -373,14 +375,16 @@ export).
 
 ### 3.3 Diurnal and seasonal structure
 
-Hour of day alone explains **73.2%** of the variance over 24 hours (pooled η²); within the
-`target > 0` subset that falls to 50.4%. Day of year explains 8.7% and 14.4% respectively.
+Over the hours with `target > 0`, hour of day alone explains **50.4%** of the variance of the
+target (pooled η²; per province 43.4% in Rize to 57.1% in Antalya), and day of year explains
+14.4% (14.0% to 17.3%).
 
-- Three quarters of a 24-hour score comes from knowing the day/night cycle — not from the model.
-- Within the daytime hours, hour is still dominant but the seasonal share rises by about two
-  thirds (8.7% to 14.4%).
+- Even without the night rows, half of the variance is the position of the hour in the day — not
+  something a model has to learn from weather.
+- The seasonal share is 14.4%; adding night rows would have pushed the hour share up to roughly
+  three quarters of a score, which is why they are excluded.
 
-A harmonic (sin/cos) fit captures essentially all of the η² (24 h: 0.7291 against 0.7318).
+A harmonic (sin/cos) fit captures essentially all of the η² (pooled 0.5035 against 0.5042).
 **Recommendation:** the current sin/cos encoding loses nothing relative to categorical hour
 dummies and should be kept.
 
@@ -469,27 +473,31 @@ Ankara 340, Konya 326, Van 343, Antalya 664 and Rize 1399 mm/year. The ordering 
 are consistent with Turkish climate normals — NASA POWER, as a satellite product, is known to
 under-estimate Rize and Antalya. This independently confirms the mm/hour reading.
 
-### 4.2 Wind direction: informative only in Van
+### 4.2 Wind direction: informative in Van and Rize
 
-Speed-weighted circular statistics, with calm hours (≤ 1 m/s) excluded:
+Speed-weighted circular statistics over the hours with `target > 0`, with calm hours (≤ 1 m/s)
+excluded:
 
 | Province | `WD2M` mean direction | Resultant length *R* | Circular SD |
 |---|---|---|---|
-| Van | 216° | **0.468** | 71° |
-| Rize | 271° | 0.246 | 96° |
-| Konya | 338° | 0.229 | 98° |
-| Antalya | 43° | 0.189 | 105° |
-| Ankara | 335° | 0.124 | 117° |
+| Van | 232° | **0.518** | 66° |
+| Rize | 315° | **0.432** | 74° |
+| Antalya | 82° | 0.232 | 98° |
+| Konya | 348° | 0.219 | 100° |
+| Ankara | 305° | 0.136 | 114° |
 
-The resultant length runs from 0 (completely dispersed) to 1 (a single direction). **Only Van
-has a dominant direction**; in the other four, wind direction is practically uniform and
-therefore almost empty as a predictor.
+The resultant length runs from 0 (completely dispersed) to 1 (a single direction). **Van and
+Rize have a dominant direction** during the hours with `target > 0`; in the other three, wind
+direction is nearly uniform and therefore almost empty as a predictor. These are daytime
+statistics, and wind direction depends on the time of day, so they are not comparable with a
+direction climatology taken over night hours as well.
 
-**Caveat.** The share of calm hours differs sharply between provinces (`WS2M ≤ 1 m/s`: Rize
-16,407 hours, Konya 8,755), and in those hours the direction is noise; the filter must be stated
-if direction features are discussed. Because the threshold now applies to the 2 m wind rather
-than the 10 m wind, the excluded count is markedly higher than in V1 — wind is slower at 2 m.
-This is a definitional change, not a physical one.
+**Caveat.** The number of calm hours removed differs sharply between provinces (`WS2M ≤ 1 m/s`
+among the `target > 0` hours, `excluded_calm_hours`: Rize 7,712, Antalya 4,300, Ankara 3,545,
+Konya 3,059, Van 2,701), and in those hours the direction is noise; the filter must be stated if
+direction features are discussed. The threshold applies to the 2 m wind, which is slower than the
+10 m wind of V1, so the excluded count is higher than it was then. This is a definitional change,
+not a physical one.
 
 ---
 
@@ -625,7 +633,7 @@ Pairs above |r| = 0.5, pooled over the hours with `target > 0` — all physical,
 
 **Caveat — pairwise correlation cannot see the redundancy that matters.** `T2MDEW` is not a
 measurement but a formula: reproduced from `T2M` and `RH2M` by the Magnus relation it reaches
-r = **0.99920**, RMSE = **0.30 °C** over 24 hours (hours with `target > 0`: r = 0.99957, RMSE 0.22 °C), i.e.
+r = **0.99957**, RMSE = **0.22 °C** over the hours with `target > 0`, i.e.
 measurement-noise level. Pairwise correlation misses it because it is a two-variable function —
 the `T2M`–`T2MDEW` correlation is only 0.611. A collinearity table is a **lower bound** on
 redundancy, never an upper one.
@@ -671,7 +679,7 @@ provinces are variations on one regime, and Rize is a second one on its own.
 
 Van has the highest daily insolation (5.03 kWh/m²/day), the highest clearness index (0.610), the
 lowest overcast-day share (6.3%) and the lowest winter CV (0.326) — even its winter is
-predictable. It is also the only province with a dominant wind direction (§4.2).
+predictable. Its wind direction is the most concentrated of the five (*R* = 0.518, §4.2).
 
 **Caveat — Van's 1215.9 W/m² maximum is not a physical finding.** That row (2020-02-17 15:00)
 corresponds to kt = 2.23: the measured irradiance is more than twice what reaches the top of the
@@ -721,8 +729,6 @@ against it must be re-run on V3 first.
 
 | Reference | Scope | RMSE | MAE | R² |
 |---|---|---|---|---|
-| Persistence | 24 h | 86.38 | 36.56 | 0.9046 |
-| Climatology | 24 h | 77.17 | 37.94 | 0.9239 |
 | Persistence | **`target > 0`** | 119.76 | **70.27** | 0.8217 |
 | Climatology | **`target > 0`** | **106.99** | 72.84 | **0.8577** |
 
@@ -739,9 +745,10 @@ a descriptive guide to their size, not the thresholds.
 collapses into plain persistence on the top-of-atmosphere denominator (§0.3). In the earlier data
 version it was the MAE champion; that role now belongs to plain persistence.
 
-**Caveat — 24-hour R² values must not enter the paper.** Climatology scores R² = 0.924 over 24
-hours (0.858 over the hours with `target > 0`). Because R² is normalised by the subset's own variance, the day/night swing dominates it.
-**A 24-hour R² above 0.9 is evidence of nothing.** The same normalisation argument applies to
+**Caveat — all-hours R² values must not enter the paper.** The EDA no longer reports any
+(`persistence_baseline.csv` holds `target > 0` rows only). Because R² is normalised by the
+subset's own variance, the day/night swing dominates it whenever night rows are included.
+**An all-hours R² above 0.9 is evidence of nothing.** The same normalisation argument applies to
 PINW.
 
 **Caveat — beating 24-hour persistence is not a result.** For a 24-hour-ahead forecast,
@@ -851,11 +858,11 @@ testable and costs seconds.
 
 | File | Sections |
 |---|---|
-| `temporal_coverage_by_city.csv` | §2, §3.3 |
-| `descriptive_stats_by_city_positive.csv` / `_24h.csv` (+ `.md`, `.tex`) | §3.1, §4 |
+| `temporal_coverage_by_city.csv` (positive hours only: `n_hours`, `mean_positive_hours_per_day`, `target_mean`, `daily_total_mean_kwh`) | §2, §3.3 |
+| `descriptive_stats_by_city_positive.csv` (+ `.md`, `.tex`) | §3.1, §4 |
 | `target_by_hour_by_city.csv` | §2.1, §3.3 |
 | `time_feature_explained_variance.csv` | §3.3 |
-| `seasonal_target_stats.csv` | §3.4, §7 |
+| `seasonal_target_stats.csv` (`n_hours` counts positive hours; one `hourly_mean`) | §3.4, §7 |
 | `monthly_target_stats.csv` | §3.4 |
 | `daily_clearness_by_city.csv` | §1(1), §7.1 (empirical clearness; independent of kt) |
 | `clearness_index_by_city.csv` | §7.1, §7.2, §7.3 |
@@ -867,14 +874,14 @@ testable and costs seconds.
 | `target_correlation_by_city.csv` | §1(4), §6.1 |
 | `correlation_pearson_*.csv`, `correlation_spearman_*.csv` | §6.2, §6.3 |
 | `collinear_pairs.csv` | §6.3 (empty since V2 — that is the finding) |
-| `wind_direction_circular_stats.csv` | §4.2 |
+| `wind_direction_circular_stats.csv` (`target > 0` rows) | §4.2 |
 
 ### Figures (`outputs/eda/figures/`, PNG at 300 dpi + vector PDF)
 
 | File | What it shows |
 |---|---|
 | `target_histogram` | The two-mass structure of §3.1 |
-| `seasonal_diurnal_profile` | §2.1, §3.3 — diurnal profile by season, local solar time |
+| `seasonal_diurnal_profile` | §2.1, §3.3 — diurnal profile by season over `target > 0` rows, local solar time; each hour's mean is conditional on the hour being positive, so each curve starts at the first and ends at the last positive hour of the season (winter roughly 06:00–07:00 to 17:00, summer from about 04:00 to 19:00) rather than at an exact zero |
 | `seasonal_dayofyear` | §3.4 |
 | `monthly_boxplot_last12m_*`, `monthly_boxplot_all_years` | §3.4 |
 | `month_year_surface_*`, `month_year_anomaly_panel` | §3.5 |
@@ -902,14 +909,14 @@ broken.
 | Test-window row counts per subset | 46,030 hours pooled, 23,948 with `target > 0`, 23,499 geometric daylight | §8 |
 | Smart persistence degenerating | on the TOA denominator, V3 test window, daylight RMSE 121.06 / MAE 71.69; plain persistence on the same rows 120.97 / 71.67 | §0.3, §8 |
 | `WD2M` – `WD10M` redundancy (measured on V1; the 10 m column is gone since V2) | median angular difference 0.30°, mean 1.56°, p95 6.30°; sin/cos r = 0.996 / 0.997; `WS2M`–`WS10M` r = 0.987 | §0.4, §6.3 |
-| Dew point reproduced by Magnus | r = 0.99920, RMSE 0.30 °C (24 h); r = 0.99957, RMSE 0.22 °C (`target > 0` rows) | §1(6), §6.3 |
+| Dew point reproduced by Magnus | r = 0.99957, RMSE 0.22 °C (`target > 0` rows) | §1(6), §6.3 |
 | Precipitation encodings vs the target | table in §4.1 (computed on `target > 0` rows); zero share 66.7% of those rows | §4.1 |
 | Annual precipitation totals (unit check) | Ankara 340, Konya 326, Van 343, Antalya 664, Rize 1399 mm/year | §4.1 |
-| Peak hours (local-solar-time check; centre of mass of the mean diurnal profile on the hour label) | Konya 11.2493, Ankara 11.2516, Antalya 11.4070, Van 11.5594, Rize 11.8922; deviation from the `UTC + round(lon/15)` expectation −0.085 … +0.094 h | §2.1 |
+| Peak hours (local-solar-time check; centre of mass of the mean diurnal profile on the hour label, computed from `target_by_hour_by_city.csv` as Σ HR·n·mean / Σ n·mean, which equals the all-rows weighting) | Konya 11.2493, Ankara 11.2516, Antalya 11.4070, Van 11.5594, Rize 11.8922; deviation from the `UTC + round(lon/15)` expectation −0.085 … +0.094 h | §2.1 |
 | Split boundaries and the validation window's missing months | test 9,206 hours / 383.6 days; validation has no July or August and 1–11 June 2025 only (Summer cell 250 hours, 3.7%) | §1(7), §2, §9(4) |
 | Seasonal hours in the test window | per province Summer 2,654, Spring 2,208, Autumn 2,184, Winter 2,160 | §2 |
 | Calibration-gap check | daily kt sd, 1–11 June 2025 vs June–July 2019–2025: Ankara 0.096 / 0.100, Antalya 0.054 / 0.065, Konya 0.094 / 0.092, Rize 0.135 / 0.142, Van 0.069 / 0.074 | §9(4) |
 | kt > 1 rows | 2 of 152,902 lit hours: Van 2020-02-17 15:00 (kt 2.23) and Van 2022-01-24 11:00 (kt 1.03) | §7.2, §7.3 |
 | Between-year variability | table in §3.5 | §3.5 |
-| Pooled `target > 0` and 24 h target moments | `target > 0` skew +0.431, excess kurtosis −0.951, between-province sd 43.3 (sd of the five province means); 24 h skew +1.272 | §3.1 |
+| Pooled `target > 0` target moments | skew +0.431, excess kurtosis −0.951, between-province sd 43.3 (sd of the five province means) | §3.1 |
 | Between-province sd of each meteorological column; pooled skew of `PRECTOTCORR` | table in §4 (`target > 0` rows; sd of the five province means, computed from `base_features.parquet`; the descriptive-statistics table holds the other columns) | §4 |

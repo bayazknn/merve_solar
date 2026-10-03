@@ -90,7 +90,7 @@ clear-sky column).
 **2. Monthly boxplots use daily totals, not hourly values.** Most of the width of a box drawn
 from daylight *hourly* values is the within-day solar geometry, and the box narrows in winter —
 so a reader concludes "winter is more stable". The truth is the opposite (see `EDA.md` §3.4).
-Daily totals are also independent of the subset filter, since night contributes exactly 0 and the twilight rows add under 0.03% of the energy.
+Daily totals built from the `target > 0` frame equal the all-rows sums, since the removed rows are exactly zero.
 
 **3. The hour axis is per-province local solar time (LST), not a shared time zone.** Verification
 and consequences are in `EDA.md` §2.1. Practical rules:
@@ -144,15 +144,14 @@ is deliberately limited to 2025-07 → 2026-06 (the final month stops on 29 June
 | File | Contents | Scope |
 |---|---|---|
 | `descriptive_stats_by_city_positive.csv/.md/.tex` | **Primary table.** Hours with `target > 0`, per province + pooled. One row per (province, statistic: N, Mean, SD, Min, Q1, Median, Q3, Max), one column per variable. | full record (`target > 0`, n = 158,111) |
-| `descriptive_stats_by_city_24h.csv/.md/.tex` | The same table over 24 hours — this is the distribution the model is trained on. | full record (n = 306,840) |
-| `temporal_coverage_by_city.csv` | Coverage, hour/day counts, `positive_hour_share`, `mean_positive_hours_per_day` by season, `target_mean_24h` / `target_mean_positive`, daily totals. | full record |
-| `target_by_hour_by_city.csv` | The target's (province, season, LST hour) distribution — the data behind the diurnal-profile figure. | full record |
-| `time_feature_explained_variance.csv` | η² and harmonic R² for hour and day of year. Reported instead of a Pearson *r* against the sin/cos columns, because a correlation against a deterministic function of the hour is not interpretable. | full record (`scope` = `24h` and `positive`) |
-| `wind_direction_circular_stats.csv` | Circular statistics for wind direction (see below). | full record (24 h, speed > 1 m/s) |
+| `temporal_coverage_by_city.csv` | Coverage by province × season on `target > 0` rows: `n_hours` (positive hours), `n_days`, `mean_positive_hours_per_day`, `target_mean`, `daily_total_mean_kwh`; `start` / `end` are the first and last positive hour. | full record (`target > 0`) |
+| `target_by_hour_by_city.csv` | The target's (province, season, LST hour) distribution over `target > 0` rows — the data behind the diurnal-profile figure. `n` is the number of positive rows in that cell, and every statistic is conditional on the hour being positive. | full record (`target > 0`) |
+| `time_feature_explained_variance.csv` | η² and harmonic R² for hour and day of year. Reported instead of a Pearson *r* against the sin/cos columns, because a correlation against a deterministic function of the hour is not interpretable. | full record (`target > 0`; `scope` = `positive`) |
+| `wind_direction_circular_stats.csv` | Circular statistics for wind direction (see below). | full record (`target > 0` rows, speed > 1 m/s) |
 | `correlation_pearson_<province>.csv`, `correlation_spearman_<province>.csv`, `..._pooled.csv` | Correlation matrices of the 7 physical variables. | full record (`target > 0`) |
 | `target_correlation_by_city.csv` | Raw correlation with the target plus `partial_r_within_hour`. | full record (`target > 0`) |
 | `collinear_pairs.csv` | Pairs with \|r\| > 0.9. **Empty since V2** (the only such pair was `WS2M`–`WS10M`); an empty table is a finding here, not an error, and the header row is preserved. | full record (`target > 0`) |
-| `seasonal_target_stats.csv` | Hourly (`hourly_mean_24h`, `hourly_mean_positive`) and daily-total summaries by season. | full record (2,557 days/province; hourly means 24 h and `target > 0`) |
+| `seasonal_target_stats.csv` | Hourly (`hourly_mean`, `hourly_max`) and daily-total summaries by season; `n_hours` counts positive hours. | full record (2,557 days/province; `target > 0` hours) |
 | `daily_clearness_by_city.csv` | **Empirical** clearness ratio (daily total ÷ the observed 95th percentile for that day of year) and clear/overcast day shares — compares provinces on cloudiness rather than latitude. | full record (2,555 days/province; 29 February dropped for alignment) |
 | `monthly_target_stats.csv` | Daily-total summaries for the last 12 months — the boxplot's data. | **2025-07 → 2026-06 ONLY** |
 | `clearness_index_by_city.csv` | **Standard** clearness index kt = GHI / (I₀ cos θz), hourly and daily, province × season. Hourly values are restricted to `toa_horizontal > 20 W/m²` (the division blows up at twilight) and to `target > 0` (no row is affected by the second condition on this record, so the table is numerically identical to the geometric-mask version). Sky-condition cut-offs are the literature's bands for this index: clear kt > 0.65, overcast kt < 0.35. | full record |
@@ -160,7 +159,7 @@ is deliberately limited to 2025-07 → 2026-06 (the final month stops on 29 June
 | `ramp_stats_by_city.csv` | Distribution of hourly \|Δirradiance\| and \|Δkt\|, province × season. | full record (`target > 0`) |
 | `positive_block_structure.csv` | Lengths of the uninterrupted blocks that would remain if the rows with `target = 0` were deleted (column `n_positive_hours`). | full record (`target > 0`) |
 | `target_positive_filter_audit.csv` | What the `target > 0` filter does, per province + pooled (`All`): rows, `-999` sentinels (0), negatives (0), zeros removed, kept rows and shares, geometric-daylight rows, geometric-daylight rows reading zero (0), and the 3,030 twilight rows that `target > 0` keeps and the geometric mask drops (count, share of kept, mean, max). | full record |
-| `persistence_baseline.csv` | Reference forecasts: RMSE/MAE/R²/bias for persistence and climatology, `scope` = `24h` or `positive` (`target > 0`; the old value `daylight` is gone). Smart persistence was removed (`EDA.md` §0.3). This table is a descriptive twin **on `target > 0` rows, not the pipeline floor** (the pipeline scores geometric daylight, 449 fewer test-window hours); the numbers destined for the paper come from `scripts/03_run_naive_baselines.py`, which runs through the pipeline and therefore differs in the last decimals (it counts scored elements where this counts hours). **The two naive rows now in `outputs/experiments_ledger.csv` were produced on V2 data and are stale until that script is re-run on V3** (`EDA.md` §8). | **the model's test window** (after val_end, 9,206 hours/province) |
+| `persistence_baseline.csv` | Reference forecasts: RMSE/MAE/R²/bias for persistence and climatology, `scope` = `positive` only (`target > 0`; the `24h` and `daylight` scopes are gone). Persistence and climatology are still formed on the full series (the lag-24 value and the training-row cell means use every row); only the scored rows are restricted to `target > 0`. Smart persistence was removed (`EDA.md` §0.3). This table is a descriptive twin **on `target > 0` rows, not the pipeline floor** (the pipeline scores geometric daylight, 449 fewer test-window hours); the numbers destined for the paper come from `scripts/03_run_naive_baselines.py`, which runs through the pipeline and therefore differs in the last decimals (it counts scored elements where this counts hours). **The two naive rows now in `outputs/experiments_ledger.csv` were produced on V2 data and are stale until that script is re-run on V3** (`EDA.md` §8). | **the model's test window** (after val_end, 9,206 hours/province) |
 
 Three reading notes:
 
@@ -171,7 +170,8 @@ variance, so it is larger than any single province's.
 meaningless. A separate table gives the speed-weighted circular mean, the resultant length *R*
 (0 = no preferred direction, 1 = a single direction) and the circular SD; calm hours with the
 corresponding speed column ≤ 1 m/s are excluded and the excluded count is recorded in the table.
-The direction climatology is not restricted to the `target > 0` subset; it is computed over all 24 hours.
+Like every other table it is computed on `target > 0` rows only, so it describes daytime wind; the
+statistics are not comparable with a direction climatology that also contains the night hours.
 
 ## Figures (`figures/`)
 
@@ -184,13 +184,13 @@ identity survives greyscale printing and colour-vision deficiency.
 | `correlation_heatmap_<province>`, `_pooled` | Correlation matrix of the 7 variables | `target > 0` |
 | `target_correlation_panel` | Variable × province, correlation with the target | `target > 0` |
 | `scatter_vs_target_<province>` | Each variable against the target plus a binned-median trend | `target > 0` |
-| `monthly_boxplot_last12m_<province>`, `_panel` | Daily totals over the last 12 months | 24 h (totals) |
-| `month_year_surface_<province>`, `_panel` | 3-D month × year × irradiance surface, 2020–2025, coloured by height on the box plots' plasma scale; `_panel` is two columns × three rows with the colour bar in the sixth cell | 24 h (totals) |
-| `month_year_anomaly_panel` | The same data as a 2-D anomaly view | 24 h (totals) |
-| `seasonal_diurnal_profile` | Diurnal profile by season, LST hour | **24 h** |
-| `seasonal_dayofyear` | Day of year × daily total, banded by season | 24 h (totals) |
+| `monthly_boxplot_last12m_<province>`, `_panel` | Daily totals over the last 12 months | `target > 0` (totals) |
+| `month_year_surface_<province>`, `_panel` | 3-D month × year × irradiance surface, 2020–2025, coloured by height on the box plots' plasma scale; `_panel` is two columns × three rows with the colour bar in the sixth cell | `target > 0` (totals) |
+| `month_year_anomaly_panel` | The same data as a 2-D anomaly view | `target > 0` (totals) |
+| `seasonal_diurnal_profile` | Diurnal profile by season, LST hour; each hour's mean is conditional on the hour being positive | `target > 0` |
+| `seasonal_dayofyear` | Day of year × daily total, banded by season | `target > 0` (totals) |
 | `target_histogram` | Distribution of irradiance over hours with `target > 0`, per province | `target > 0` |
-| `monthly_boxplot_all_years` | Boxplot by month, all years pooled | 24 h (totals) |
+| `monthly_boxplot_all_years` | Boxplot by month, all years pooled | `target > 0` (totals) |
 | `autocorrelation_hourly`, `autocorrelation_daily` | ACF/PACF of kt, per province | `target > 0` (hours where kt is defined) |
 | `ramp_distribution` | Cumulative distribution of \|hour-to-hour change\|, by season | `target > 0` |
 | `persistence_baseline` | RMSE and R² of the reference forecasts (descriptive twin, not the pipeline floor) | `target > 0` |
@@ -201,11 +201,14 @@ variables has changed twice (8 → 7 → 6). The grid is now computed from `RAW_
 column count is chosen from 4 or 3 to minimise empty cells, and any surplus axes are switched
 off.
 
-**The diurnal-profile figure deliberately does not apply the `target > 0` filter:** the night zeros
-are physical information, and filtering them makes the curve start and end away from zero and
-produces an artificial jump in sparsely-sampled hours such as winter mornings. The IQR band is
-drawn for Winter and Summer only (four overlapping bands are unreadable) and it is the
-**between-day IQR, not a confidence interval**.
+**The diurnal-profile figure uses `target > 0` rows like every other figure.** Each hour's mean (and
+IQR) is therefore conditional on that hour being positive: the curves start at the first and end at
+the last hour of the season with positive irradiance (from about 04:00 to 19:00 in summer, from
+about 06:00–07:00 to 17:00 in winter, local solar time) instead of at an exact zero, and a
+sparsely-sampled edge hour (a winter morning) averages only the few days on which it is positive,
+which is why its value is small but not zero and its band is noisy. The IQR band is drawn for Winter
+and Summer only (four overlapping bands are unreadable) and it is the **between-day IQR, not a
+confidence interval**.
 
 **The 3-D surface is misleading on its own** and must be read together with
 `month_year_anomaly_panel`: most of the surface's relief is the seasonal curve repeated six
@@ -226,7 +229,34 @@ May · **Summer** = June, July, August · **Autumn** = September, October, Novem
 
 ## Correction log
 
-### 2026-10-04 — EDA subset changed from geometric daylight to `target > 0`
+### 2026-10-04 (b) — every table and figure uses exactly the same rows: `target > 0` only
+
+The first change (a) moved the daytime tables to `target > 0` but left some outputs on all 24
+hours. Those are gone: **no table or figure in this folder uses a row with `target <= 0`**, and the
+code enforces it (`eda.require_positive` raises if a table or figure function is handed such a row).
+`scripts/02_descriptive_analysis.py` was re-run and every output regenerated.
+
+| | Before | After |
+|---|---|---|
+| `descriptive_stats_by_city_24h.*` | all 306,840 rows | **deleted** |
+| `time_feature_explained_variance.csv`, `persistence_baseline.csv` | `scope` = `24h` and `positive` | `positive` only (persistence and climatology are still formed on the full series; only the scored rows are positive) |
+| `temporal_coverage_by_city.csv` | `positive_hour_share`, `target_mean_24h`, `target_mean_positive`, 24 h `n_hours` | columns `start`, `end`, `n_hours` (positive hours), `n_days`, `mean_positive_hours_per_day`, `target_mean`, `daily_total_mean_kwh` |
+| `seasonal_target_stats.csv` | `hourly_mean_24h`, `hourly_mean_positive`, 24 h `n_hours` | `n_hours` (positive), one `hourly_mean`, `hourly_max` on positive rows |
+| `target_by_hour_by_city.csv`, `wind_direction_circular_stats.csv` | all 24 hours | `target > 0` rows (`n`, `excluded_calm_hours` changed) |
+| `seasonal_diurnal_profile` | zeros included, curves reach exactly 0 | conditional on a positive hour; curves start / stop at the first / last positive hour |
+| Daily totals, boxplots, surfaces | built from the full frame | built from the `target > 0` frame (numerically identical sums) |
+
+What moved: wind direction (now daytime only) — Van R 0.518 (mean 232°) and Rize R 0.432 (mean
+315°), so **Rize joins Van as a province with a dominant direction** (the earlier "only Van" no
+longer holds); Antalya 0.232, Konya 0.219, Ankara 0.136; excluded calm hours
+now 2,701 (Van) to 7,712 (Rize). The pooled descriptive table, η² and reference forecasts were
+already on `target > 0` after (a). Documents no longer quote any 24-hour or all-hours EDA statistic
+(mean, median, skew, η², reference-forecast RMSE / R²); the amount removed by the filter is the audit
+table's (`target_positive_filter_audit.csv`). Unchanged: the precipitation unit check (annual sums
+over all hours, a data-integrity check rather than a descriptive statistic) and the data-quality
+facts of `EDA.md` §0.
+
+### 2026-10-04 (a) — EDA subset changed from geometric daylight to `target > 0`
 
 Every descriptive output that restricted to daytime used the geometric mask (`solar_elevation > 0`,
 155,081 rows). It now uses `target > 0` (158,111 rows, 51.53%; `eda.positive_mask`, scope name
@@ -254,11 +284,10 @@ raw / partial correlation with the target: `T2M` +0.515 / +0.307 → +0.517 / +0
 −0.269, `WS2M` +0.142 / −0.148 → +0.154 / −0.148, `PRECTOTCORR` −0.168 / −0.328 → −0.162 / −0.326; the
 descriptive reference forecasts on the test window, climatology RMSE / MAE / R² 108.00 / 74.17 /
 0.8528 → 106.99 / 72.84 / 0.8577 and persistence 120.90 / 71.59 / 0.8155 → 119.76 / 70.27 / 0.8217
-(24 h rows unchanged); the precipitation zero share 66.6% → 66.7%; the median ramp |Δ irradiance|
+(the 24 h rows were removed in change (b)); the precipitation zero share 66.6% → 66.7%; the median ramp |Δ irradiance|
 by province (Ankara 106.4 → 104.9 W/m², Rize 83.1 → 82.2); the block lengths (Rize median block
 12 → 13 h, shortest block 9 → 10 h at Ankara and Konya). **Numerically unchanged:** the
-clearness-index and autocorrelation tables, `descriptive_stats_by_city_24h.*`, the 24 h seasonal
-and diurnal summaries, `wind_direction_circular_stats.csv`, the daily totals and CVs.
+clearness-index and autocorrelation tables and the daily totals and CVs.
 
 The descriptive reference-forecast twin is no longer on the same subset as the pipeline floor; the
 pipeline floor on V3 still has to be produced by re-running `scripts/03_run_naive_baselines.py`

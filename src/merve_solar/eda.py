@@ -140,6 +140,21 @@ def filter_audit_table(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def require_positive(df: pd.DataFrame, what: str) -> pd.DataFrame:
+    """Refuse a frame holding any row with `target <= 0` (zeros, negatives, the -999 sentinel).
+
+    Every descriptive EDA table and figure must be computed on the SAME rows, the `target > 0`
+    subset. The functions that take the already-filtered frame call this so that a caller
+    passing the full record fails loudly instead of silently mixing populations. The
+    sequence-dependent analyses (ramps, lagged references, hourly ACF) need the full series to
+    form their lags and therefore take the full frame and apply positive_mask themselves.
+    """
+    bad = int((~(df[TARGET_COLUMN] > 0)).sum())
+    if bad:
+        raise ValueError(f"{what}: {bad} rows have {TARGET_COLUMN} <= 0; pass df[positive_mask(df)]")
+    return df
+
+
 def add_season(df: pd.DataFrame) -> pd.DataFrame:
     """Add a meteorological-season column (Winter = Dec/Jan/Feb) as an ordered Categorical."""
     df = df.copy()
@@ -243,6 +258,7 @@ def descriptive_table(df: pd.DataFrame) -> pd.DataFrame:
     orientation of a manuscript table, where a reader compares provinces within a variable.
     Wind direction is excluded (circular; see circular_wind_table).
     """
+    require_positive(df, "descriptive_table")
     rows = []
     groups = [(city, g) for city, g in df.groupby("city", observed=True)] + [(POOLED_LABEL, df)]
     for city, g in groups:
@@ -257,13 +273,14 @@ def descriptive_table(df: pd.DataFrame) -> pd.DataFrame:
 def temporal_coverage_table(df: pd.DataFrame) -> pd.DataFrame:
     """Describe the TIME features on their own scale rather than as sin/cos encodings.
 
+    Computed on the `target > 0` rows only, so `n_hours` counts positive hours, not the full
+    record (the record-level coverage and the rows removed are in filter_audit_table).
     mean(hour_sin) ~ 0 and std ~ 0.707 for every city by construction, so those rows would
     carry no information in a paper table. What a Dataset section actually needs is span,
-    counts, positive-hour share and how the target moves with hour / month / season.
+    counts, positive hours per day and how the target moves with season.
     """
-    day = df["datetime"].dt.normalize()
-    is_pos = positive_mask(df)
-    work = add_season(df.assign(_date=day, _positive=is_pos))
+    require_positive(df, "temporal_coverage_table")
+    work = add_season(df.assign(_date=df["datetime"].dt.normalize()))
     rows = []
     for city, g in work.groupby("city", observed=True):
         for season in [POOLED_LABEL] + SEASONS:
@@ -277,10 +294,8 @@ def temporal_coverage_table(df: pd.DataFrame) -> pd.DataFrame:
                     "end": sub["datetime"].max(),
                     "n_hours": int(len(sub)),
                     "n_days": int(n_days),
-                    "positive_hour_share": sub["_positive"].mean(),
-                    "mean_positive_hours_per_day": sub["_positive"].sum() / n_days,
-                    "target_mean_24h": sub[TARGET_COLUMN].mean(),
-                    "target_mean_positive": sub.loc[sub["_positive"], TARGET_COLUMN].mean(),
+                    "mean_positive_hours_per_day": len(sub) / n_days,
+                    "target_mean": sub[TARGET_COLUMN].mean(),
                     "daily_total_mean_kwh": sub.groupby("_date", observed=True)[TARGET_COLUMN]
                     .sum()
                     .div(1000.0)
@@ -292,7 +307,7 @@ def temporal_coverage_table(df: pd.DataFrame) -> pd.DataFrame:
 
 def target_by_hour_table(df: pd.DataFrame) -> pd.DataFrame:
     """Target distribution by local-solar hour, per city (the diurnal figure's data)."""
-    work = add_season(df)
+    work = add_season(require_positive(df, "target_by_hour_table"))
     g = work.groupby(["city", "season", "HR"], observed=True)[TARGET_COLUMN]
     out = g.agg(
         n="size", mean="mean", median="median",
@@ -328,8 +343,8 @@ def time_explained_variance_table(df: pd.DataFrame) -> pd.DataFrame:
         return float(1.0 - (resid ** 2).sum() / total) if total else np.nan
 
     rows = []
-    is_pos = positive_mask(df)
-    for scope, sub in (("24h", df), ("positive", df[is_pos])):
+    require_positive(df, "time_explained_variance_table")
+    for scope, sub in (("positive", df),):
         for city, g in list(sub.groupby("city", observed=True)) + [(POOLED_LABEL, sub)]:
             y = g[TARGET_COLUMN].to_numpy()
             doy = g["datetime"].dt.dayofyear.to_numpy()
@@ -351,11 +366,12 @@ def time_explained_variance_table(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def circular_wind_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Speed-weighted circular statistics for wind direction, over all 24 hours.
+    """Speed-weighted circular statistics for wind direction, on the `target > 0` rows.
 
     Uses the sin/cos columns already in the parquet. Near-calm hours are excluded because
-    their direction is noise; wind-direction climatology is not a positive-hours-only quantity.
+    their direction is noise.
     """
+    require_positive(df, "circular_wind_table")
     rows = []
     for col in CIRCULAR_COLUMNS:
         # Direction is weighted by the speed measured at the SAME height; a mismatch would
@@ -401,6 +417,7 @@ def correlation_tables(df_pos: pd.DataFrame) -> dict:
     """
     cols = RAW_METEO_COLUMNS
     out = {"pearson": {}, "spearman": {}}
+    require_positive(df_pos, "correlation_tables")
     groups = [(c, g) for c, g in df_pos.groupby("city", observed=True)]
     groups.append((POOLED_LABEL, df_pos))
     for city, g in groups:
@@ -465,21 +482,18 @@ def monthly_target_stats(daily: pd.DataFrame) -> pd.DataFrame:
 
 def seasonal_target_stats(df: pd.DataFrame, daily: pd.DataFrame) -> pd.DataFrame:
     """Per (city, season) hourly and daily-total summary."""
-    work = add_season(df)
-    is_pos = positive_mask(df)
+    work = add_season(require_positive(df, "seasonal_target_stats"))
     daily_s = add_season(daily.assign(MO=daily["MO"]))
     rows = []
     for city in CITIES:
         for season in SEASONS:
             h = work[(work["city"] == city) & (work["season"] == season)]
-            hd = h[is_pos.loc[h.index]]
             d = daily_s[(daily_s["city"] == city) & (daily_s["season"] == season)]
             rows.append(
                 {
                     "city": city, "season": season,
                     "n_hours": len(h), "n_days": len(d),
-                    "hourly_mean_24h": h[TARGET_COLUMN].mean(),
-                    "hourly_mean_positive": hd[TARGET_COLUMN].mean(),
+                    "hourly_mean": h[TARGET_COLUMN].mean(),
                     "hourly_max": h[TARGET_COLUMN].max(),
                     "daily_kwh_mean": d["daily_kwh"].mean(),
                     "daily_kwh_std": d["daily_kwh"].std(),
@@ -711,7 +725,8 @@ def plot_scatter_vs_target(df_pos: pd.DataFrame, city: str, save_path: Path) -> 
     plt = _plt()
 
     variables = [c for c in RAW_METEO_COLUMNS if c != TARGET_COLUMN]
-    g = df_pos[df_pos["city"] == city]
+    g = require_positive(df_pos, "plot_scatter_vs_target")
+    g = g[g["city"] == city]
     # Choose the column count that leaves the fewest empty cells: the export's parameter list
     # has already changed twice (8 raw variables -> 7 -> 6) and a fixed grid leaves a ragged
     # bottom row every time.
@@ -892,15 +907,16 @@ def plot_month_year_anomaly(grids: dict, save_path: Path) -> None:
 
 
 def plot_seasonal_diurnal_profile(df: pd.DataFrame, save_path: Path) -> None:
-    """Mean irradiance by local-solar hour, one line per season, over ALL 24 hours.
+    """Mean irradiance by local-solar hour, one line per season, over `target > 0` hours.
 
-    The positive-hours filter is deliberately NOT applied: night zeros are physical information
-    here, and filtering them would stop the curve rising from and returning to zero.
+    Like every other EDA figure it uses the positive-hours subset, so each hour's mean is
+    conditional on the hour being positive and the curves start and stop at the first and last
+    positive hour of the season rather than at an exact zero.
     IQR bands are drawn for Winter and Summer only -- four overlapping bands turn to mud.
     """
     plt = _plt()
 
-    work = add_season(df)
+    work = add_season(require_positive(df, "plot_seasonal_diurnal_profile"))
     with plt.rc_context(PAPER_RC):
         fig, flat = _city_panels(plt, 3.7)
         for ax, city in zip(flat[:5], CITIES):
@@ -1240,7 +1256,7 @@ def persistence_baseline_table(df_kt: pd.DataFrame, config=None) -> pd.DataFrame
     test = work[work["datetime"] > val_end]
     is_pos = positive_mask(df_kt).reindex(work.index)
     rows = []
-    for scope, sub in (("24h", test), ("positive", test[is_pos.reindex(test.index).to_numpy()])):
+    for scope, sub in (("positive", test[is_pos.reindex(test.index).to_numpy()]),):
         for city in CITIES + [POOLED_LABEL]:
             s = sub if city == POOLED_LABEL else sub[sub["city"] == city]
             y = s[TARGET_COLUMN].to_numpy(dtype=float)
@@ -1268,7 +1284,7 @@ def plot_target_histogram(df: pd.DataFrame, save_path: Path) -> None:
     (excess kurtosis ~ -0.9) shape: a clear-sky mode and an overcast mode."""
     plt = _plt()
 
-    d = df[positive_mask(df)]
+    d = require_positive(df, "plot_target_histogram")
     with plt.rc_context(PAPER_RC):
         fig, flat = _city_panels(plt, 3.5)
         for ax, city in zip(flat[:5], CITIES):
