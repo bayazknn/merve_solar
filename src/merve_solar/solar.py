@@ -108,7 +108,7 @@ def extraterrestrial_horizontal(city: str, local_datetimes) -> np.ndarray:
       * it is the standard definition, so the numbers are comparable to the literature rather
         than to one provider's clear-sky product;
       * it is better behaved. Measured on this record, kt has median 0.555 and p99 0.801, with
-        2 hours of 150,746 above 1.0 -- against the clear-sky-index form's 2.9% above 1.0, an
+        2 hours of 152,902 above 1.0 -- against the clear-sky-index form's 2.9% above 1.0, an
         artefact of the old export's 2.78 W/m^2 quantisation landing on a near-unity denominator.
 
     The scale differs and must not be mixed with the old numbers: a cloudless hour reads
