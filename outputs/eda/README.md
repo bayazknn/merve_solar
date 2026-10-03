@@ -96,14 +96,11 @@ the correlation after removing the (province, month, hour) cell mean, which sepa
 weather signal from solar geometry. The difference is not merely large, it is **large enough to
 flip signs** (`EDA.md` §6.1).
 
-**6. Figures use plain-English names; tables keep the raw column identifiers.** Figure axes
-read "Air temperature at 2 m (°C)", "Global horizontal irradiance (W/m²)", … because a figure is
-read by people and a raw code such as `ALLSKY_SFC_SW_DWN` tells a reader nothing. Table rows keep
-`ALLSKY_SFC_SW_DWN`, `T2M`, `RH2M`, … because those values are join keys. The one-to-one link
-between the two is the manuscript's variable table, which lists each NASA POWER code next to its
-English name. The mappings live in `paper_style.AXIS_LABELS` (with unit) and `AXIS_SHORT` (bare,
-for correlation-matrix ticks) for figures, and `paper_style.VARIABLE_LABELS` for tables, where the
-column is called `variable_label`.
+**6. Figures and tables use the raw column identifiers.** Axis titles and ticks read
+`ALLSKY_SFC_SW_DWN (W/m²)`, `T2M (°C)`, `RH2M (%)`, … exactly as in the tables; variable names
+are never renamed. The mappings live in `paper_style.AXIS_LABELS` (with unit) and `AXIS_SHORT`
+(bare, for correlation-matrix ticks) for figures, and `paper_style.VARIABLE_LABELS` for tables,
+where the column is called `variable_label`.
 
 Figures are sized for a Word page: 6.3 in wide (the A4 text block at 2.5 cm margins; Letter's is
 6.5 in), with 7 pt ticks, 8 pt axis titles and a 9 pt figure title, so they paste at 100% and

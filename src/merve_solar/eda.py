@@ -894,7 +894,7 @@ def plot_seasonal_diurnal_profile(df: pd.DataFrame, save_path: Path) -> None:
             ax.set_xticks([0, 6, 12, 18, 24])
             grid_y_only(ax)
         _finish_city_panels(fig, flat, HOUR_LST_LABEL,
-                            "Mean g" + AXIS_LABELS[TARGET_COLUMN][1:],
+                            "Mean " + AXIS_LABELS[TARGET_COLUMN],
                             "Mean daily cycle of irradiance by season "
                             "(shaded: interquartile range across days)")
         handles, labels = flat[0].get_legend_handles_labels()

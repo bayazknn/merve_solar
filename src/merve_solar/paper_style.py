@@ -86,42 +86,11 @@ VARIABLE_LABELS = {
 # Bare identifiers, for places where the axis is too tight for a unit.
 VARIABLE_SHORT = {name: name for name in VARIABLE_LABELS}
 
-# Figure axis titles: plain-English physical quantity plus unit. VARIABLE_LABELS keeps the raw
-# NASA POWER codes because its values are join keys in the descriptive tables; a figure is read
-# by people, and "ALLSKY_SFC_SW_DWN" on an axis tells a reader nothing. The code-to-name mapping
-# belongs in the manuscript's variable table, which is where the traceability now lives.
-AXIS_LABELS = {
-    "ALLSKY_SFC_SW_DWN": "Global horizontal irradiance (W/m²)",
-    "T2M": "Air temperature at 2 m (°C)",
-    "RH2M": "Relative humidity at 2 m (%)",
-    "T2MDEW": "Dew-point temperature at 2 m (°C)",
-    "PS": "Surface pressure (kPa)",
-    "WS2M": "Wind speed at 2 m (m/s)",
-    "PRECTOTCORR": "Precipitation (mm/h)",
-    "WD2M": "Wind direction at 2 m (°)",
-    "WS10M": "Wind speed at 10 m (m/s)",
-    "WD10M": "Wind direction at 10 m (°)",
-    "QV2M": "Specific humidity at 2 m (g/kg)",
-    "WS50M": "Wind speed at 50 m (m/s)",
-    "WD50M": "Wind direction at 50 m (°)",
-}
-
-# Unit-less English names for tight spots: correlation-matrix ticks and heatmap rows.
-AXIS_SHORT = {
-    "ALLSKY_SFC_SW_DWN": "Irradiance (GHI)",
-    "T2M": "Air temperature",
-    "RH2M": "Relative humidity",
-    "T2MDEW": "Dew point",
-    "PS": "Surface pressure",
-    "WS2M": "Wind speed",
-    "PRECTOTCORR": "Precipitation",
-    "WD2M": "Wind direction",
-    "WS10M": "Wind speed (10 m)",
-    "WD10M": "Wind direction (10 m)",
-    "QV2M": "Specific humidity",
-    "WS50M": "Wind speed (50 m)",
-    "WD50M": "Wind direction (50 m)",
-}
+# Figures use the raw variable names too (the names are used directly in the manuscript's
+# figures and must not be renamed), so the figure maps are the table maps: name plus unit for
+# axis titles, bare name for tight spots such as correlation-matrix ticks.
+AXIS_LABELS = dict(VARIABLE_LABELS)
+AXIS_SHORT = dict(VARIABLE_SHORT)
 
 # Derived quantities that appear on several figures.
 DAILY_IRRADIATION_LABEL = "Daily solar irradiation (kWh/m²)"
