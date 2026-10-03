@@ -50,33 +50,34 @@ def test_season_mapping_is_meteorological():
     assert seasons[10] == "Autumn"
 
 
-def test_daylight_mask_is_geometric_not_value_based():
-    """The mask must come from the sun's computed position, not from the realised target.
-
-    A fully overcast noon reading of 0.0 is still daylight; the geometry says so regardless
-    of the weather. This is the property that keeps the metric subset from being selected
-    with the answer -- see solar.py.
-    """
+def test_positive_mask_is_the_target_condition():
+    """The EDA subset is `target > 0`: zeros, negatives and the -999 sentinel are all out."""
     df = _synthetic(periods=24 * 5, cities=("Ankara",))
-    df["solar_elevation"] = np.where((df["HR"] >= 6) & (df["HR"] <= 18), 30.0, -20.0)
-
+    night = df.index[df["HR"] == 0][0]
     noon = df.index[df["HR"] == 12][2]
+    sentinel = df.index[df["HR"] == 13][1]
     df.loc[noon, TARGET_COLUMN] = 0.0
-    mask = eda.daylight_mask(df)
-    assert mask.loc[noon], "an overcast noon hour was dropped by the daylight filter"
-    assert not mask[df["HR"] == 0].any(), "night hours were kept"
-    assert mask.sum() == (13 * 5), "daylight span must follow the solar elevation column"
+    df.loc[sentinel, TARGET_COLUMN] = -999.0
+    df.loc[night, TARGET_COLUMN] = 3.0  # twilight-like positive value below the horizon
+    mask = eda.positive_mask(df)
+    assert not mask.loc[noon], "a zero reading must be excluded"
+    assert not mask.loc[sentinel], "the -999 sentinel must be excluded"
+    assert mask.loc[night], "a positive twilight reading must be kept"
+    assert mask.sum() == (df[TARGET_COLUMN] > 0).sum()
 
 
-def test_daylight_mask_refuses_a_frame_without_the_geometry_column():
-    """A stale parquet is the realistic failure, and it must be loud.
-
-    Without solar_elevation the only thing left to fall back on is the target, which is
-    exactly the definition this project rejects -- so there is no fallback.
-    """
-    df = _synthetic(periods=24 * 3, cities=("Ankara",))
-    with pytest.raises(ValueError, match="solar_elevation"):
-        eda.daylight_mask(df.drop(columns=["solar_elevation"], errors="ignore"))
+def test_filter_audit_counts_the_two_masks_against_each_other():
+    df = _synthetic(periods=24 * 5, cities=("Ankara",))
+    night = df.index[df["HR"] == 0][0]
+    noon = df.index[df["HR"] == 12][2]
+    df.loc[night, TARGET_COLUMN] = 3.0
+    df.loc[noon, TARGET_COLUMN] = 0.0
+    audit = eda.filter_audit_table(df).set_index("city").loc["All"]
+    assert audit["n_rows"] == len(df)
+    assert audit["n_removed"] + audit["n_kept"] == len(df)
+    assert audit["n_twilight_kept"] == 1 and audit["twilight_max"] == 3.0
+    assert audit["geometric_daylight_zero"] >= 1
+    assert audit["n_sentinel_999"] == 0
 
 
 def test_last_12_months_is_exactly_twelve_ordered_months():
@@ -93,11 +94,10 @@ def test_last_12_months_is_exactly_twelve_ordered_months():
     ]
 
 
-def test_daily_totals_are_invariant_to_the_daylight_filter(monkeypatch):
+def test_daily_totals_are_invariant_to_the_positive_filter(monkeypatch):
     df = _synthetic(periods=24 * 90)
-    df["solar_elevation"] = np.where((df["HR"] >= 6) & (df["HR"] <= 18), 30.0, -20.0)
     full = eda.daily_totals(df).set_index(["city", "date"])["daily_kwh"]
-    filtered = eda.daily_totals(df[eda.daylight_mask(df)]).set_index(["city", "date"])["daily_kwh"]
+    filtered = eda.daily_totals(df[eda.positive_mask(df)]).set_index(["city", "date"])["daily_kwh"]
     pd.testing.assert_series_equal(full, filtered, check_names=False)
 
 
@@ -170,11 +170,10 @@ def test_acf_tolerates_gaps():
     assert eda._acf(gapped, 3)[1] == pytest.approx(0.7, abs=0.05)
 
 
-def test_daylight_blocks_are_shorter_than_a_lookback_plus_horizon(monkeypatch):
-    """The evidence behind TODOs.md item A: no daylight-only run reaches 48 hours."""
+def test_positive_blocks_are_shorter_than_a_lookback_plus_horizon(monkeypatch):
+    """The evidence behind TODOs.md item A: no positive-hours-only run reaches 48 hours."""
     df = _synthetic(periods=24 * 120)
-    df["solar_elevation"] = np.where((df["HR"] >= 6) & (df["HR"] <= 18), 30.0, -20.0)
-    blocks = eda.daylight_block_table(df)
+    blocks = eda.positive_block_table(df)
     assert (blocks["share_blocks_ge_48h"] == 0).all()
     assert (blocks["block_len_max"] < 24).all()
     assert (blocks["n_blocks"] == 120).all()

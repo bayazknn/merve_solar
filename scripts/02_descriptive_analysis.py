@@ -72,8 +72,8 @@ def _figure(path_stem: str) -> Path:
     return path
 
 
-def _descriptive_outputs(df: pd.DataFrame, is_day: pd.Series) -> None:
-    for scope, sub in (("daylight", df[is_day]), ("24h", df)):
+def _descriptive_outputs(df: pd.DataFrame, is_pos: pd.Series) -> None:
+    for scope, sub in (("positive", df[is_pos]), ("24h", df)):
         table = eda.descriptive_table(sub)
         _write_csv(table, f"descriptive_stats_by_city_{scope}.csv")
         pretty = table.rename(columns={"city": "Province", "statistic": "Statistic"})
@@ -84,7 +84,7 @@ def _descriptive_outputs(df: pd.DataFrame, is_day: pd.Series) -> None:
         # Print each province name once, on the first row of its block.
         pretty["Province"] = pretty["Province"].where(
             pretty["Province"].ne(pretty["Province"].shift()), "")
-        label = "daylight hours" if scope == "daylight" else "all 24 hours"
+        label = "hours with target > 0" if scope == "positive" else "all 24 hours"
         _write_markdown_and_latex(
             pretty, f"descriptive_stats_by_city_{scope}",
             f"Descriptive statistics by province ({label}).",
@@ -96,17 +96,18 @@ def main() -> None:
     parser.parse_args()
 
     df = load_base_features(BASE_FEATURES_PATH)
-    is_day = eda.daylight_mask(df)
-    df_daylight = df[is_day]
+    is_pos = eda.positive_mask(df)
+    df_pos = df[is_pos]
     daily = eda.daily_totals(df)
     daily_12m = eda.last_12_months(daily, date_col="date")
 
     print(f"{len(df):,} rows, {df['city'].nunique()} provinces, "
           f"{df['datetime'].min()} → {df['datetime'].max()}")
-    print(f"daylight row share: {is_day.mean():.3f}")
+    print(f"target > 0 row share: {is_pos.mean():.3f}")
 
     # --- tables ---------------------------------------------------------------------
-    _descriptive_outputs(df, is_day)
+    _descriptive_outputs(df, is_pos)
+    _write_csv(eda.filter_audit_table(df), "target_positive_filter_audit.csv")
     _write_csv(eda.temporal_coverage_table(df), "temporal_coverage_by_city.csv")
     _write_csv(eda.target_by_hour_table(df), "target_by_hour_by_city.csv")
     _write_csv(eda.time_explained_variance_table(df), "time_feature_explained_variance.csv")
@@ -124,10 +125,10 @@ def main() -> None:
     _write_csv(kt_table, "clearness_index_by_city.csv")
     _write_csv(acf_table, "autocorrelation_clearness.csv")
     _write_csv(eda.ramp_table(df_kt), "ramp_stats_by_city.csv")
-    _write_csv(eda.daylight_block_table(df), "daylight_block_structure.csv")
+    _write_csv(eda.positive_block_table(df), "positive_block_structure.csv")
     _write_csv(baseline, "persistence_baseline.csv")
 
-    corr = eda.correlation_tables(df_daylight)
+    corr = eda.correlation_tables(df_pos)
     for method in ("pearson", "spearman"):
         for city, matrix in corr[method].items():
             suffix = "pooled" if city == eda.POOLED_LABEL else city
@@ -139,13 +140,13 @@ def main() -> None:
     # --- figures --------------------------------------------------------------------
     for city, matrix in corr["pearson"].items():
         suffix = "pooled" if city == eda.POOLED_LABEL else city
-        title = ("All provinces: correlation matrix (daylight)" if city == eda.POOLED_LABEL
-                 else f"{city}: correlation matrix (daylight)")
+        title = ("All provinces: correlation matrix (target > 0)" if city == eda.POOLED_LABEL
+                 else f"{city}: correlation matrix (target > 0)")
         eda.plot_correlation_heatmap(matrix, title, _figure(f"correlation_heatmap_{suffix}"))
     eda.plot_target_correlation_panel(corr["target"], _figure("target_correlation_panel"))
 
     for city in CITIES:
-        eda.plot_scatter_vs_target(df_daylight, city, _figure(f"scatter_vs_target_{city}"))
+        eda.plot_scatter_vs_target(df_pos, city, _figure(f"scatter_vs_target_{city}"))
         eda.plot_monthly_boxplot(daily_12m, city, _figure(f"monthly_boxplot_last12m_{city}"))
     eda.plot_monthly_boxplot(daily_12m, None, _figure("monthly_boxplot_last12m_panel"))
 

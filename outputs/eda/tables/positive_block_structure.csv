@@ -1,0 +1,6 @@
+city,n_positive_hours,n_blocks,block_len_min,block_len_median,block_len_max,share_blocks_ge_24h,share_blocks_ge_48h
+Ankara,31750,2557,10,12.0,15,0.0,0.0
+Antalya,31399,2557,10,12.0,14,0.0,0.0
+Konya,31701,2557,10,12.0,15,0.0,0.0
+Rize,31567,2557,9,13.0,15,0.0,0.0
+Van,31694,2557,10,12.0,15,0.0,0.0

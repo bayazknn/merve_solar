@@ -92,17 +92,17 @@ model, surface pressure therefore functions largely as an elevation indicator, a
 reason its apparent relationship with irradiance reverses once site and season are held fixed
 (Section 9).
 
-**Precipitation is effectively a binary variable at hourly resolution.** Exactly 66.6% of daylight
-hours record zero precipitation, and the non-zero tail is strongly right-skewed (skewness +9.5
-over all hours). Over daylight hours, a binary wet/dry indicator is more strongly correlated with
+**Precipitation is effectively a binary variable at hourly resolution.** Exactly 66.7% of the
+hours with positive irradiance (Section 5) record zero precipitation, and the non-zero tail is
+strongly right-skewed (skewness +9.5 over all hours). Over those hours, a binary wet/dry indicator is more strongly correlated with
 irradiance than either the recorded amount or its logarithmic transform at four of the five sites
 (Ankara, Antalya, Konya and Van), while at Rize the logarithmic transform is the strongest of the
 three.
 
 **Dew-point temperature is not an independent measurement.** It can be reconstructed from air
 temperature and relative humidity through the Magnus relation with a Pearson correlation of
-0.99919 and a root-mean-square deviation of 0.30 °C over all hours (0.99957 and 0.23 °C over
-daylight hours) — that is, at the level of the data's own rounding. It is retained for
+0.99919 and a root-mean-square deviation of 0.30 °C over all hours (0.99957 and 0.22 °C over
+hours with positive irradiance) — that is, at the level of the data's own rounding. It is retained for
 completeness but carries no information beyond the two variables from which it is derived. This
 redundancy is invisible to pairwise correlation analysis, because it is a two-variable
 relationship: the pairwise correlation between air temperature and dew point is only 0.61
@@ -136,89 +136,107 @@ physically impossible and is treated as a retrieval or back-fill artefact. It wa
 nor modified, since a single observation in 306,840 cannot affect any aggregate reported here, but
 it must not be used to support any claim about the radiative extremes of the site.
 
-## 5. Definition of daylight hours
+## 5. Subsets: hours with positive irradiance and geometric daylight
 
 Roughly half of all hourly observations are night hours in which the target is exactly zero. These
 observations are trivially predictable and, if included, dominate aggregate error statistics
-(Section 12). Separating them therefore requires an unambiguous criterion, and the criterion used
-here is **geometric**: an hour is classified as daylight if the apparent elevation of the Sun at
-the midpoint of that hour, computed from the site coordinates and the timestamp using a standard
-solar-position algorithm, is positive. Under this definition 155,081 of 306,840 observations
-(50.54%) are daylight, with a mean daylight duration of 12.10–12.16 h per day across sites.
+(Section 12). Two different subsets are therefore used in this work, and each has one job.
 
-Two alternative criteria were examined and rejected.
+**Descriptive subset: hours with positive irradiance.** Every descriptive statistic, table and
+figure from Section 6 onwards that is restricted to daytime is computed on the hours in which the
+recorded irradiance is strictly positive (target > 0). The criterion is applied to the data as
+recorded; it needs no solar-position calculation and no threshold. Because the provider's
+missing-value sentinel (−999) is negative, the criterion would also exclude any such value; none is
+present after the preprocessing of Section 4, and no negative irradiance occurs. The criterion
+removes 148,729 of the 306,840 observations (48.47%) and retains 158,111 (51.53%). The numbers
+removed, out of 61,368 per site, are 29,618 at Ankara (48.3%), 29,969 at Antalya (48.8%), 29,667 at
+Konya (48.3%), 29,801 at Rize (48.6%) and 29,674 at Van (48.4%). The retained hours amount to a mean
+of 12.28 (Antalya) to 12.42 (Ankara) hours per day.
 
-The first is a threshold on the observed irradiance itself. On this dataset it agrees with the
-geometric criterion on 303,810 of 306,840 observations, yet it is inadmissible on two grounds.
-It defines the evaluation subset using the quantity being predicted, so that a heavily overcast
-twilight hour recording zero is silently excluded — that is, observations are removed
-preferentially from the conditions under which a forecast is hardest. More decisively, it cannot
-be evaluated prospectively: a day-ahead forecast must determine whether the Sun will be above the
-horizon at a future hour without access to the observation at that hour, so a criterion based on
-the observation cannot be applied operationally. A geometric criterion is therefore required in
-any case, and adopting a different one for evaluation would be internally inconsistent.
-
-The second is a climatological criterion based on the mean irradiance of a (site, month, hour)
-cell. This is too coarse: sunrise and sunset shift by 30–60 minutes within a calendar month, so
-the boundary hour of a cell is illuminated for part of the month and dark for the remainder, and a
-cell mean classifies the entire hour as daylight. Applied to this dataset it admitted 8,401
-observations occurring when the Sun was below the horizon.
+**Evaluation subset: geometric daylight.** The forecasting experiments are scored on a different
+subset, defined **geometrically**: an hour is classified as daylight if the apparent elevation of
+the Sun at the midpoint of that hour, computed from the site coordinates and the timestamp using a
+standard solar-position algorithm, is positive. Under this definition 155,081 of 306,840
+observations (50.54%) are daylight, with a mean daylight duration of 12.10–12.16 h per day across
+sites. The geometric criterion is used for evaluation because it depends on site and time alone. A
+criterion based on the recorded irradiance defines the subset using the quantity being predicted: a
+heavily overcast hour that happens to record zero would be silently excluded, so observations are
+removed preferentially from the conditions under which a forecast is hardest. More decisively, such
+a criterion cannot be applied prospectively: a day-ahead forecast must determine whether the Sun will
+be above the horizon at a future hour without access to the observation at that hour. A geometric
+criterion is required for that purpose in any case, and for the same reason it also governs the
+treatment of night hours in the forecasts. The two roles do not conflict. When the aim is to describe
+the recorded data, conditioning on the recorded value is harmless; when the aim is to score a
+forecast, it is not.
 
 The geometric threshold was not calibrated against the observations. Sweeping it produces a value
 that agrees more closely with the recorded irradiance, but adjusting a geometric criterion to fit
 the observed target reintroduces exactly the dependence the criterion is intended to avoid. The
 cost of leaving it uncalibrated was quantified and is small: the error of the strongest reference
-forecast changes by approximately 1%.
+forecast changes by approximately 1%. A climatological criterion based on the mean irradiance of a
+(site, month, hour) cell was also examined and rejected as too coarse: sunrise and sunset shift by
+30–60 minutes within a calendar month, so the boundary hour of a cell is illuminated for part of the
+month and dark for the remainder, and a cell mean classifies the entire hour as daylight. Applied to
+this dataset it admitted 8,401 observations occurring when the Sun was below the horizon.
 
-The residual disagreement between the geometric criterion and the recorded values is small and
-falls in the conservative direction. No daylight-classified observation records exactly zero.
-Conversely, 3,030 observations classified as night carry non-zero irradiance; these are twilight
-hours in which sunrise occurs part-way through the interval, and together they account for 0.024%
-of total daylight energy. Excluding them makes the daylight subset marginally harder to predict,
-not easier.
+**Relationship between the two subsets.** The two criteria agree on 303,810 of 306,840
+observations. No hour classified as geometric daylight records zero irradiance, so the
+positive-irradiance subset contains the whole of the geometric daylight subset. The two differ only by
+3,030 observations (1.9% of the retained hours) that carry a small positive irradiance while the Sun
+is up to 2.4° below the horizon at the interval midpoint. These twilight hours occur at the start and
+end of the day (local solar hours 04–07 and 16–19), and their irradiance is low: mean 4.74 W/m²,
+standard deviation 1.64 W/m², minimum 0.80 W/m² and maximum 11.68 W/m². By site, the number of
+twilight hours and their mean irradiance are 760 hours and 4.76 W/m² at Ankara, 424 and 4.50 W/m² at
+Antalya, 765 and 5.30 W/m² at Konya, 489 and 3.56 W/m² at Rize and 592 and 5.14 W/m² at Van.
+Together they account for 0.024% of the energy recorded over the positive-irradiance hours, and they
+lower the pooled mean irradiance of the positive-irradiance subset by about 2% relative to the
+geometric one. Statistics computed on the two subsets are therefore close but not identical, and the
+evaluation of forecasts always refers to the geometric subset.
 
 ## 6. Statistical characterisation of the target
 
 ### 6.1 Distribution
 
-Over daylight hours and pooled across sites, irradiance has a mean of 386.0 W/m², a median of
-343.7 W/m² and a standard deviation of 278.6 W/m², with skewness +0.42 and excess kurtosis −0.95.
+Over hours with positive irradiance and pooled across sites, irradiance has a mean of 378.7 W/m²,
+a median of 334.6 W/m² and a standard deviation of 280.8 W/m², with skewness +0.43 and excess
+kurtosis −0.95.
 Over all 24 hours the mean falls to 195.1 W/m² and the median to 7.8 W/m², with skewness +1.27.
 
 The contrast between these two summaries reflects the mixture structure of the unconditional
-distribution: a point mass of exact zeros at night superimposed on the daylight distribution. The
-daylight distribution itself is **platykurtic** — broad and flat rather than peaked — which is the
+distribution: a point mass of exact zeros at night superimposed on the distribution of daytime values. The
+daytime distribution itself is **platykurtic** — broad and flat rather than peaked — which is the
 direct consequence of solar geometry sweeping irradiance from zero to approximately 1000 W/m²
-within each day. Figure 1 shows the per-site daylight distributions.
+within each day. Figure 1 shows the per-site distributions over hours with positive irradiance.
 
 ![Figure 1](outputs/eda/figures/target_histogram.png)
 
-**Figure 1.** Distribution of hourly irradiance over daylight hours, by site.
+**Figure 1.** Distribution of hourly irradiance over hours with positive irradiance (target > 0), by site.
 
 Site-level statistics are given in Table 3.
 
-**Table 3.** Target variable by site, daylight hours.
+**Table 3.** Target variable by site, hours with positive irradiance (target > 0).
 
 | Site | N | Mean (W/m²) | SD (W/m²) | Median (W/m²) | Max (W/m²) | Skewness | Daily total (kWh/m²/day) |
 |---|---|---|---|---|---|---|---|
-| Ankara | 30,990 | 388.54 | 278.04 | 344.40 | 1029.10 | 0.42 | 4.71 |
-| Antalya | 30,975 | 412.80 | 284.23 | 390.45 | 1043.07 | 0.28 | 5.00 |
-| Konya | 30,936 | 406.80 | 283.20 | 372.04 | 1054.35 | 0.36 | 4.92 |
-| Rize | 31,078 | 308.44 | 247.73 | 250.20 | 988.15 | 0.69 | 3.75 |
-| Van | 31,102 | 413.47 | 283.68 | 385.38 | 1215.88 | 0.32 | 5.03 |
-| **Pooled** | **155,081** | **385.98** | **278.58** | **343.70** | **1215.88** | **0.42** | **4.68** |
+| Ankara | 31,750 | 379.35 | 280.88 | 333.59 | 1029.10 | 0.43 | 4.71 |
+| Antalya | 31,399 | 407.28 | 286.21 | 383.23 | 1043.07 | 0.29 | 5.00 |
+| Konya | 31,701 | 397.12 | 286.47 | 358.10 | 1054.35 | 0.37 | 4.92 |
+| Rize | 31,567 | 303.72 | 248.67 | 245.05 | 988.15 | 0.70 | 3.75 |
+| Van | 31,694 | 405.84 | 286.40 | 376.17 | 1215.88 | 0.34 | 5.03 |
+| **Pooled** | **158,111** | **378.67** | **280.80** | **334.58** | **1215.88** | **0.43** | **4.68** |
 
 ### 6.2 Diurnal and seasonal structure
 
 Hour of day alone accounts for 73.2% of the variance of the target over all 24 hours, and for
-48.9% within the daylight subset; day of year accounts for 8.7% and 14.8% respectively. A harmonic
+50.4% within the subset of positive-irradiance hours; day of year accounts for 8.7% and 14.4%
+respectively. A harmonic
 (sine–cosine) representation of each recovers essentially the whole of this explained variance
 (for example 0.7291 against 0.7318 for hour of day over 24 hours), which supports the use of
 cyclical rather than categorical encodings of time.
 
 The practical implication is that roughly three quarters of an aggregate score computed over all
 24 hours reflects knowledge of the day–night cycle rather than any forecast skill, and that within
-daylight hours the seasonal contribution approximately doubles in relative importance.
+the daytime hours the seasonal contribution rises from 8.7% to 14.4% of the variance.
 
 Seasonal means and variability are summarised in Table 4, and the diurnal profile by season is
 shown in Figure 2.
@@ -231,12 +249,12 @@ shaded band shows the between-day interquartile range for winter and summer.
 **Table 4.** Seasonal characteristics, averaged over sites. Meteorological seasons are used
 (winter = December–February).
 
-| Season | Mean irradiance, 24 h (W/m²) | Mean irradiance, daylight (W/m²) | Daily total (kWh/m²/day) | Between-day CV |
+| Season | Mean irradiance, 24 h (W/m²) | Mean irradiance, target > 0 (W/m²) | Daily total (kWh/m²/day) | Between-day CV |
 |---|---|---|---|---|
-| Winter | 98.4 | 235.4 | 2.36 | 0.409 |
-| Spring | 218.7 | 400.7 | 5.25 | 0.340 |
-| Summer | 296.8 | 501.6 | 7.12 | 0.154 |
-| Autumn | 164.6 | 353.8 | 3.95 | 0.372 |
+| Winter | 98.4 | 230.1 | 2.36 | 0.409 |
+| Spring | 218.7 | 393.8 | 5.25 | 0.340 |
+| Summer | 296.8 | 494.6 | 7.12 | 0.154 |
+| Autumn | 164.6 | 345.3 | 3.95 | 0.372 |
 
 A structurally important feature emerges from the last column: **irradiance and its predictability
 move in opposite directions across the year.** Summer days are not only brighter but markedly less
@@ -324,19 +342,19 @@ of high elevation and dry continental air.
 
 ### 8.1 Hour-to-hour variability
 
-The distribution of absolute change between consecutive daylight hours is summarised in Table 7.
+The distribution of absolute change between consecutive hours with positive irradiance is summarised in Table 7.
 Most of the variability in raw irradiance is geometric — the Sun rising and setting — so the
 informative column is the change in clearness index, which removes that component.
 
-**Table 7.** Hour-to-hour variability over daylight hours.
+**Table 7.** Hour-to-hour variability over hours with positive irradiance.
 
 | Site | Median \|Δ irradiance\| (W/m²) | 90th pct | 99th pct | Share > 200 W/m² | 99th pct \|Δ clearness\| |
 |---|---|---|---|---|---|
-| Ankara | 106.4 | 187.9 | 211.4 | 3.8% | 0.220 |
-| Antalya | 116.4 | 193.0 | 218.9 | 6.3% | 0.216 |
-| Konya | 111.3 | 193.5 | 216.3 | 6.5% | 0.221 |
-| Rize | 83.1 | 167.9 | 213.6 | 1.8% | 0.206 |
-| Van | 115.9 | 194.7 | 217.2 | 7.2% | 0.222 |
+| Ankara | 104.9 | 187.5 | 211.2 | 3.7% | 0.220 |
+| Antalya | 115.3 | 192.6 | 218.8 | 6.3% | 0.216 |
+| Konya | 109.7 | 193.1 | 216.1 | 6.3% | 0.221 |
+| Rize | 82.2 | 167.5 | 213.3 | 1.7% | 0.206 |
+| Van | 114.6 | 194.4 | 217.1 | 7.0% | 0.222 |
 
 On the clearness scale the five sites are strikingly similar (0.206–0.222 at the 99th percentile).
 Rize's smaller raw ramps therefore reflect a weaker radiative envelope rather than a steadier
@@ -345,7 +363,7 @@ atmosphere. Figure 5 shows the cumulative distributions.
 ![Figure 5](outputs/eda/figures/ramp_distribution.png)
 
 **Figure 5.** Cumulative distribution of the absolute hour-to-hour change in irradiance over
-daylight hours, by season and site.
+hours with positive irradiance, by season and site.
 
 ### 8.2 Wind direction
 
@@ -380,16 +398,16 @@ seasonal cycles. To separate the two, the correlation was recomputed after remov
 each (site, month, hour) cell, which holds solar geometry and season fixed. Table 9 contrasts the
 two.
 
-**Table 9.** Correlation with irradiance, pooled over daylight hours.
+**Table 9.** Correlation with irradiance, pooled over hours with positive irradiance.
 
 | Variable | Raw r | Partial r (within site–month–hour) |
 |---|---|---|
-| RH2M | −0.626 | **−0.529** |
-| T2M | +0.515 | +0.307 |
-| PRECTOTCORR | −0.168 | **−0.328** |
-| T2MDEW | +0.045 | **−0.272** |
-| PS | −0.038 | **+0.268** |
-| WS2M | +0.142 | **−0.148** |
+| RH2M | −0.627 | **−0.523** |
+| T2M | +0.517 | +0.305 |
+| PRECTOTCORR | −0.162 | **−0.326** |
+| T2MDEW | +0.045 | **−0.269** |
+| PS | −0.035 | **+0.266** |
+| WS2M | +0.154 | **−0.148** |
 
 Three variables reverse sign and the association of precipitation approximately doubles. The
 mechanism is straightforward: warm, windy, high-dew-point hours are predominantly summer midday
@@ -405,8 +423,8 @@ correlation structure.
 
 ![Figure 6](outputs/eda/figures/correlation_heatmap_pooled.png)
 
-**Figure 6.** Correlation matrix of the target and the meteorological variables over daylight
-hours, pooled across sites.
+**Figure 6.** Correlation matrix of the target and the meteorological variables over hours with
+positive irradiance, pooled across sites.
 
 Relative humidity is the only variable that is strongly associated with irradiance under both
 formulations. It is, on this dataset, the single most informative meteorological predictor.
@@ -414,15 +432,15 @@ formulations. It is, on this dataset, the single most informative meteorological
 ### 9.2 Linearity and redundancy
 
 Spearman and Pearson coefficients agree closely: the largest discrepancy against the target is
-−0.057 for precipitation, followed by +0.047 for wind speed, and no variable exceeds 0.06. There
+−0.052 for precipitation, followed by +0.051 for wind speed, and no variable exceeds 0.06. There
 is therefore no evidence of a non-monotonic relationship. That the discrepancy concentrates in
 precipitation and wind speed is expected, both being strongly skewed, and the fact that the rank
 correlation is the larger of the two supports treating precipitation on a rank or indicator scale
 rather than as a linear quantity.
 
 Among the predictors, no pair exceeds a correlation of 0.9. The pairs exceeding 0.5 are air
-temperature with relative humidity (−0.671), air temperature with dew point (+0.610) and dew point
-with surface pressure (+0.520), all of which are physically expected and none of which indicates
+temperature with relative humidity (−0.672), air temperature with dew point (+0.611) and dew point
+with surface pressure (+0.517), all of which are physically expected and none of which indicates
 redundancy at a level requiring removal.
 
 This pairwise result should not, however, be read as evidence that the variable set is free of
@@ -474,9 +492,9 @@ than memory, and is already captured by the cyclical encoding of day of year.
 Rize again lies outside the band on every line, and consistently in the direction of shorter
 memory: its atmospheric condition is not only more variable but also less persistent.
 
-An additional structural property constrains any multi-hour forecast on this dataset. Daylight
-hours occur in uninterrupted daily blocks of median length 12 h (minimum 9, maximum 15), and no
-block reaches 24 h at any site. A forecast horizon of one day therefore **always** spans at least
+An additional structural property constrains any multi-hour forecast on this dataset. Hours with
+positive irradiance occur in uninterrupted daily blocks of median length 12 h at four sites and 13 h
+at Rize (minimum 9, maximum 15 across sites), and no block reaches 24 h at any site. A forecast horizon of one day therefore **always** spans at least
 one night period, so approximately half of every forecast window is determined by geometry alone.
 
 ## 11. Data partitioning
@@ -512,7 +530,11 @@ To establish the difficulty of the forecasting problem independently of any lear
 non-parametric reference forecasts were evaluated on the test partition: **persistence**, which
 repeats the value observed 24 h earlier, and **climatology**, the mean of the corresponding
 (site, month, hour) cell computed on the training partition alone. Both were scored through the
-identical windowing and evaluation procedure applied to the models.
+same windowing procedure as the models. The descriptive summary below, like the other tables of this
+description, is computed on the hours with positive irradiance (Section 5). The comparison with
+learned models is made on the geometric daylight subset, on which the same references are scored
+through the identical evaluation procedure; its values differ from those of Table 12 by roughly one
+percent, and it is the subset on which a model has to improve on them.
 
 **Table 12.** Reference forecast accuracy on the test partition, pooled over sites.
 
@@ -520,18 +542,19 @@ identical windowing and evaluation procedure applied to the models.
 |---|---|---|---|---|
 | Persistence | All 24 hours | 86.38 | 36.56 | 0.905 |
 | Climatology | All 24 hours | 77.17 | 37.94 | 0.924 |
-| Persistence | **Daylight** | 120.90 | **71.59** | 0.816 |
-| Climatology | **Daylight** | **108.00** | 74.17 | **0.853** |
+| Persistence | **Target > 0** | 119.76 | **70.27** | 0.822 |
+| Climatology | **Target > 0** | **106.99** | 72.84 | **0.858** |
 
 Three properties of this table govern how the model results in this paper should be read.
 
 **First, night observations inflate every metric.** The same climatological reference attains
-RMSE 77.2 W/m² and R² 0.924 when evaluated over all hours, but RMSE 108.0 W/m² and R² 0.853 over
-daylight hours. Including night observations reduces RMSE by 29% and raises R² by 0.071 without
-any contribution from the forecast. Because R² is normalised by the variance of the subset over
+RMSE 77.2 W/m² and R² 0.924 when evaluated over all hours, but RMSE 107.0 W/m² and R² 0.858 over
+the hours with positive irradiance. Including night observations reduces RMSE by 28% and raises R²
+by 0.066 without any contribution from the forecast. Because R² is normalised by the variance of the subset over
 which it is computed, and that variance is dominated by the day–night oscillation, an all-hours
-R² above 0.9 on this dataset is not evidence of forecast skill. Daylight statistics are reported
-throughout this work as the primary results.
+R² above 0.9 on this dataset is not evidence of forecast skill. Daytime statistics (geometric
+daylight for forecasts, positive-irradiance hours for description) are reported throughout this work
+as the primary results.
 
 **Second, the reference to beat is climatology, not persistence.** At a horizon of 24 h,
 persistence is aligned with the diurnal cycle and therefore inherits the deterministic geometric
@@ -540,19 +563,20 @@ reference on RMSE and R².
 
 **Third, no single reference dominates.** Climatology is the stronger of the two on RMSE and R²,
 while persistence is stronger on MAE, reflecting the asymmetry of the error distribution. A
-forecast must therefore be shown to improve on 108.00 W/m² in RMSE, 0.853 in R² and 71.59 W/m² in
-MAE before it can be said to have improved on the naive references at all.
+forecast must therefore be shown to improve on the climatological RMSE and R² and on the persistence
+MAE (107.0 W/m², 0.858 and 70.3 W/m² respectively in Table 12) before it can be said to have improved
+on the naive references at all.
 
 Site-level reference accuracy quantifies the regime difference of Section 7. The climatological
-reference attains a daylight RMSE of 92.6 W/m² at Antalya, 96.2 at Van, 104.7 at Konya and 108.2 at
-Ankara, but 133.4 at Rize, with R² falling from 0.90 to 0.72. Figure 8 shows this comparison. The
+reference attains an RMSE over positive-irradiance hours of 92.0 W/m² at Antalya, 95.3 at Van,
+103.4 at Konya and 107.0 at Ankara, but 132.4 at Rize, with R² falling from 0.90 to 0.73. Figure 8 shows this comparison. The
 pooled figure, in which four similar sites outvote one dissimilar one, understates the difficulty
 Rize presents.
 
 ![Figure 8](outputs/eda/figures/persistence_baseline.png)
 
 **Figure 8.** Accuracy of the naive reference forecasts on the test partition, by site, over
-daylight hours.
+hours with positive irradiance.
 
 ## 13. Summary
 
@@ -560,8 +584,8 @@ The dataset comprises 306,840 hourly observations distributed evenly over five T
 seven years, with no missing values, one radiation variable and six meteorological
 predictors. Its principal characteristics, in the order in which they constrain the analysis, are:
 
-1. Approximately half of all observations are night hours of exactly zero irradiance, and they
-   must be excluded from evaluation for reported metrics to be interpretable.
+1. Approximately half of all observations are night hours (48.5% read exactly zero irradiance),
+   and they must be excluded from evaluation for reported metrics to be interpretable.
 2. Timestamps follow per-site local solar time rather than a common zone, so hourly quantities
    cannot be compared across sites.
 3. Four sites form a single radiative regime and the fifth, Rize, forms a second one that is both
@@ -572,5 +596,7 @@ predictors. Its principal characteristics, in the order in which they constrain 
    day.
 6. Most raw associations between meteorological variables and irradiance are confounded with solar
    geometry; three of six reverse sign once geometry is controlled for.
-7. The naive reference forecasts attain a daylight RMSE of 108.00 W/m² and an R² of 0.853, which
-   is the threshold any learned model must exceed to constitute a result.
+7. The naive reference forecasts attain an RMSE of 106.99 W/m² and an R² of 0.858 over hours with
+   positive irradiance (climatology), and a MAE of 70.27 W/m² (persistence); on the geometric
+   daylight subset used for evaluation the values are about 1% different, and they are the threshold
+   any learned model must exceed to constitute a result.

@@ -102,6 +102,17 @@ field is validated in `__post_init__`. Sweeps are named groups in
   frame is test leakage that would invalidate published numbers.
 - **Moving-block bootstrap, resampled per city** (`bootstrap_block_length`, default 168 windows ≈
   1 week), not i.i.d. resampling, to preserve autocorrelation.
+- **Two subsets, two jobs: the EDA uses `target > 0`, modelling keeps geometric daylight.**
+  Every descriptive EDA output (`eda.py`, `scripts/02_descriptive_analysis.py`: statistics,
+  correlations, ramps, histograms, the descriptive reference-forecast table) is computed on
+  `eda.positive_mask` = `target > 0`, labelled "hours with target > 0" and stored under scope
+  `positive`. (NASA's `-999` sentinel is below zero, so it is excluded by the same condition;
+  `data.py` raises before one can reach the EDA.) Training, validation, test metrics, the
+  conformal layer and the naive baselines keep the geometric `daylight` mask below, which is
+  an outlier-removal principle that does not condition on the answer. On this record the two
+  differ by 3,030 twilight hours (1.9% of the target > 0 rows, at most 11.68 W/m², sun up to
+  2.4° below the horizon), and no daylight hour reads zero (`target_positive_filter_audit.csv`).
+  Never mix the two in one table: the manuscript must say which subset each number comes from.
 - **Daylight means `solar_elevation > 0`**, computed from site and time alone. A `target > 0`
   threshold would pick the metric's denominator using the answer and cannot be evaluated 24 h
   ahead. The threshold is deliberately untuned.
@@ -156,7 +167,8 @@ result.
 
 - Experiment figures: `utils.py`, into `outputs/experiments/<id>/figures/` via the `Agg` backend;
   a new plot is a function taking an explicit `save_path` that closes its figure.
-- Dataset figures and tables: `eda.py` via `scripts/02_descriptive_analysis.py`, into
+- Dataset figures and tables: `eda.py` via `scripts/02_descriptive_analysis.py`, on the
+  `target > 0` subset (see the invariant above), into
   `outputs/eda/`, styled by `paper_style.py` (300 dpi PNG plus vector PDF, white background).
   `paper_style.py` exposes `PAPER_RC` for `plt.rc_context` and never mutates global rcParams.
   Keep `outputs/eda/README.md` and `EDA.md` in step with the numbers.

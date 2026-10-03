@@ -2,7 +2,8 @@
 
 **Data version:** `SolarData_Merve(031026_V3).xlsx` (3 October 2026, V3) — the file every
 number below comes from.
-**Document date:** 3 October 2026. All earlier versions are superseded; the V2 export
+**Document date:** 3 October 2026, revised 4 October 2026 (the descriptive subset changed from
+geometric daylight to `target > 0`: §0.2, §3.2). All earlier versions are superseded; the V2 export
 (`SolarData_Merve(140926_V2).xlsx`) is superseded as well and no number here may be mixed with it.
 
 This document explains **what the tables and figures under `outputs/eda/` say**. It is written
@@ -59,7 +60,7 @@ moved `PRECTOTCORR` from mm/day (July export) to mm/hour, which cut the resoluti
 mm/day to 0.24 mm/day-equivalent; at the time, 38.7% of the hours that used to read as rainy
 read exactly zero. That comparison was made against the July export, which is no longer in the
 repository, and was **not re-verified for this version**. V3's smallest non-zero value is
-0.01 mm/hour and 66.6% of daylight hours are exactly zero (§4.1).
+0.01 mm/hour and 66.7% of the hours with `target > 0` are exactly zero (§4.1).
 
 ### 0.2 `CLRSKY_SFC_SW_DWN` is gone — solar geometry replaced it
 
@@ -72,7 +73,9 @@ The new export does not contain it. **Rather than reaching back into the superse
 compute what is needed** (`src/merve_solar/solar.py`). The project therefore depends on one
 Excel file and on astronomy, and on nothing else.
 
-**Daylight is now defined by computed solar elevation.** From the province coordinates and the
+**Geometric daylight is now defined by computed solar elevation** (this is the mask the modelling
+side uses; the descriptive tables in this folder use a different subset, `target > 0`, since
+4 October 2026 — see the end of this section and §3.2). From the province coordinates and the
 timestamp, the apparent solar elevation at each hour's **midpoint** is computed with the NREL
 algorithm (pvlib); `solar elevation > 0` means daylight. Two conventions were verified against
 the record itself:
@@ -89,6 +92,14 @@ untuned choice was measured in the September round, when the clear-sky column wa
 available: the climatology floor's daylight RMSE moved 108.78 → 109.86 W/m² and R² 0.8514 →
 0.8456. **That comparison needs `CLRSKY_SFC_SW_DWN`, which neither current export contains, so it
 cannot be repeated on V3 and is quoted as a historical measurement.**
+
+**The descriptive subset is `target > 0`, not the geometric mask (changed 4 October 2026).** Every
+descriptive table and figure in this folder that restricts to daytime now keeps the rows whose
+recorded target is strictly positive (158,111 of 306,840 rows, 51.53%); the geometric mask has
+155,081 (50.54%). The two differ by 3,030 twilight rows that `target > 0` keeps and the geometric
+mask drops; no geometric-daylight row reads zero. Modelling, evaluation, the night clamp and the
+pipeline's naive baselines are **unchanged** and still use geometric daylight, because `target > 0`
+conditions on the outcome and cannot be formed 24 h ahead. The full account is in §3.2.
 
 **The clearness index now uses the literature's standard definition.** It used to be
 `kt = ALLSKY / CLRSKY` (a clear-sky index); it is now
@@ -178,23 +189,26 @@ share **28.6%** against 6.3–11.2%, its clear-day share 14.2% against 44.0–50
 between-day coefficient of variation 0.565 against 0.435–0.488. Rize is where the paper's
 cross-province transfer claim is actually tested.
 
-**(2) Night rows improve every metric for free.** 49.5% of rows are geometrically night and all
-of them are exactly zero. The same climatology reference scores RMSE 77.2 W/m² / R² 0.924 over
-24 hours and RMSE 108.0 / R² 0.853 over daylight hours. Night rows cut RMSE by 29% and inflate
-R² by 0.071. **The daylight figure is the one comparable to the literature.**
+**(2) Night rows improve every metric for free.** 48.5% of rows read exactly zero (49.5% are
+geometrically night; the 3,030 twilight rows among them carry a few W/m², §3.2). The same
+climatology reference scores RMSE 77.2 W/m² / R² 0.924 over 24 hours and RMSE 107.0 / R² 0.858
+over the hours with `target > 0`. Night rows cut RMSE by 28% and inflate R² by 0.066. **The
+daytime figure is the one comparable to the literature.**
 
-**(3) The floor to beat is climatology — and the winner depends on the metric.** On daylight
-hours, in the model's own chronological test window (V3 split, §2), scored by the descriptive
-twin: climatology RMSE **108.00** / MAE 74.17 / R² **0.8528**; persistence 120.90 / MAE
-**71.59** / R² 0.8155. Climatology wins on RMSE and R², persistence on MAE. To be a result, the
-LSTM has to clear **all three**. **Caveat — these are not yet the pipeline's numbers.** The
+**(3) The floor to beat is climatology — and the winner depends on the metric.** On the hours with
+`target > 0`, in the model's own chronological test window (V3 split, §2), scored by the
+descriptive twin: climatology RMSE **106.99** / MAE 72.84 / R² **0.8577**; persistence 119.76 /
+MAE **70.27** / R² 0.8217. Climatology wins on RMSE and R², persistence on MAE. To be a result,
+the LSTM has to clear **all three**. **Caveat — these are not the pipeline's numbers.** The
+pipeline scores the model on geometric daylight, a slightly different subset (§8), and the
 ledger's two naive rows (climatology 109.86 / 75.72 / 0.8456, persistence 121.56 / 72.15 /
 0.8110) were produced on the V2 data and V2's split; they stay stale until
 `scripts/03_run_naive_baselines.py` is re-run on V3 (§8).
 
-**(4) Much of the raw correlation is solar geometry.** Pooled over daylight hours, temperature
-correlates with the target at +0.515 raw but +0.307 partially, within a (province, month, hour)
-cell. Surface pressure flips from −0.038 to **+0.268** and dew point from +0.045 to **−0.272**.
+**(4) Much of the raw correlation is solar geometry.** Pooled over the hours with `target > 0`,
+temperature correlates with the target at +0.517 raw but +0.305 partially, within a (province,
+month, hour) cell. Surface pressure flips from −0.035 to **+0.266** and dew point from +0.045 to
+**−0.269**.
 The stronger statement: **two variables (`PS`, `WS2M`) have inconsistent raw-correlation signs
 across the five provinces, while after conditioning on geometry all six agree in sign
 everywhere.**
@@ -229,14 +243,16 @@ steadiest months. That window is the conformal layer's calibration set; see §9.
 | Span | 2019-06-30 00:00 → 2026-06-29 23:00 |
 | Hours per province | 61,368 (2,557 days ≈ 7.00 years) |
 | Total rows | 306,840 |
-| Daylight rows | 155,081 (**50.54%**) |
+| Rows with `target > 0` (descriptive subset) | 158,111 (**51.53%**) |
+| Geometric daylight rows (evaluation subset) | 155,081 (**50.54%**) |
 | Missing values | none (after trimming the 24-hour `-999` tail, §0.5) |
 | Features | 13 |
 | Target | `ALLSKY_SFC_SW_DWN`, W/m² |
 
-Coverage is perfectly balanced: all five provinces share the same 61,368 hours. Mean daylight
-duration runs 12.10–12.16 h per day; the spread across provinces is the expected consequence of
-their latitudes.
+Coverage is perfectly balanced: all five provinces share the same 61,368 hours. Mean geometric
+daylight duration runs 12.10–12.16 h per day and the mean number of hours with `target > 0` runs
+12.28 (Antalya) – 12.42 (Ankara) per day; the spread across provinces is the expected consequence
+of their latitudes.
 
 The chronological split (train 0.74 / val 0.11 / test 0.15) falls on **identical dates** for all
 five:
@@ -283,60 +299,86 @@ Two consequences:
 
 ### 3.1 Distribution
 
-Pooled, daylight hours: mean **386.0 W/m²**, median 343.7, sd 278.6, maximum 1215.9 (Van).
-Skew +0.419, excess kurtosis −0.955. Between-province sd 44.5.
+Pooled, hours with `target > 0`: mean **378.7 W/m²**, median 334.6, sd 280.8, maximum 1215.9
+(Van). Skew +0.431, excess kurtosis −0.951. Between-province sd 43.3.
 
 Over all 24 hours: mean 195.1, median 7.8, skew +1.272.
 
 The gap between those two lines is the substance of §1(2). The 24-hour distribution is a mixture
-of two masses: a spike of exact zeros at night, and the daylight distribution. The daylight
+of two masses: a spike of exact zeros at night, and the daytime distribution. The daytime
 distribution itself has **negative excess kurtosis** — not peaked but broad and flat, the direct
 consequence of geometry sweeping from 0 to ~1000 across the day.
 
 **Caveat — scaling.** The target is not normally distributed and no transform assuming otherwise
 is applied. `StandardScaler` is fitted on training rows only.
 
-### 3.2 How daylight is defined, and why
+### 3.2 Two subsets, two jobs: `target > 0` for description, geometric daylight for evaluation
 
-**Daylight = computed solar elevation > 0**, at the midpoint of the hour (§0.2).
+**Descriptive subset: `target > 0`.** Every descriptive table and figure in this folder that
+restricts to daytime hours keeps the rows whose recorded `ALLSKY_SFC_SW_DWN` is strictly positive
+(`eda.positive_mask`; files and figure titles say "positive" / "hours with target > 0"). A
+description of the recorded data may condition on the recorded value, and the rule needs no
+geometry and no threshold. NASA POWER's missing marker (`-999`) is negative, so the rule also
+removes it; none is left after the trim of §0.5 and no negative value exists
+(`target_positive_filter_audit.csv`). What it removes, and how it relates to the geometric mask:
 
-Two alternatives were tried and rejected.
+| Province | Rows | Removed (target = 0) | Removed share | Kept | Geometric daylight | Twilight rows kept | Twilight mean (W/m²) | Twilight max (W/m²) |
+|---|---|---|---|---|---|---|---|---|
+| Ankara | 61,368 | 29,618 | 48.26% | 31,750 | 30,990 | 760 | 4.76 | 11.68 |
+| Antalya | 61,368 | 29,969 | 48.83% | 31,399 | 30,975 | 424 | 4.50 | 7.95 |
+| Konya | 61,368 | 29,667 | 48.34% | 31,701 | 30,936 | 765 | 5.30 | 11.18 |
+| Rize | 61,368 | 29,801 | 48.56% | 31,567 | 31,078 | 489 | 3.56 | 7.28 |
+| Van | 61,368 | 29,674 | 48.35% | 31,694 | 31,102 | 592 | 5.14 | 10.57 |
+| **Pooled** | **306,840** | **148,729** | **48.47%** | **158,111** | **155,081** | **3,030** | **4.74** | **11.68** |
 
-**`target > 0`.** The obvious candidate, and on this record it agrees with the geometry on
-303,810 of 306,840 rows (99.0%). It is still inadmissible, for two reasons, the second decisive:
+**Evaluation subset: geometric daylight** (`solar_elevation > 0`, §0.2). The model's metrics, the
+night clamp and the pipeline's naive baselines (`scripts/03_run_naive_baselines.py`, the ledger)
+use it, for two reasons, the second decisive:
 
-1. *It selects the evaluation set using the answer.* The daylight subset is the denominator of
-   every headline metric. If membership depends on the realised target, a heavily overcast
-   twilight hour reads zero and quietly leaves the subset — the hours where the model is worst
-   are the ones that drop out. On V3 no daylight row reads exactly zero (the target now has 0.01
-   W/m² resolution, and the V2 quantisation that used to produce a handful of such rows is gone),
-   so on this record the effect happens to be nil; but nothing bounds it on another record, and
-   it is not a property to rely on.
-2. *It cannot be evaluated at prediction time.* `clamp_night_to_zero` has to decide, for an hour
-   24 h ahead, whether the sun will be up, and `y` is not available then. A target-based rule
-   would report skill that is unattainable operationally. Geometry is therefore required
-   regardless — and once it exists, a second definition for the metric would be incoherent.
+1. *`target > 0` selects the evaluation set using the answer.* The daytime subset is the
+   denominator of every headline metric. If membership depends on the realised target, a heavily
+   overcast twilight hour reads zero and quietly leaves the subset — the hours where the model is
+   worst are the ones that drop out. On V3 no geometric-daylight row reads exactly zero (the
+   target now has 0.01 W/m² resolution, and the V2 quantisation that used to produce a handful of
+   such rows is gone), so on this record the effect happens to be nil; but nothing bounds it on
+   another record, and it is not a property to rely on.
+2. *`target > 0` cannot be evaluated at prediction time.* `clamp_night_to_zero` has to decide, for
+   an hour 24 h ahead, whether the sun will be up, and `y` is not available then. A target-based
+   rule would report skill that is unattainable operationally. Geometry is therefore required
+   regardless — and a metric defined on a different subset from the one the forecast acts on
+   would be incoherent.
 
-**A climatological (province, month, hour) cell mean.** Used in the first EDA round and too
-coarse: within one month sunrise shifts 30–60 minutes, so the cell mean marks the whole edge
-hour as daylight. It admitted 5,266 rows of genuine night (measured in that first round, on the
-July export).
+Descriptive statistics do not have that problem, which is why the tables here use the simpler
+rule. **The cost is that the descriptive twin of a metric is not the pipeline's metric** (§8): the
+two subsets differ by the twilight rows below, so a number from a table here is never quoted as a
+model-side floor or result.
 
-**How the new definition sits against the data.** Comparing the geometric mask with `target > 0`:
+**How the two sit against each other.** The two rules agree on 303,810 of 306,840 rows (99.0%).
 
-- Hours called daylight that read exactly zero: **0** (in 306,840 rows).
-- Hours called night that carry irradiance: 3,030. These are twilight hours in which the sun
-  rises part-way through the interval (computed elevation between −2.4° and 0°, mean target 4.7
-  W/m²). They carry **0.024% of total daylight energy**, and dropping them makes the daylight
-  subset *harder*, not easier. That is the safe direction.
+- Geometric-daylight rows that read exactly zero: **0** (in 306,840 rows), so the `target > 0`
+  subset contains the whole geometric subset.
+- Rows that `target > 0` keeps but the geometric mask drops ("twilight" rows): **3,030**, 1.9% of
+  the 158,111 kept (Ankara 760, Antalya 424, Konya 765, Rize 489, Van 592). They fall at local
+  solar hours 04–07 and 16–19, with the computed elevation between −2.4° and 0° (sunrise or sunset
+  part-way through the interval). Their target is small: mean 4.74 W/m², sd 1.64, minimum 0.80,
+  maximum 11.68 (per province: Ankara 4.76 / sd 1.69 / min 1.05 / max 11.68, Antalya 4.50 / 1.32 /
+  1.58 / 7.95, Konya 5.30 / 1.59 / 1.38 / 11.18, Rize 3.56 / 1.38 / 0.80 / 7.28, Van 5.14 / 1.50 /
+  1.92 / 10.57). They carry **0.024% of the energy** recorded on the `target > 0` rows and pull the
+  pooled mean of that subset down by about 2% (378.7 W/m² against 386.0 over the geometric rows).
+
+**A climatological (province, month, hour) cell mean** was used in the first EDA round and is too
+coarse: within one month sunrise shifts 30–60 minutes, so the cell mean marks the whole edge hour
+as daylight. It admitted 5,266 rows of genuine night (measured in that first round, on the July
+export).
 
 ### 3.3 Diurnal and seasonal structure
 
 Hour of day alone explains **73.2%** of the variance over 24 hours (pooled η²); within the
-daylight subset that falls to 48.9%. Day of year explains 8.7% and 14.8% respectively.
+`target > 0` subset that falls to 50.4%. Day of year explains 8.7% and 14.4% respectively.
 
 - Three quarters of a 24-hour score comes from knowing the day/night cycle — not from the model.
-- Within daylight, hour is still dominant but the seasonal share nearly doubles.
+- Within the daytime hours, hour is still dominant but the seasonal share rises by about two
+  thirds (8.7% to 14.4%).
 
 A harmonic (sin/cos) fit captures essentially all of the η² (24 h: 0.7291 against 0.7318).
 **Recommendation:** the current sin/cos encoding loses nothing relative to categorical hour
@@ -384,36 +426,36 @@ in Rize's test score comes from the year rather than from the model.
 
 ## 4. Meteorological variables
 
-Pooled, daylight hours:
+Pooled, hours with `target > 0`:
 
 | Column | Mean | SD | Range | Between-province SD | Note |
 |---|---|---|---|---|---|
-| `T2M` (°C) | 15.68 | 10.29 | −23.6 … 42.3 | 3.83 | |
-| `RH2M` (%) | 53.61 | 23.56 | 3.4 … 100 | **11.18** | Most discriminating; the one real predictor |
-| `T2MDEW` (°C) | 4.36 | 7.06 | −27.5 … 22.9 | 4.42 | Derivable (§6.3) |
-| `PS` (kPa) | 88.29 | 6.03 | 75.8 … 97.7 | **6.72** | Variance is entirely elevation |
-| `WS2M` (m/s) | 2.60 | 1.53 | 0.01 … 13.65 | 0.51 | |
-| `PRECTOTCORR` (mm/hour) | 0.071 | 0.261 | 0 … 7.38 | 0.049 | Skew +8.2 |
+| `T2M` (°C) | 15.56 | 10.29 | −23.6 … 42.3 | 3.82 | |
+| `RH2M` (%) | 53.98 | 23.66 | 3.4 … 100 | **11.07** | Most discriminating; the one real predictor |
+| `T2MDEW` (°C) | 4.35 | 7.05 | −27.5 … 22.9 | 4.40 | Derivable (§6.3) |
+| `PS` (kPa) | 88.28 | 6.03 | 75.8 … 97.7 | **6.72** | Variance is entirely elevation |
+| `WS2M` (m/s) | 2.58 | 1.53 | 0.01 … 13.65 | 0.50 | |
+| `PRECTOTCORR` (mm/hour) | 0.071 | 0.260 | 0 … 7.38 | 0.049 | Skew +8.2 |
 
 **Surface pressure does not behave like a meteorological variable here.** Its pooled sd is
 6.03 kPa but its between-province sd is 6.72 — the variance is entirely across provinces, not
-within them (Van 77.7, Konya 87.9, Ankara 88.8, Rize 91.2, Antalya 96.0 kPa). In a pooled model
+within them (Van 77.7, Konya 87.8, Ankara 88.8, Rize 91.2, Antalya 96.0 kPa). In a pooled model
 `PS` effectively acts as an **elevation / province-identity indicator** and duplicates what the
 city embedding already carries. Its within-province variation (sd ≈ 0.4–0.5 kPa) is the real
 synoptic signal, and it explains why the partial correlation flips sign in §6.1.
 
 ### 4.1 Precipitation: effectively a binary variable
 
-**66.6% of daylight hours are exactly zero**, and the non-zero tail is heavily skewed (skew
-+8.2). Correlation with the target under three encodings:
+**66.7% of the hours with `target > 0` are exactly zero**, and the non-zero tail is heavily
+skewed (skew +8.2). Correlation with the target under three encodings:
 
 | Province | Binary (rain / no rain) | Raw amount | `log1p(amount)` |
 |---|---|---|---|
-| Ankara | **−0.166** | −0.101 | −0.114 |
-| Antalya | **−0.213** | −0.177 | −0.204 |
-| Konya | **−0.189** | −0.116 | −0.138 |
-| Rize | −0.217 | −0.219 | **−0.250** |
-| Van | **−0.186** | −0.139 | −0.162 |
+| Ankara | **−0.155** | −0.096 | −0.108 |
+| Antalya | **−0.209** | −0.172 | −0.199 |
+| Konya | **−0.179** | −0.110 | −0.131 |
+| Rize | −0.213 | −0.215 | **−0.245** |
+| Van | **−0.180** | −0.134 | −0.155 |
 
 In four provinces a simple "is it raining" indicator is more informative than the raw amount
 and than `log1p`; in Rize `log1p` leads. (The previous version of this table bolded only three
@@ -502,29 +544,29 @@ The residual autocorrelation at day 30 (0.08–0.23) is seasonal trend, not memo
 
 ### 5.3 Ramps
 
-Absolute change between consecutive daylight hours:
+Absolute change between consecutive hours with `target > 0`:
 
 | Province | Median \|Δ\| | p90 | p99 | Share > 200 W/m² | \|Δkt\| p99 |
 |---|---|---|---|---|---|
-| Ankara | 106.4 | 187.9 | 211.4 | 3.8% | 0.220 |
-| Antalya | 116.4 | 193.0 | 218.9 | 6.3% | 0.216 |
-| Konya | 111.3 | 193.5 | 216.3 | 6.5% | 0.221 |
-| Rize | 83.1 | 167.9 | 213.6 | 1.8% | 0.206 |
-| Van | 115.9 | 194.7 | 217.2 | 7.2% | 0.222 |
+| Ankara | 104.9 | 187.5 | 211.2 | 3.7% | 0.220 |
+| Antalya | 115.3 | 192.6 | 218.8 | 6.3% | 0.216 |
+| Konya | 109.7 | 193.1 | 216.1 | 6.3% | 0.221 |
+| Rize | 82.2 | 167.5 | 213.3 | 1.7% | 0.206 |
+| Van | 114.6 | 194.4 | 217.1 | 7.0% | 0.222 |
 
 Most of the ramp in raw irradiance is geometry. In the Δkt column the provinces are strikingly
 **close together** (0.206–0.222): Rize's raw ramps look small only because its sun is weak to
 begin with, not because its atmosphere is steadier.
 
-### 5.4 Daylight blocks
+### 5.4 Blocks of positive-irradiance hours
 
-Daylight hours arrive in uninterrupted blocks: 2,557 blocks per province (one per day), median
-length 12 hours, shortest 9 (Ankara, Konya, Rize) or 10 (Antalya, Van), longest 14 (Antalya) /
-15 (the others). No block reaches 24 hours.
+Hours with `target > 0` arrive in uninterrupted blocks (`positive_block_structure.csv`): 2,557
+blocks per province (one per day), median length 12 hours (13 in Rize), shortest 9 (Rize) or 10
+(the others), longest 14 (Antalya) / 15 (the others). No block reaches 24 hours.
 
 **Caveat.** This means a 24-hour forecast horizon **always contains at least one night**. No
-prediction window can be entirely daylight, so `clamp_night_to_zero` directly affects roughly
-half of every window.
+prediction window can be entirely daylight, so `clamp_night_to_zero` (which acts on the geometric
+mask, §3.2) directly affects roughly half of every window.
 
 ---
 
@@ -534,16 +576,16 @@ half of every window.
 
 `target_correlation_by_city.csv` gives both the raw Pearson correlation and the **partial
 correlation within a (province, month, hour) cell**. The latter measures the relationship with
-the target holding solar geometry and season fixed. Pooled, daylight hours:
+the target holding solar geometry and season fixed. Pooled, hours with `target > 0`:
 
 | Column | Raw r | Partial r | Reading |
 |---|---|---|---|
-| `RH2M` | −0.626 | **−0.529** | The one real predictor; strong under both measures |
-| `T2M` | +0.515 | +0.307 | Half of it is geometry |
-| `PRECTOTCORR` | −0.168 | **−0.328** | **Doubles** once geometry is held fixed |
-| `T2MDEW` | +0.045 | **−0.272** | **Changes sign** |
-| `PS` | −0.038 | **+0.268** | **Changes sign** |
-| `WS2M` | +0.142 | −0.148 | **Changes sign** |
+| `RH2M` | −0.627 | **−0.523** | The one real predictor; strong under both measures |
+| `T2M` | +0.517 | +0.305 | Half of it is geometry |
+| `PRECTOTCORR` | −0.162 | **−0.326** | **Doubles** once geometry is held fixed |
+| `T2MDEW` | +0.045 | **−0.269** | **Changes sign** |
+| `PS` | −0.035 | **+0.266** | **Changes sign** |
+| `WS2M` | +0.154 | −0.148 | **Changes sign** |
 
 Three variables change sign and precipitation doubles. The mechanism is simple: warm, windy,
 high-dew-point hours are also **summer midday hours**, when irradiance is already geometrically
@@ -559,9 +601,9 @@ table is the one to use**; the raw matrix should appear only to demonstrate why 
 
 ### 6.2 Linearity: Spearman and Pearson agree
 
-Pooled over daylight hours (Spearman minus Pearson), the largest difference is **−0.057** for
-precipitation, followed by +0.047 for `WS2M`. No variable exceeds 0.06 (`T2M` −0.015, `T2MDEW`
-−0.009, `PS` −0.008, `RH2M` +0.001). There is no non-monotonic relationship.
+Pooled over the hours with `target > 0` (Spearman minus Pearson), the largest difference is
+**−0.052** for precipitation, followed by +0.051 for `WS2M`. No variable exceeds 0.06 (`T2M`
+−0.016, `T2MDEW` −0.008, `PS` −0.005, `RH2M` +0.001). There is no non-monotonic relationship.
 
 That the difference concentrates in precipitation and wind is the expected direction — both are
 heavily skewed — and **Spearman being larger in absolute value** strengthens the recommendation
@@ -573,19 +615,19 @@ in §4.1: precipitation's relationship is rank-based rather than linear.
 pair was `WS2M`–`WS10M` (r = 0.987), and the 10 m wind was dropped in V2. An empty table here is
 a result, not an error.
 
-Pairs above |r| = 0.5, pooled over daylight hours — all physical, none at removal level:
+Pairs above |r| = 0.5, pooled over the hours with `target > 0` — all physical, none at removal level:
 
 | Pair | Pearson | Spearman |
 |---|---|---|
-| `T2M` – `RH2M` | −0.671 | −0.675 |
-| `T2M` – `T2MDEW` | +0.610 | +0.593 |
-| `T2MDEW` – `PS` | +0.520 | +0.482 |
+| `T2M` – `RH2M` | −0.672 | −0.675 |
+| `T2M` – `T2MDEW` | +0.611 | +0.595 |
+| `T2MDEW` – `PS` | +0.517 | +0.479 |
 
 **Caveat — pairwise correlation cannot see the redundancy that matters.** `T2MDEW` is not a
 measurement but a formula: reproduced from `T2M` and `RH2M` by the Magnus relation it reaches
-r = **0.99920**, RMSE = **0.30 °C** over 24 hours (daylight: r = 0.99958, RMSE 0.22 °C), i.e.
+r = **0.99920**, RMSE = **0.30 °C** over 24 hours (hours with `target > 0`: r = 0.99957, RMSE 0.22 °C), i.e.
 measurement-noise level. Pairwise correlation misses it because it is a two-variable function —
-the `T2M`–`T2MDEW` correlation is only 0.610. A collinearity table is a **lower bound** on
+the `T2M`–`T2MDEW` correlation is only 0.611. A collinearity table is a **lower bound** on
 redundancy, never an upper one.
 
 **Recommendation — run a single-axis arm dropping `T2MDEW`,** 13 → 12. The expected effect is
@@ -611,8 +653,8 @@ distribution**.
 | Between-day CV | **0.565** | 0.435 – 0.488 |
 | Daily PACF, day 1 | **0.420** | 0.540 – 0.562 |
 | Daily ACF, day 30 | **0.083** | 0.162 – 0.229 |
-| Climatology daylight RMSE (descriptive twin, §8) | **133.4 W/m²** | 92.6 – 108.2 |
-| Climatology daylight R² (descriptive twin, §8) | **0.721** | 0.855 – 0.895 |
+| Climatology RMSE on `target > 0` hours (descriptive twin, §8) | **132.4 W/m²** | 92.0 – 107.0 |
+| Climatology R² on `target > 0` hours (descriptive twin, §8) | **0.727** | 0.861 – 0.898 |
 
 Rize's **best season** (summer, kt = 0.525) is close to the other provinces' **winter**
 (0.477–0.556). This is not a seasonal difference but a regime difference.
@@ -659,38 +701,46 @@ windowing**:
 
 **Which numbers these are.** The table below is `persistence_baseline.csv`, the descriptive twin
 computed on V3 in the V3 test window (2025-06-11 10:00 → 2026-06-29 23:00; 46,030 hours pooled,
-23,499 of them daylight). The pipeline's own run (`scripts/03_run_naive_baselines.py`, which writes
-the ledger rows) counts scored elements rather than hours and differs from the twin in the last
-decimals (on V2: climatology daylight RMSE 109.83 twin vs 109.86 pipeline).
+23,948 of them with `target > 0`). **Its daytime scope is `target > 0`, the EDA's descriptive
+subset (§3.2); it is not the pipeline floor.** The pipeline's own run
+(`scripts/03_run_naive_baselines.py`, which writes the ledger rows) scores the **geometric
+daylight** subset (23,499 of those 46,030 hours), counts scored elements rather than hours, and so
+differs from the twin both in the subset (the 449 test-window twilight hours that only `target >
+0` keeps) and in the last decimals (on V2, when both used the geometric mask: climatology daylight
+RMSE 109.83 twin vs 109.86 pipeline). Until the baselines are re-run on V3, the pipeline floor on
+the geometric subset does not exist in the current outputs; the previous revision of this table,
+which still used the geometric mask, read climatology 108.00 / 74.17 / 0.8528 and persistence
+120.90 / 71.59 / 0.8155, i.e. about 1% above the `target > 0` values below in RMSE.
 
 **Caveat — the ledger is stale.** `outputs/experiments_ledger.csv` currently holds the two naive
 rows produced on the **V2** data (V2 split, 9,097-hour test window, quantised target):
 climatology daylight RMSE 109.86 / MAE 75.72 / R² 0.8456 and persistence 121.56 / 72.15 / 0.8110.
-They are not V3 numbers. Until `scripts/03_run_naive_baselines.py` is re-run, the V3 floor in
-the paper-facing documents is the twin below, and any ledger row compared against it must be
-re-run on V3 first.
+They are not V3 numbers. Until `scripts/03_run_naive_baselines.py` is re-run, any V3 floor quoted in the paper-facing
+documents is provisional and must say which subset it was computed on; any ledger row compared
+against it must be re-run on V3 first.
 
 | Reference | Scope | RMSE | MAE | R² |
 |---|---|---|---|---|
 | Persistence | 24 h | 86.38 | 36.56 | 0.9046 |
 | Climatology | 24 h | 77.17 | 37.94 | 0.9239 |
-| Persistence | **daylight** | 120.90 | **71.59** | 0.8155 |
-| Climatology | **daylight** | **108.00** | 74.17 | **0.8528** |
+| Persistence | **`target > 0`** | 119.76 | **70.27** | 0.8217 |
+| Climatology | **`target > 0`** | **106.99** | 72.84 | **0.8577** |
 
-By province, daylight, climatology: Antalya 92.6 / Van 96.2 / Konya 104.7 / Ankara 108.2 /
-**Rize 133.4** W/m²; R² 0.895 / 0.883 / 0.868 / 0.855 / **0.721**.
+By province, `target > 0` hours, climatology: Antalya 92.0 / Van 95.3 / Konya 103.4 / Ankara
+107.0 / **Rize 132.4** W/m²; R² 0.898 / 0.888 / 0.874 / 0.861 / **0.727**.
 
-**To be a result, the LSTM must beat 108.00 W/m² on RMSE and 0.8528 on R² (climatology) *and*
-71.59 W/m² on MAE (persistence), on daylight hours.** Winning on one metric is not enough; the
-champion changes with the metric. (Provisional: replace with the pipeline's V3 numbers once the
-naive baselines are re-run.)
+**To be a result, the LSTM must beat the climatology RMSE and R² *and* the persistence MAE on
+geometric daylight hours.** Winning on one metric is not enough; the champion changes with the
+metric. The thresholds are the pipeline's V3 numbers, which do not exist yet (re-run
+`scripts/03_run_naive_baselines.py`); the `target > 0` values above (106.99 / 0.8577 / 70.27) are
+a descriptive guide to their size, not the thresholds.
 
 **Caveat — smart persistence is absent from this table.** It required a clear-sky magnitude and
 collapses into plain persistence on the top-of-atmosphere denominator (§0.3). In the earlier data
 version it was the MAE champion; that role now belongs to plain persistence.
 
 **Caveat — 24-hour R² values must not enter the paper.** Climatology scores R² = 0.924 over 24
-hours. Because R² is normalised by the subset's own variance, the day/night swing dominates it.
+hours (0.858 over the hours with `target > 0`). Because R² is normalised by the subset's own variance, the day/night swing dominates it.
 **A 24-hour R² above 0.9 is evidence of nothing.** The same normalisation argument applies to
 PINW.
 
@@ -711,7 +761,7 @@ forecast has zero interval width, so CP degenerates into an equality test. CP/PI
 wide in summer. This is the data-side justification for a **season-indexed** conformal grid.
 
 **(2) The between-province difference is no smaller than the between-season one.** §7:
-climatology's daylight RMSE is 133.4 in Rize against 92.6 in Antalya — a 44% gap. That is why a
+climatology's RMSE over `target > 0` hours is 132.4 in Rize against 92.0 in Antalya — a 44% gap. That is why a
 single scalar calibration factor cannot work.
 
 **(3) Night elements inflate interval metrics structurally.** With `clamp_night_to_zero` on,
@@ -752,8 +802,8 @@ testable and costs seconds.
    2020-02-17 15:00 (kt = 2.23, §7.2), and the other kt > 1 row (1.03) is a plausible
    cloud-enhancement value; neither has been removed.
 
-3. **The daylight mask is computed, not measured** (§0.2). The province coordinates, the time
-   convention and the threshold choice must be stated explicitly in the methods section. The cost
+3. **The geometric daylight mask is computed, not measured** (§0.2). The province coordinates,
+   the time convention and the threshold choice must be stated explicitly in the methods section. The cost
    of the untuned threshold was measured in the September round (climatology floor RMSE 108.78 →
    109.86) and cannot be re-measured on V3.
 
@@ -787,6 +837,12 @@ testable and costs seconds.
 11. **Figures and tables use raw NASA POWER column names.** The manuscript should gloss each one
     on first use (e.g. "`RH2M`, relative humidity at 2 m"); the figures rely on that gloss.
 
+12. **The descriptive subset (`target > 0`) is not the evaluation subset (geometric daylight)**
+    (§3.2). The manuscript must say which subset each number comes from: dataset-description tables
+    use `target > 0`, model metrics use geometric daylight, and the two differ by 3,030 twilight
+    rows (1.9% of the kept rows). A descriptive number (including the descriptive reference-forecast
+    twin of §8) must never be placed next to a model metric as if it were the same quantity.
+
 ---
 
 ## 11. Which claim comes from which file
@@ -796,7 +852,7 @@ testable and costs seconds.
 | File | Sections |
 |---|---|
 | `temporal_coverage_by_city.csv` | §2, §3.3 |
-| `descriptive_stats_by_city_daylight.csv` / `_24h.csv` (+ `.md`, `.tex`) | §3.1, §4 |
+| `descriptive_stats_by_city_positive.csv` / `_24h.csv` (+ `.md`, `.tex`) | §3.1, §4 |
 | `target_by_hour_by_city.csv` | §2.1, §3.3 |
 | `time_feature_explained_variance.csv` | §3.3 |
 | `seasonal_target_stats.csv` | §3.4, §7 |
@@ -805,9 +861,10 @@ testable and costs seconds.
 | `clearness_index_by_city.csv` | §7.1, §7.2, §7.3 |
 | `autocorrelation_clearness.csv` | §5.1, §5.2 |
 | `ramp_stats_by_city.csv` | §5.3 |
-| `daylight_block_structure.csv` | §5.4 |
-| `persistence_baseline.csv` | §1(2–3), §7.1, §8, §9(2) (descriptive twin; the ledger's naive rows are V2-era until the baselines are re-run) |
-| `target_correlation_by_city.csv` | §6.1 |
+| `positive_block_structure.csv` | §5.4 |
+| `target_positive_filter_audit.csv` | §0.2, §2, §3.2 (rows removed and kept per province, the twilight rows) |
+| `persistence_baseline.csv` | §1(2–3), §7.1, §8, §9(2) (descriptive twin on `target > 0` rows, **not** the pipeline floor; the ledger's naive rows are V2-era until the baselines are re-run) |
+| `target_correlation_by_city.csv` | §1(4), §6.1 |
 | `correlation_pearson_*.csv`, `correlation_spearman_*.csv` | §6.2, §6.3 |
 | `collinear_pairs.csv` | §6.3 (empty since V2 — that is the finding) |
 | `wind_direction_circular_stats.csv` | §4.2 |
@@ -841,11 +898,12 @@ broken.
 | Precipitation resolution loss (V2-era, July export gone) | 38.7% of previously rainy hours read exactly zero; **not re-verified** | §0.1 |
 | Cost of the geometric mask (V2-era, needs the clear-sky column) | climatology daylight RMSE 108.78 → 109.86, R² 0.8514 → 0.8456; **cannot be re-measured on V3** | §0.2, §10(3) |
 | Threshold sweep | a tuned −2.0° gives 456 disagreements with `target > 0`, the untuned 0° gives 3,030 | §0.2 |
-| Mask vs `target > 0` | daylight-but-zero: 0 rows; night-but-positive: 3,030 rows (elevation −2.4° … 0°), 0.024% of daylight energy | §3.2 |
+| Geometric mask vs `target > 0` | rows and means per province are in `target_positive_filter_audit.csv`; the rest is computed outside it: twilight sd 1.64 pooled (Ankara 1.69, Antalya 1.32, Konya 1.59, Rize 1.38, Van 1.50), twilight minimum 0.80 pooled (Ankara 1.05, Antalya 1.58, Konya 1.38, Rize 0.80, Van 1.92), computed elevation −2.4° … 0°, local solar hours 04–07 and 16–19, 0.024% of the energy on `target > 0` rows; pooled mean 378.7 W/m² on `target > 0` rows against 386.0 on geometric-daylight rows | §0.2, §3.2 |
+| Test-window row counts per subset | 46,030 hours pooled, 23,948 with `target > 0`, 23,499 geometric daylight | §8 |
 | Smart persistence degenerating | on the TOA denominator, V3 test window, daylight RMSE 121.06 / MAE 71.69; plain persistence on the same rows 120.97 / 71.67 | §0.3, §8 |
 | `WD2M` – `WD10M` redundancy (measured on V1; the 10 m column is gone since V2) | median angular difference 0.30°, mean 1.56°, p95 6.30°; sin/cos r = 0.996 / 0.997; `WS2M`–`WS10M` r = 0.987 | §0.4, §6.3 |
-| Dew point reproduced by Magnus | r = 0.99920, RMSE 0.30 °C (24 h); r = 0.99958, RMSE 0.22 °C (daylight) | §1(6), §6.3 |
-| Precipitation encodings vs the target | table in §4.1; daylight zero share 66.6% | §4.1 |
+| Dew point reproduced by Magnus | r = 0.99920, RMSE 0.30 °C (24 h); r = 0.99957, RMSE 0.22 °C (`target > 0` rows) | §1(6), §6.3 |
+| Precipitation encodings vs the target | table in §4.1 (computed on `target > 0` rows); zero share 66.7% of those rows | §4.1 |
 | Annual precipitation totals (unit check) | Ankara 340, Konya 326, Van 343, Antalya 664, Rize 1399 mm/year | §4.1 |
 | Peak hours (local-solar-time check; centre of mass of the mean diurnal profile on the hour label) | Konya 11.2493, Ankara 11.2516, Antalya 11.4070, Van 11.5594, Rize 11.8922; deviation from the `UTC + round(lon/15)` expectation −0.085 … +0.094 h | §2.1 |
 | Split boundaries and the validation window's missing months | test 9,206 hours / 383.6 days; validation has no July or August and 1–11 June 2025 only (Summer cell 250 hours, 3.7%) | §1(7), §2, §9(4) |
@@ -853,5 +911,5 @@ broken.
 | Calibration-gap check | daily kt sd, 1–11 June 2025 vs June–July 2019–2025: Ankara 0.096 / 0.100, Antalya 0.054 / 0.065, Konya 0.094 / 0.092, Rize 0.135 / 0.142, Van 0.069 / 0.074 | §9(4) |
 | kt > 1 rows | 2 of 152,902 lit hours: Van 2020-02-17 15:00 (kt 2.23) and Van 2022-01-24 11:00 (kt 1.03) | §7.2, §7.3 |
 | Between-year variability | table in §3.5 | §3.5 |
-| Pooled daylight and 24 h target moments | daylight skew +0.419, excess kurtosis −0.955, between-province sd 44.5 (sd of the five province means); 24 h skew +1.272 | §3.1 |
-| Between-province sd of each meteorological column; pooled skew of `PRECTOTCORR` | table in §4 (sd of the five province means, computed from `base_features.parquet`; the descriptive-statistics table holds the other columns) | §4 |
+| Pooled `target > 0` and 24 h target moments | `target > 0` skew +0.431, excess kurtosis −0.951, between-province sd 43.3 (sd of the five province means); 24 h skew +1.272 | §3.1 |
+| Between-province sd of each meteorological column; pooled skew of `PRECTOTCORR` | table in §4 (`target > 0` rows; sd of the five province means, computed from `base_features.parquet`; the descriptive-statistics table holds the other columns) | §4 |

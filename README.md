@@ -88,7 +88,8 @@ for instead: `solar_elevation` (the sun's apparent elevation at each hour's
 midpoint, in degrees) and `toa_horizontal` (top-of-atmosphere irradiance, the
 denominator of the clearness index). Both are `MASK_COLUMNS` entries — in the
 frame, never a model input — and `solar_elevation > 0` is the project's
-definition of daylight. See `outputs/eda/EDA.md` §0.2. The final feature set is
+definition of daylight for modelling and evaluation (the descriptive EDA
+uses `target > 0`, see below). See `outputs/eda/EDA.md` §0.2. The final feature set is
 13 columns: the export carries one wind level instead of two, which is the
 reduction the EDA had been arguing for (`WS2M`–`WS10M` correlated at 0.987).
 Only needs to be run once — every experiment reuses the cached file:
@@ -123,11 +124,17 @@ Two documents come with the outputs:
   quoted into the manuscript, one section per table group, with a
   claim-to-file mapping at the end.
 
-Three analysis decisions are worth knowing before reading either. Daylight is
-defined **geometrically**, as `solar_elevation > 0` — computed from the site
-coordinates and the timestamp, so it is an exact "is the sun up" indicator that
-never reads the realised target and, unlike a `target > 0` rule, can also be
-evaluated 24 h ahead where `clamp_night_to_zero` needs it. Everything month-to-month is computed on **daily
+Three analysis decisions are worth knowing before reading either. There are
+**two daytime subsets, with two jobs**. The descriptive tables and figures use
+the hours with `target > 0` (positive-irradiance hours, 51.5% of rows): they
+describe recorded data, so conditioning on the recorded value is harmless. The
+modelling side (metrics, the `daylight` subset, the night clamp, the naive
+baselines) uses **geometric** daylight, `solar_elevation > 0` — computed from the
+site coordinates and the timestamp, so it is an exact "is the sun up" indicator
+that never reads the realised target and, unlike a `target > 0` rule, can also be
+evaluated 24 h ahead where `clamp_night_to_zero` needs it. The two differ by
+3,030 twilight rows (1.9% of the `target > 0` rows), so an EDA number is never
+quoted as a model-side number. Everything month-to-month is computed on **daily
 totals**, because a box of daylight-hourly values is mostly solar geometry and
 makes winter look *less* variable than summer, which is backwards. And the
 hourly clock is NASA POWER's **per-site Local Solar Time**, so hours are never

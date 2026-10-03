@@ -6,11 +6,13 @@ the ledger, or ExperimentConfig. Driven by scripts/02_descriptive_analysis.py.
 Three data-handling decisions drive most of this module; the reasoning is in
 outputs/eda/README.md and repeated briefly at each function:
 
-1. "Daylight" is defined geometrically, from the sun's computed elevation
-   (solar_elevation > 0), not from the realised target and not from a monthly cell mean.
-   See daylight_mask() and solar.py for why both alternatives are wrong.
+1. The hourly subset every descriptive statistic is computed on is `target > 0`
+   (positive-irradiance hours), not the geometric daylight mask. This is a descriptive choice
+   made for the EDA only: modelling and evaluation keep the geometric daylight mask
+   (solar_elevation > 0, see solar.py), which does not condition on the answer. The two
+   subsets differ by ~2% of rows; see positive_mask() and filter_audit_table().
 2. Anything month-to-month is computed on DAILY TOTALS, not on hourly values. A box of
-   daylight-hourly values is ~91% solar geometry, and it makes winter look *less* variable
+   positive-hourly values is ~91% solar geometry, and it makes winter look *less* variable
    than summer -- the opposite of the truth.
 3. The hourly clock is NASA POWER's per-site Local Solar Time, not a shared time zone
    (verified: peak hour orders Konya 11.25 < Ankara 11.26 < Antalya 11.41 < Van 11.56 <
@@ -24,7 +26,6 @@ import pandas as pd
 
 from merve_solar.config import (
     CIRCULAR_COLUMNS,
-    DAYLIGHT_REFERENCE_COLUMN,
     CITIES,
     RAW_METEO_COLUMNS,
     TARGET_COLUMN,
@@ -87,28 +88,56 @@ def attach_clearness(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------------------
 # data helpers
 # ---------------------------------------------------------------------------------------
-def daylight_mask(df: pd.DataFrame) -> pd.Series:
-    """Geometric daylight: the sun is above the horizon at the hour's midpoint.
+def positive_mask(df: pd.DataFrame) -> pd.Series:
+    """Positive-irradiance hours: `target > 0`. The subset every descriptive EDA output uses.
 
-    Reads the `solar_elevation` column that data.py computes from the site coordinates and the
-    timestamp -- see solar.py for the conventions, why `target > 0` is not admissible in its
-    place, and what the untuned threshold costs.
+    NASA POWER marks missing values with -999, which is < 0, so `target > 0` already excludes
+    the sentinel; data.py raises before a sentinel can reach this module, and the trimmed
+    record holds none. Night hours are exact zeros except for 3,030 twilight hours with
+    0.80-11.68 W/m^2 while the sun is up to 2.4 degrees below the horizon.
 
-    A climatological (city, month, hour) cell mean > 0 was used in the first EDA round and is
-    also wrong: within one month sunrise shifts 30-60 minutes, so the cell's edge hour is lit
-    for part of the month and dark for the rest, and the cell mean marks the whole hour as
-    daylight. That admitted 5,266 rows of genuine night and pulled every province's daylight
-    mean down by 10-14 W/m^2.
+    Descriptive use only. Evaluation uses the geometric `solar_elevation > 0` mask (solar.py)
+    because a `target > 0` subset picks a metric's denominator with the answer, and cannot be
+    formed 24 h ahead. The two differ only by those twilight hours and, on this record, no
+    daylight hour reads zero.
     """
-    from merve_solar.solar import is_daylight
+    return (df[TARGET_COLUMN] > 0).rename("positive")
 
-    if DAYLIGHT_REFERENCE_COLUMN not in df.columns:
-        raise ValueError(
-            f"frame has no {DAYLIGHT_REFERENCE_COLUMN!r} column -- rebuild "
-            "base_features.parquet with scripts/01_prepare_base_data.py."
+
+def filter_audit_table(df: pd.DataFrame) -> pd.DataFrame:
+    """What the `target > 0` filter removes, per province and pooled, and how it relates to
+    the geometric daylight mask the modelling side uses.
+
+    `removed_*` are the rows the descriptive EDA drops; the `twilight_*` columns are the rows
+    that `target > 0` keeps but the geometric mask would drop (sun at or below the horizon,
+    target still positive). `geometric_daylight_zero` counts the opposite disagreement.
+    """
+    pos = positive_mask(df)
+    geo = df["solar_elevation"] > 0
+    rows = []
+    for city, g in list(df.groupby("city", observed=True)) + [(POOLED_LABEL, df)]:
+        p, d = pos.loc[g.index], geo.loc[g.index]
+        tw = g.loc[p & ~d, TARGET_COLUMN]
+        rows.append(
+            {
+                "city": city,
+                "n_rows": int(len(g)),
+                "n_sentinel_999": int((g[TARGET_COLUMN] == -999).sum()),
+                "n_negative": int((g[TARGET_COLUMN] < 0).sum()),
+                "n_zero": int((g[TARGET_COLUMN] == 0).sum()),
+                "n_removed": int((~p).sum()),
+                "removed_share": float((~p).mean()),
+                "n_kept": int(p.sum()),
+                "kept_share": float(p.mean()),
+                "n_geometric_daylight": int(d.sum()),
+                "geometric_daylight_zero": int((d & ~p).sum()),
+                "n_twilight_kept": int(len(tw)),
+                "twilight_share_of_kept": float(len(tw) / p.sum()),
+                "twilight_mean": float(tw.mean()),
+                "twilight_max": float(tw.max()),
+            }
         )
-    return pd.Series(is_daylight(df[DAYLIGHT_REFERENCE_COLUMN].to_numpy()),
-                     index=df.index, name="daylight")
+    return pd.DataFrame(rows)
 
 
 def add_season(df: pd.DataFrame) -> pd.DataFrame:
@@ -124,7 +153,7 @@ def daily_totals(df: pd.DataFrame) -> pd.DataFrame:
     """Per (city, date) daily insolation in kWh/m^2/day.
 
     Summed over all 24 hours: night contributes exactly 0, so this is invariant to the
-    daylight filter. kWh (not Wh) because 4.9 reads and 4,944 does not, and five-digit
+    positive-hours filter. kWh (not Wh) because 4.9 reads and 4,944 does not, and five-digit
     ticks break the 3-D z axis layout.
     """
     out = (
@@ -230,11 +259,11 @@ def temporal_coverage_table(df: pd.DataFrame) -> pd.DataFrame:
 
     mean(hour_sin) ~ 0 and std ~ 0.707 for every city by construction, so those rows would
     carry no information in a paper table. What a Dataset section actually needs is span,
-    counts, daylight share and how the target moves with hour / month / season.
+    counts, positive-hour share and how the target moves with hour / month / season.
     """
     day = df["datetime"].dt.normalize()
-    is_day = daylight_mask(df)
-    work = add_season(df.assign(_date=day, _daylight=is_day))
+    is_pos = positive_mask(df)
+    work = add_season(df.assign(_date=day, _positive=is_pos))
     rows = []
     for city, g in work.groupby("city", observed=True):
         for season in [POOLED_LABEL] + SEASONS:
@@ -248,10 +277,10 @@ def temporal_coverage_table(df: pd.DataFrame) -> pd.DataFrame:
                     "end": sub["datetime"].max(),
                     "n_hours": int(len(sub)),
                     "n_days": int(n_days),
-                    "daylight_hour_share": sub["_daylight"].mean(),
-                    "mean_daylight_hours_per_day": sub["_daylight"].sum() / n_days,
+                    "positive_hour_share": sub["_positive"].mean(),
+                    "mean_positive_hours_per_day": sub["_positive"].sum() / n_days,
                     "target_mean_24h": sub[TARGET_COLUMN].mean(),
-                    "target_mean_daylight": sub.loc[sub["_daylight"], TARGET_COLUMN].mean(),
+                    "target_mean_positive": sub.loc[sub["_positive"], TARGET_COLUMN].mean(),
                     "daily_total_mean_kwh": sub.groupby("_date", observed=True)[TARGET_COLUMN]
                     .sum()
                     .div(1000.0)
@@ -299,8 +328,8 @@ def time_explained_variance_table(df: pd.DataFrame) -> pd.DataFrame:
         return float(1.0 - (resid ** 2).sum() / total) if total else np.nan
 
     rows = []
-    is_day = daylight_mask(df)
-    for scope, sub in (("24h", df), ("daylight", df[is_day])):
+    is_pos = positive_mask(df)
+    for scope, sub in (("24h", df), ("positive", df[is_pos])):
         for city, g in list(sub.groupby("city", observed=True)) + [(POOLED_LABEL, sub)]:
             y = g[TARGET_COLUMN].to_numpy()
             doy = g["datetime"].dt.dayofyear.to_numpy()
@@ -325,7 +354,7 @@ def circular_wind_table(df: pd.DataFrame) -> pd.DataFrame:
     """Speed-weighted circular statistics for wind direction, over all 24 hours.
 
     Uses the sin/cos columns already in the parquet. Near-calm hours are excluded because
-    their direction is noise; wind-direction climatology is not a daylight-only quantity.
+    their direction is noise; wind-direction climatology is not a positive-hours-only quantity.
     """
     rows = []
     for col in CIRCULAR_COLUMNS:
@@ -362,23 +391,23 @@ def _within_cell_residuals(df: pd.DataFrame, cols) -> pd.DataFrame:
     return df[cols] - df.groupby(keys, observed=True)[cols].transform("mean")
 
 
-def correlation_tables(df_daylight: pd.DataFrame) -> dict:
+def correlation_tables(df_pos: pd.DataFrame) -> dict:
     """Pearson and Spearman matrices per city and pooled, plus target correlations.
 
     Spearman is included for monotone-but-nonlinear relationships, not because of heavy
-    tails (on daylight rows the target's skew is only 0.44). `partial_r_within_hour` is the
+    tails (on positive rows the target's skew is only 0.44). `partial_r_within_hour` is the
     correlation after removing the (city, month, hour) cell mean, which separates the
     weather signal from the shared solar-geometry driver.
     """
     cols = RAW_METEO_COLUMNS
     out = {"pearson": {}, "spearman": {}}
-    groups = [(c, g) for c, g in df_daylight.groupby("city", observed=True)]
-    groups.append((POOLED_LABEL, df_daylight))
+    groups = [(c, g) for c, g in df_pos.groupby("city", observed=True)]
+    groups.append((POOLED_LABEL, df_pos))
     for city, g in groups:
         out["pearson"][city] = g[cols].corr(method="pearson")
         out["spearman"][city] = g[cols].corr(method="spearman")
 
-    resid = _within_cell_residuals(df_daylight, cols).assign(city=df_daylight["city"].values)
+    resid = _within_cell_residuals(df_pos, cols).assign(city=df_pos["city"].values)
     target_rows = []
     for var in cols:
         if var == TARGET_COLUMN:
@@ -437,20 +466,20 @@ def monthly_target_stats(daily: pd.DataFrame) -> pd.DataFrame:
 def seasonal_target_stats(df: pd.DataFrame, daily: pd.DataFrame) -> pd.DataFrame:
     """Per (city, season) hourly and daily-total summary."""
     work = add_season(df)
-    is_day = daylight_mask(df)
+    is_pos = positive_mask(df)
     daily_s = add_season(daily.assign(MO=daily["MO"]))
     rows = []
     for city in CITIES:
         for season in SEASONS:
             h = work[(work["city"] == city) & (work["season"] == season)]
-            hd = h[is_day.loc[h.index]]
+            hd = h[is_pos.loc[h.index]]
             d = daily_s[(daily_s["city"] == city) & (daily_s["season"] == season)]
             rows.append(
                 {
                     "city": city, "season": season,
                     "n_hours": len(h), "n_days": len(d),
                     "hourly_mean_24h": h[TARGET_COLUMN].mean(),
-                    "hourly_mean_daylight": hd[TARGET_COLUMN].mean(),
+                    "hourly_mean_positive": hd[TARGET_COLUMN].mean(),
                     "hourly_max": h[TARGET_COLUMN].max(),
                     "daily_kwh_mean": d["daily_kwh"].mean(),
                     "daily_kwh_std": d["daily_kwh"].std(),
@@ -669,7 +698,7 @@ def plot_target_correlation_panel(target_df: pd.DataFrame, save_path: Path) -> N
             linewidths=0.6, linecolor="white",
             cbar_kws={"shrink": 0.9, "label": "Pearson correlation coefficient"},
         )
-        ax.set_title("Correlation of each variable with irradiance (daylight hours)")
+        ax.set_title("Correlation of each variable with irradiance (hours with target > 0)")
         style_colorbar(ax.collections[0].colorbar)
         ax.set_xlabel("")
         ax.set_ylabel("")
@@ -677,12 +706,12 @@ def plot_target_correlation_panel(target_df: pd.DataFrame, save_path: Path) -> N
         save_figure(fig, save_path)
 
 
-def plot_scatter_vs_target(df_daylight: pd.DataFrame, city: str, save_path: Path) -> None:
+def plot_scatter_vs_target(df_pos: pd.DataFrame, city: str, save_path: Path) -> None:
     """Each meteorological variable against irradiance, with a binned-median trend."""
     plt = _plt()
 
     variables = [c for c in RAW_METEO_COLUMNS if c != TARGET_COLUMN]
-    g = df_daylight[df_daylight["city"] == city]
+    g = df_pos[df_pos["city"] == city]
     # Choose the column count that leaves the fewest empty cells: the export's parameter list
     # has already changed twice (8 raw variables -> 7 -> 6) and a fixed grid leaves a ragged
     # bottom row every time.
@@ -709,7 +738,7 @@ def plot_scatter_vs_target(df_daylight: pd.DataFrame, city: str, save_path: Path
             ax.set_xlabel(AXIS_LABELS.get(var, var))
             grid_y_only(ax)
         fig.supylabel(AXIS_LABELS[TARGET_COLUMN])
-        fig.suptitle(f"{city}: meteorological variables against irradiance (daylight hours; "
+        fig.suptitle(f"{city}: meteorological variables against irradiance (hours with target > 0; "
                      "line: binned median)", x=0.01, ha="left")
         save_figure(fig, save_path)
 
@@ -717,7 +746,7 @@ def plot_scatter_vs_target(df_daylight: pd.DataFrame, city: str, save_path: Path
 def plot_monthly_boxplot(daily_12m: pd.DataFrame, city, save_path: Path) -> None:
     """Last 12 months of DAILY TOTALS (~30 days per box).
 
-    Deliberately not hourly values: a box of daylight-hourly irradiance is ~91% solar
+    Deliberately not hourly values: a box of positive-hourly irradiance is ~91% solar
     geometry and makes winter look less variable than summer, which is backwards.
     """
     plt = _plt()
@@ -865,7 +894,7 @@ def plot_month_year_anomaly(grids: dict, save_path: Path) -> None:
 def plot_seasonal_diurnal_profile(df: pd.DataFrame, save_path: Path) -> None:
     """Mean irradiance by local-solar hour, one line per season, over ALL 24 hours.
 
-    The daylight filter is deliberately NOT applied: night zeros are physical information
+    The positive-hours filter is deliberately NOT applied: night zeros are physical information
     here, and filtering them would stop the curve rising from and returning to zero.
     IQR bands are drawn for Winter and Summer only -- four overlapping bands turn to mud.
     """
@@ -975,7 +1004,7 @@ def clearness_index_table(df_kt: pd.DataFrame) -> pd.DataFrame:
     daily sums, which needs no threshold and is the quantity solar-resource papers report).
     """
     work = add_season(df_kt.assign(_date=df_kt["datetime"].dt.normalize()))
-    hourly = work[work["toa_horizontal"] > TOA_MIN_FOR_KT]
+    hourly = work[(work["toa_horizontal"] > TOA_MIN_FOR_KT) & positive_mask(work)]
     daily = (
         work.groupby(["city", "_date"], observed=True)[[TARGET_COLUMN, "toa_horizontal"]]
         .sum()
@@ -1066,11 +1095,11 @@ def autocorrelation_table(df_kt: pd.DataFrame, max_hourly_lag: int = 72,
     persist".
     """
     work = df_kt.copy()
-    work.loc[work["toa_horizontal"] <= TOA_MIN_FOR_KT, "kt"] = np.nan
+    work.loc[(work["toa_horizontal"] <= TOA_MIN_FOR_KT) | ~positive_mask(work), "kt"] = np.nan
     # The hourly PACF is only reported for short lags. Night masking makes the ACF a
     # pairwise-deleted estimate, which is not guaranteed positive-definite, and past roughly
-    # one daylight block the Durbin-Levinson recursion starts producing spurious spikes
-    # (Rize showed |0.79| at lag 22). A daylight block is 10-15 h, so 12 is the safe cap.
+    # one positive block the Durbin-Levinson recursion starts producing spurious spikes
+    # (Rize showed |0.79| at lag 22). A positive block is 10-15 h, so 12 is the safe cap.
     hourly_pacf_max_lag = 12
     rows = []
     for city, g in work.groupby("city", observed=True):
@@ -1111,7 +1140,7 @@ def ramp_table(df_kt: pd.DataFrame) -> pd.DataFrame:
     kt_masked = work["kt"].where(work["toa_horizontal"] > TOA_MIN_FOR_KT)
     work["d_kt"] = kt_masked.groupby(work["city"], observed=True).diff()
     # align by index, not by position: `work` has been re-sorted above
-    work = work[daylight_mask(df_kt).reindex(work.index).to_numpy()]
+    work = work[positive_mask(df_kt).reindex(work.index).to_numpy()]
 
     rows = []
     for city in CITIES:
@@ -1141,15 +1170,15 @@ def ramp_table(df_kt: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def daylight_block_table(df: pd.DataFrame) -> pd.DataFrame:
+def positive_block_table(df: pd.DataFrame) -> pd.DataFrame:
     """Contiguous-run lengths if night rows were deleted from the series.
 
     The permanent evidence behind TODOs.md item A: a 24 h lookback + 24 h horizon needs 48
-    contiguous hours, and a daylight-only series has none, so night must be masked in the
+    contiguous hours, and a positive-hours-only series has none, so night must be masked in the
     loss rather than deleted from the data.
     """
-    is_day = daylight_mask(df)
-    d = df[is_day].sort_values(["city", "datetime"])
+    is_pos = positive_mask(df)
+    d = df[is_pos].sort_values(["city", "datetime"])
     rows = []
     for city, g in d.groupby("city", observed=True):
         breaks = (g["datetime"].diff() != pd.Timedelta("1h")).cumsum()
@@ -1157,7 +1186,7 @@ def daylight_block_table(df: pd.DataFrame) -> pd.DataFrame:
         rows.append(
             {
                 "city": city,
-                "n_daylight_hours": int(len(g)),
+                "n_positive_hours": int(len(g)),
                 "n_blocks": int(len(runs)),
                 "block_len_min": int(runs.min()),
                 "block_len_median": float(runs.median()),
@@ -1179,7 +1208,7 @@ def persistence_baseline_table(df_kt: pd.DataFrame, config=None) -> pd.DataFrame
       which is exactly the contrast a learned model has to beat at the far steps.
     Smart persistence -- yhat(T) = kt(T - 24 h) * CLRSKY(T) -- used to be the third. It needs a
     clear-sky MAGNITUDE, which the 14-Sep-2026 export no longer supplies. Rebuilt on the
-    top-of-atmosphere denominator it degenerates: measured on this record it scores daylight
+    top-of-atmosphere denominator it degenerates: measured on this record it scores positive-hours
     RMSE 121.93 / MAE 72.42 against plain persistence's 121.85 / 72.38, i.e. it is the same
     rule, because TOA(T) ~ TOA(T-24h) for consecutive days where CLRSKY carried an air-mass
     term that did not cancel. A reference that adds nothing is worse than no reference, so it
@@ -1209,9 +1238,9 @@ def persistence_baseline_table(df_kt: pd.DataFrame, config=None) -> pd.DataFrame
     work["climatology"] = work.set_index(["city", "month", "HR"]).index.map(clim)
 
     test = work[work["datetime"] > val_end]
-    is_day = daylight_mask(df_kt).reindex(work.index)
+    is_pos = positive_mask(df_kt).reindex(work.index)
     rows = []
-    for scope, sub in (("24h", test), ("daylight", test[is_day.reindex(test.index).to_numpy()])):
+    for scope, sub in (("24h", test), ("positive", test[is_pos.reindex(test.index).to_numpy()])):
         for city in CITIES + [POOLED_LABEL]:
             s = sub if city == POOLED_LABEL else sub[sub["city"] == city]
             y = s[TARGET_COLUMN].to_numpy(dtype=float)
@@ -1235,11 +1264,11 @@ def persistence_baseline_table(df_kt: pd.DataFrame, config=None) -> pd.DataFrame
 
 
 def plot_target_histogram(df: pd.DataFrame, save_path: Path) -> None:
-    """Daylight irradiance distribution per city -- shows the two modes behind the flat
+    """Positive-hours irradiance distribution per city -- shows the two modes behind the flat
     (excess kurtosis ~ -0.9) shape: a clear-sky mode and an overcast mode."""
     plt = _plt()
 
-    d = df[daylight_mask(df)]
+    d = df[positive_mask(df)]
     with plt.rc_context(PAPER_RC):
         fig, flat = _city_panels(plt, 3.5)
         for ax, city in zip(flat[:5], CITIES):
@@ -1248,7 +1277,7 @@ def plot_target_histogram(df: pd.DataFrame, save_path: Path) -> None:
             ax.set_title(city)
             grid_y_only(ax)
         _finish_city_panels(fig, flat, AXIS_LABELS[TARGET_COLUMN], "Number of hours",
-                            "Distribution of hourly irradiance (daylight hours)")
+                            "Distribution of hourly irradiance (hours with target > 0)")
         save_figure(fig, save_path)
 
 
@@ -1332,7 +1361,7 @@ def plot_ramp_distribution(df_kt: pd.DataFrame, save_path: Path) -> None:
     work["d_ghi"] = work.groupby("city", observed=True)[TARGET_COLUMN].diff().abs()
     work.loc[work.groupby("city", observed=True)["datetime"].diff() != pd.Timedelta("1h"),
              "d_ghi"] = np.nan
-    work = work[daylight_mask(df_kt).reindex(work.index).to_numpy()]
+    work = work[positive_mask(df_kt).reindex(work.index).to_numpy()]
     with plt.rc_context(PAPER_RC):
         fig, flat = _city_panels(plt, 3.5)
         for ax, city in zip(flat[:5], CITIES):
@@ -1349,23 +1378,23 @@ def plot_ramp_distribution(df_kt: pd.DataFrame, save_path: Path) -> None:
             ax.set_xticks([0, 100, 200, 300, 400])
             grid_y_only(ax)
         _finish_city_panels(fig, flat, "Absolute hour-to-hour change (W/m²)",
-                            "Cumulative fraction of daylight hours",
+                            "Cumulative fraction of hours with target > 0",
                             "Cumulative distribution of hour-to-hour irradiance changes "
-                            "(daylight hours)")
+                            "(hours with target > 0)")
         handles, labels = flat[0].get_legend_handles_labels()
         flat[5].legend(handles, labels, loc="center", title="Season", frameon=False)
         save_figure(fig, save_path)
 
 
 def plot_persistence_baseline(baseline: pd.DataFrame, save_path: Path) -> None:
-    """The forecast floor the model has to beat, per city, daylight hours only."""
+    """The forecast floor the model has to beat, per city, hours with target > 0 only."""
     plt = _plt()
 
     refs = ["persistence", "climatology"]
     ref_labels = {"persistence": "Persistence (same hour, previous day)",
                   "climatology": "Climatology (monthly-hourly mean)"}
     colors = [SEASON_COLORS["Winter"], SEASON_COLORS["Summer"]]
-    sub = baseline[baseline["scope"] == "daylight"]
+    sub = baseline[baseline["scope"] == "positive"]
     order = CITIES + [POOLED_LABEL]
     tick_labels = CITIES + ["All provinces"]
     x = np.arange(len(order))
@@ -1389,7 +1418,7 @@ def plot_persistence_baseline(baseline: pd.DataFrame, save_path: Path) -> None:
         handles, labels = axes[0].get_legend_handles_labels()
         fig.legend(handles, labels, loc="outside lower center", ncol=len(labels),
                    frameon=False)
-        fig.suptitle("Reference forecasts, 24 h ahead, on the test period (daylight hours)",
+        fig.suptitle("Reference forecasts, 24 h ahead, on the test period (hours with target > 0)",
                      x=0.01, ha="left")
         save_figure(fig, save_path)
 
@@ -1462,7 +1491,7 @@ def plot_rize_comparison(kt_table: pd.DataFrame, seasonal: pd.DataFrame,
         grid_y_only(ax)
 
         ax = axes[1, 1]
-        sub = baseline[(baseline["scope"] == "daylight")
+        sub = baseline[(baseline["scope"] == "positive")
                        & (baseline["reference"] == "climatology")]
         vals = [sub[sub["city"] == c]["R2"].iloc[0] for c in CITIES]
         ax.bar(range(len(CITIES)), vals,
