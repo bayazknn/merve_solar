@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-RAW_XLSX_PATH = PROJECT_ROOT / "SolarData_Merve(140926_V2).xlsx"
+RAW_XLSX_PATH = PROJECT_ROOT / "SolarData_Merve(031026_V3).xlsx"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 BASE_FEATURES_PATH = OUTPUTS_DIR / "processed" / "base_features.parquet"
 EXPERIMENTS_DIR = OUTPUTS_DIR / "experiments"
@@ -41,40 +41,21 @@ CITY_TO_ID = {city: i for i, city in enumerate(CITIES)}
 MISSING_SENTINEL = -999
 
 # Last valid timestamp before NASA POWER's near-real-time processing-latency gap.
-# In the 14-Sep-2026 export that gap is 2026-05-31 00:00 -> 2026-06-30 23:00 = 744 hours and
+# In the 03-Oct-2026 export (V3) that gap is 2026-06-30 00:00 -> 2026-06-30 23:00 = 24 hours and
 # it affects ALLSKY_SFC_SW_DWN only -- the meteorological columns are complete to the last row
-# (verified directly against every sheet). The previous export's gap was 2208 hours, so this
-# file adds 1,464 usable hours (61 days) per province on top of the unit change.
-LAST_VALID_TIMESTAMP = "2026-05-30 23:00:00"
-EXPECTED_TRIMMED_ROWS_PER_SHEET = 744
+# (verified directly against every sheet). The V2 export's gap was 744 hours, so V3 adds 720
+# usable hours (30 days) per province.
+LAST_VALID_TIMESTAMP = "2026-06-29 23:00:00"
+EXPECTED_TRIMMED_ROWS_PER_SHEET = 24
 
 # Target: global horizontal irradiance under all-sky conditions, in W/m^2.
 TARGET_COLUMN = "ALLSKY_SFC_SW_DWN"
 
 # --- units -----------------------------------------------------------------------------
-# The 14-Sep-2026 export is in NASA POWER's *default* hourly units, which are not the ones
-# the previous export used and not the ones this project, the reference paper, or the
-# irradiance literature report in:
-#
-#   ALLSKY_SFC_SW_DWN : MJ/m^2/hour   (was W/m^2)      x 1e6/3600 = x 277.78 -> W/m^2
-#   PRECTOTCORR       : mm/hour       (was mm/day)     left as-is; mm/hour is the honest
-#                                                      unit for an hourly record, and the
-#                                                      old figure labels already said
-#                                                      "mm/saat" while the data was mm/day.
-#
-# Verified by joining the two exports on (city, datetime) over the 59,184 shared hours: the
-# meteorological columns are bit-identical, and new * 277.78 reproduces the old irradiance to
-# within 1.39 W/m^2 everywhere (mean 0.70). That residual is pure quantisation -- the new file
-# stores 2 decimals of MJ/m^2/hour, i.e. a 2.78 W/m^2 grid, against the old file's 0.01 W/m^2.
-# Quantisation noise is uniform on that grid, sd = 2.78/sqrt(12) = 0.80 W/m^2, which is under
-# 1% of the naive floor's RMSE and therefore immaterial to any metric -- but it does mean the
-# target is now discrete, so statements like "the smallest nonzero daylight reading" move.
-#
-# We convert rather than restate the project in MJ: every number in ABLATION.md, README.md and
-# the source paper is W/m^2, the conversion is exact and linear, and a unit switch would orphan
-# them all for no gain.
-MJ_M2_HOUR_TO_W_M2 = 1e6 / 3600.0
-IRRADIANCE_COLUMNS_MJ = ["ALLSKY_SFC_SW_DWN"]
+# ALLSKY_SFC_SW_DWN is stored in W/m^2 (two decimals), the unit the project, the reference paper
+# and the irradiance literature use, so it is read as-is. (The V2 export stored MJ/m^2/hour and
+# was converted at read time; V3 is a direct W/m^2 export and that conversion is gone.)
+# PRECTOTCORR is mm/hour, left as-is: the honest unit for an hourly record.
 
 # Columns dropped while reading the xlsx (see data.py). The source file is left
 # physically untouched so it stays the raw NASA POWER export; the drop list lives here.

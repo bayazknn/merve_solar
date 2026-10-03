@@ -28,8 +28,8 @@ LSTM point forecaster wrapped in a **Bootstrap Ensemble × MC-Dropout** uncertai
 approach is adapted from a reference paper (`main_methodology_paper.pdf`), with an LSTM in place of
 its PCNN backbone and irradiance in place of PV power.
 
-The data is NASA POWER hourly, in `SolarData_Merve(140926_V2).xlsx` (one sheet per province), the
-repo's only data file. Irradiance arrives in MJ/m²/hour and is converted to W/m² at read time. There
+The data is NASA POWER hourly, in `SolarData_Merve(031026_V3).xlsx` (one sheet per province), the
+repo's only data file. Irradiance is stored directly in W/m² (the earlier V2 export used MJ/m²/hour). There
 are 13 model features (`config.py::NUMERIC_FEATURE_COLUMNS`) and no clear-sky column, so geometry
 comes from `solar.py` instead. `outputs/eda/EDA.md` describes the dataset.
 
@@ -71,7 +71,7 @@ backend (`cpu`/`mps`/`cuda`) with any cost estimate.
 **`data.py` is config-independent; everything downstream is per-config.**
 
 1. **Base data (once)**: `data.py` reads the 5 sheets, trims NASA POWER's trailing `-999`
-   latency gap at `LAST_VALID_TIMESTAMP`, converts units, computes `solar_elevation` and
+   latency gap at `LAST_VALID_TIMESTAMP`, computes `solar_elevation` and
    `toa_horizontal` (`MASK_COLUMNS`, never model inputs), adds cyclical hour/day-of-year/wind
    sin-cos features, and caches everything to a parquet.
 2. **One experiment**: `experiment.py::run_experiment(config)` is the orchestrator; read it first.
@@ -96,7 +96,8 @@ field is validated in `__post_init__`. Sweeps are named groups in
 - **Windows never cross a city or split boundary.** Splits are chronological and computed once on
   the full five-province frame before any city is excluded, so every arm splits on identical
   dates. `train_ratio=0.74 / val_ratio=0.11` makes the test set cover all four seasons
-  (2025-05-16 → 2026-05-30); the validation set has no June or July.
+  (2025-06-11 → 2026-06-29); the validation set (2024-09-03 → 2025-06-11) has no July and only
+  the first 11 days of June.
 - **Every preprocessing step is fit on train rows only** (`scaling.py`). A step fit on the full
   frame is test leakage that would invalidate published numbers.
 - **Moving-block bootstrap, resampled per city** (`bootstrap_block_length`, default 168 windows ≈
@@ -147,7 +148,7 @@ pooled sample. The pooled distribution has no aleatoric term, so raw intervals u
 `conformal_mode` (`conformal.py`, default `"none"`) is the recalibration layer, and it leaves
 RMSE/MAE/R² bit-identical to its uncorrected twin.
 
-**The floor to beat** (current ledger): pooled daylight RMSE **109.86 W/m²** and R² **0.8456**
+**The floor to beat** (ledger rows from the V2 export; stale until `03_run_naive_baselines.py` is rerun on V3): pooled daylight RMSE **109.86 W/m²** and R² **0.8456**
 (climatology), daylight MAE **72.15** (persistence). A model that does not beat both is not a
 result.
 

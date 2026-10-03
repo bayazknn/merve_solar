@@ -28,13 +28,13 @@ transfer across climates can be tested.
 ## 2. Temporal coverage and sampling
 
 Each site is represented by an uninterrupted hourly series spanning 30 June 2019 00:00 to
-30 May 2026 23:00, comprising 60,648 hourly observations per site — 2,527 days, or approximately
-6.92 years — and 303,240 observations in total. Coverage is identical across sites: the five
+29 June 2026 23:00, comprising 61,368 hourly observations per site — 2,557 days, or seven years —
+and 306,840 observations in total. Coverage is identical across sites: the five
 series share the same timestamps, with no gaps, no duplicate timestamps and no missing values
 after the preprocessing described in Section 4.
 
-The record terminates on 30 May 2026 because the provider's near-real-time processing latency
-leaves the final 744 hours of the retrieved file without validated irradiance values. Those hours
+The record terminates on 29 June 2026 because the provider's near-real-time processing latency
+leaves the final 24 hours of the retrieved file without validated irradiance values. Those hours
 were removed; the meteorological variables are complete to the end of the retrieved file, so the
 truncation is governed by the target variable alone.
 
@@ -47,11 +47,11 @@ solar time, corresponding to UTC offset by the nearest hour to its longitude.
 This was verified from the data itself. Taking the irradiance-weighted centre of mass of the mean
 diurnal profile as an empirical solar-noon estimate yields
 
-> Konya 11.24 ≈ Ankara 11.24 < Antalya 11.41 < Van 11.58 < Rize 11.91
+> Konya 11.25 ≈ Ankara 11.25 < Antalya 11.41 < Van 11.56 < Rize 11.89
 
 which is the **reverse** of the ordering that a shared national clock would produce — under a
 common clock the easternmost sites would peak earliest — and reproduces the longitude-derived
-expectation to within 0.11 h at every site.
+expectation to within 0.1 h at every site.
 
 Two consequences follow and are observed throughout the analysis. First, a given hour index does
 not denote the same physical instant at different sites, so hourly quantities are never pooled or
@@ -68,23 +68,23 @@ six meteorological variables used as predictors, together with the calendar fiel
 construct the timestamp. Table 2 reports pooled descriptive statistics over the complete record.
 
 **Table 2.** Descriptive statistics of the retrieved variables, pooled over all five sites and
-all 303,240 hourly observations.
+all 306,840 hourly observations.
 
 | Variable | Description | Unit | Mean | SD | Min | Max | Skewness |
 |---|---|---|---|---|---|---|---|
-| ALLSKY_SFC_SW_DWN | All-sky downward shortwave irradiance at the surface (target) | W/m² | 193.75 | 275.23 | 0.00 | 1216.67 | 1.28 |
-| T2M | Air temperature at 2 m | °C | 11.96 | 10.38 | −24.33 | 42.30 | 0.06 |
-| RH2M | Relative humidity at 2 m | % | 64.84 | 24.45 | 3.36 | 100.00 | −0.37 |
-| T2MDEW | Dew-point temperature at 2 m | °C | 3.93 | 7.37 | −30.33 | 23.81 | −0.19 |
+| ALLSKY_SFC_SW_DWN | All-sky downward shortwave irradiance at the surface (target) | W/m² | 195.12 | 276.49 | 0.00 | 1215.88 | 1.27 |
+| T2M | Air temperature at 2 m | °C | 12.04 | 10.36 | −24.33 | 42.30 | 0.05 |
+| RH2M | Relative humidity at 2 m | % | 64.82 | 24.40 | 3.36 | 100.00 | −0.37 |
+| T2MDEW | Dew-point temperature at 2 m | °C | 4.01 | 7.38 | −30.33 | 23.81 | −0.21 |
 | PS | Surface pressure | kPa | 88.32 | 6.04 | 75.74 | 97.73 | −0.65 |
-| WS2M | Wind speed at 2 m | m/s | 2.15 | 1.42 | 0.00 | 13.65 | 1.39 |
+| WS2M | Wind speed at 2 m | m/s | 2.14 | 1.41 | 0.00 | 13.65 | 1.39 |
 | WD2M | Wind direction at 2 m | ° | — (circular; see Section 8.2) | | | | |
-| PRECTOTCORR | Bias-corrected total precipitation | mm/hour | 0.073 | 0.282 | 0.00 | 14.49 | 9.45 |
+| PRECTOTCORR | Bias-corrected total precipitation | mm/hour | 0.073 | 0.281 | 0.00 | 14.49 | 9.48 |
 
 Two variables require comment before any statistic drawn from them is interpreted.
 
 **Surface pressure does not behave as a meteorological variable in a pooled setting.** Its pooled
-standard deviation is 6.04 kPa while its between-site standard deviation is 6.72 kPa: essentially
+standard deviation is 6.04 kPa while its between-site standard deviation is 6.73 kPa: essentially
 all of its variance lies between sites rather than within them (site means range from 77.7 kPa at
 Van to 96.0 kPa at Antalya), reflecting elevation rather than weather. Its within-site variation,
 with a standard deviation of roughly 0.4–0.5 kPa, is the genuine synoptic signal. In a pooled
@@ -92,11 +92,12 @@ model, surface pressure therefore functions largely as an elevation indicator, a
 reason its apparent relationship with irradiance reverses once site and season are held fixed
 (Section 9).
 
-**Precipitation is effectively a binary variable at hourly resolution.** Exactly 66.7% of daylight
-hours record zero precipitation, and the non-zero tail is strongly right-skewed (skewness +9.4
-over all hours). A binary wet/dry indicator is more strongly associated with irradiance than the
-recorded amount at three of the five sites, while at Rize a logarithmic transform of the amount is
-the stronger of the two (Table 6).
+**Precipitation is effectively a binary variable at hourly resolution.** Exactly 66.6% of daylight
+hours record zero precipitation, and the non-zero tail is strongly right-skewed (skewness +9.5
+over all hours). Over daylight hours, a binary wet/dry indicator is more strongly correlated with
+irradiance than either the recorded amount or its logarithmic transform at four of the five sites
+(Ankara, Antalya, Konya and Van), while at Rize the logarithmic transform is the strongest of the
+three.
 
 **Dew-point temperature is not an independent measurement.** It can be reconstructed from air
 temperature and relative humidity through the Magnus relation with a Pearson correlation of
@@ -110,32 +111,29 @@ relationship: the pairwise correlation between air temperature and dew point is 
 ## 4. Data quality and preprocessing
 
 **Missing values.** The provider encodes missing observations with a sentinel value. After
-removal of the 744-hour near-real-time tail described in Section 2, no sentinel value and no
+removal of the 24-hour near-real-time tail described in Section 2, no sentinel value and no
 missing entry remains in any variable at any site. No imputation was performed, and no
 observation was interpolated.
 
-**Units.** The retrieved irradiance is expressed in MJ/m² per hour and was converted to W/m² for
-consistency with the solar-forecasting literature; the conversion is exact and linear.
-Precipitation is retained in mm/hour, the natural unit for an hourly record. Summing the
+**Units.** The retrieved irradiance is expressed directly in W/m², the unit customary in the
+solar-forecasting literature, and no conversion was applied. Precipitation is retained in mm/hour, the natural unit for an hourly record. Summing the
 precipitation column over complete calendar years yields site totals of 340 mm (Ankara), 326 mm
 (Konya), 343 mm (Van), 664 mm (Antalya) and 1399 mm (Rize) per year, which reproduce the correct
 ordering and order of magnitude of Turkish climate normals and confirm the unit interpretation.
 Consistent with the known behaviour of satellite-derived precipitation products, the values
 under-estimate observed normals at the two wettest sites.
 
-**Numerical resolution.** The retrieved irradiance is stored to two decimal places in its source
-unit, which after conversion places the target on a discrete grid with a step of 2.78 W/m²; the
-entire record contains 387 distinct target values. The resulting quantisation noise has a standard
-deviation of 0.80 W/m², below 1% of the error of the weakest reference forecast considered here,
-and is therefore immaterial to the reported accuracy metrics. It is stated because it sets a floor
-on the resolution at which any irradiance difference in this dataset can be interpreted, and
-because it affects how daylight is best identified (Section 5).
+**Numerical resolution.** The retrieved irradiance is stored to two decimal places, that is, with
+a resolution of 0.01 W/m²; the entire record contains 38,385 distinct target values. The
+resulting quantisation noise has a standard deviation of about 0.003 W/m², several orders of
+magnitude below the error of any forecast considered here, and is therefore immaterial to the
+reported accuracy metrics and to the interpretation of irradiance differences in this dataset.
 
 **Physically inadmissible values.** One observation in the record (Van, 17 February 2020, 15:00
-local solar time) reports 1216.67 W/m², which exceeds the extraterrestrial irradiance incident on
+local solar time) reports 1215.88 W/m², which exceeds the extraterrestrial irradiance incident on
 a horizontal surface at that site and hour (544 W/m²) by more than a factor of two. It is
 physically impossible and is treated as a retrieval or back-fill artefact. It was neither removed
-nor modified, since a single observation in 303,240 cannot affect any aggregate reported here, but
+nor modified, since a single observation in 306,840 cannot affect any aggregate reported here, but
 it must not be used to support any claim about the radiative extremes of the site.
 
 ## 5. Definition of daylight hours
@@ -145,13 +143,13 @@ observations are trivially predictable and, if included, dominate aggregate erro
 (Section 12). Separating them therefore requires an unambiguous criterion, and the criterion used
 here is **geometric**: an hour is classified as daylight if the apparent elevation of the Sun at
 the midpoint of that hour, computed from the site coordinates and the timestamp using a standard
-solar-position algorithm, is positive. Under this definition 152,893 of 303,240 observations
-(50.42%) are daylight, with a mean daylight duration of 12.07–12.14 h per day across sites.
+solar-position algorithm, is positive. Under this definition 155,081 of 306,840 observations
+(50.54%) are daylight, with a mean daylight duration of 12.10–12.16 h per day across sites.
 
 Two alternative criteria were examined and rejected.
 
 The first is a threshold on the observed irradiance itself. On this dataset it agrees with the
-geometric criterion on 303,204 of 303,240 observations, yet it is inadmissible on two grounds.
+geometric criterion on 303,810 of 306,840 observations, yet it is inadmissible on two grounds.
 It defines the evaluation subset using the quantity being predicted, so that a heavily overcast
 twilight hour recording zero is silently excluded — that is, observations are removed
 preferentially from the conditions under which a forecast is hardest. More decisively, it cannot
@@ -163,7 +161,7 @@ any case, and adopting a different one for evaluation would be internally incons
 The second is a climatological criterion based on the mean irradiance of a (site, month, hour)
 cell. This is too coarse: sunrise and sunset shift by 30–60 minutes within a calendar month, so
 the boundary hour of a cell is illuminated for part of the month and dark for the remainder, and a
-cell mean classifies the entire hour as daylight. Applied to this dataset it admitted 5,266
+cell mean classifies the entire hour as daylight. Applied to this dataset it admitted 8,401
 observations occurring when the Sun was below the horizon.
 
 The geometric threshold was not calibrated against the observations. Sweeping it produces a value
@@ -173,8 +171,8 @@ cost of leaving it uncalibrated was quantified and is small: the error of the st
 forecast changes by approximately 1%.
 
 The residual disagreement between the geometric criterion and the recorded values is small and
-falls in the conservative direction. One daylight-classified observation records exactly zero.
-Conversely, 2,968 observations classified as night carry non-zero irradiance; these are twilight
+falls in the conservative direction. No daylight-classified observation records exactly zero.
+Conversely, 3,030 observations classified as night carry non-zero irradiance; these are twilight
 hours in which sunrise occurs part-way through the interval, and together they account for 0.024%
 of total daylight energy. Excluding them makes the daylight subset marginally harder to predict,
 not easier.
@@ -183,9 +181,9 @@ not easier.
 
 ### 6.1 Distribution
 
-Over daylight hours and pooled across sites, irradiance has a mean of 384.2 W/m², a median of
-341.7 W/m² and a standard deviation of 277.7 W/m², with skewness +0.42 and excess kurtosis −0.94.
-Over all 24 hours the mean falls to 193.7 W/m² and the median to 8.3 W/m², with skewness +1.28.
+Over daylight hours and pooled across sites, irradiance has a mean of 386.0 W/m², a median of
+343.7 W/m² and a standard deviation of 278.6 W/m², with skewness +0.42 and excess kurtosis −0.95.
+Over all 24 hours the mean falls to 195.1 W/m² and the median to 7.8 W/m², with skewness +1.27.
 
 The contrast between these two summaries reflects the mixture structure of the unconditional
 distribution: a point mass of exact zeros at night superimposed on the daylight distribution. The
@@ -203,19 +201,19 @@ Site-level statistics are given in Table 3.
 
 | Site | N | Mean (W/m²) | SD (W/m²) | Median (W/m²) | Max (W/m²) | Skewness | Daily total (kWh/m²/day) |
 |---|---|---|---|---|---|---|---|
-| Ankara | 30,540 | 386.93 | 277.06 | 341.67 | 1027.78 | 0.42 | 4.68 |
-| Antalya | 30,555 | 410.97 | 283.53 | 388.89 | 1044.44 | 0.28 | 4.97 |
-| Konya | 30,502 | 405.25 | 282.42 | 369.44 | 1055.56 | 0.36 | 4.89 |
-| Rize | 30,628 | 306.26 | 246.20 | 250.00 | 988.89 | 0.69 | 3.71 |
-| Van | 30,668 | 411.60 | 282.89 | 383.33 | 1216.67 | 0.33 | 5.00 |
-| **Pooled** | **152,893** | **384.18** | **277.67** | **341.67** | **1216.67** | **0.42** | **4.65** |
+| Ankara | 30,990 | 388.54 | 278.04 | 344.40 | 1029.10 | 0.42 | 4.71 |
+| Antalya | 30,975 | 412.80 | 284.23 | 390.45 | 1043.07 | 0.28 | 5.00 |
+| Konya | 30,936 | 406.80 | 283.20 | 372.04 | 1054.35 | 0.36 | 4.92 |
+| Rize | 31,078 | 308.44 | 247.73 | 250.20 | 988.15 | 0.69 | 3.75 |
+| Van | 31,102 | 413.47 | 283.68 | 385.38 | 1215.88 | 0.32 | 5.03 |
+| **Pooled** | **155,081** | **385.98** | **278.58** | **343.70** | **1215.88** | **0.42** | **4.68** |
 
 ### 6.2 Diurnal and seasonal structure
 
-Hour of day alone accounts for 73.1% of the variance of the target over all 24 hours, and for
-48.8% within the daylight subset; day of year accounts for 8.6% and 14.8% respectively. A harmonic
+Hour of day alone accounts for 73.2% of the variance of the target over all 24 hours, and for
+48.9% within the daylight subset; day of year accounts for 8.7% and 14.8% respectively. A harmonic
 (sine–cosine) representation of each recovers essentially the whole of this explained variance
-(for example 0.7285 against 0.7313 for hour of day over 24 hours), which supports the use of
+(for example 0.7291 against 0.7318 for hour of day over 24 hours), which supports the use of
 cyclical rather than categorical encodings of time.
 
 The practical implication is that roughly three quarters of an aggregate score computed over all
@@ -236,14 +234,14 @@ shaded band shows the between-day interquartile range for winter and summer.
 | Season | Mean irradiance, 24 h (W/m²) | Mean irradiance, daylight (W/m²) | Daily total (kWh/m²/day) | Between-day CV |
 |---|---|---|---|---|
 | Winter | 98.4 | 235.4 | 2.36 | 0.409 |
-| Spring | 218.5 | 400.4 | 5.24 | 0.340 |
-| Summer | 296.1 | 501.2 | 7.11 | 0.154 |
+| Spring | 218.7 | 400.7 | 5.25 | 0.340 |
+| Summer | 296.8 | 501.6 | 7.12 | 0.154 |
 | Autumn | 164.6 | 353.8 | 3.95 | 0.372 |
 
 A structurally important feature emerges from the last column: **irradiance and its predictability
 move in opposite directions across the year.** Summer days are not only brighter but markedly less
 variable between days. Expressed per site, the ratio of winter to summer coefficient of variation
-is 3.04 at Ankara, 3.82 at Antalya, 3.05 at Konya, 2.72 at Van and 1.81 at Rize. Any error metric
+is 2.98 at Ankara, 3.83 at Antalya, 3.04 at Konya, 2.74 at Van and 1.82 at Rize. Any error metric
 computed over the full year therefore aggregates two regimes of very different difficulty, and a
 small absolute error in winter does not indicate stronger performance in winter — there is simply
 less to predict.
@@ -266,7 +264,7 @@ six-year mean, by site.
 
 | Site | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | Best/worst spread |
 |---|---|---|---|---|---|---|---|
-| Ankara | 4.83 | 4.73 | 4.64 | 4.56 | 4.72 | 4.90 | 7.2% |
+| Ankara | 4.83 | 4.73 | 4.64 | 4.56 | 4.72 | 4.89 | 7.2% |
 | Antalya | 5.06 | 5.13 | 5.04 | 4.86 | 4.99 | 5.04 | 5.6% |
 | Konya | 5.01 | 4.98 | 4.87 | 4.84 | 4.90 | 5.09 | 5.1% |
 | Rize | 3.91 | 3.75 | 3.54 | 3.68 | 3.82 | 3.74 | 10.3% |
@@ -286,8 +284,8 @@ where I₀ is the extraterrestrial normal irradiance including the Earth–Sun d
 isolates atmospheric attenuation. Hours with an extraterrestrial irradiance below 20 W/m² are
 excluded, as the ratio is numerically unstable at twilight.
 
-The index is well behaved on this dataset: its median is 0.555, its 99th percentile is 0.801, and
-only 2 of 150,746 illuminated hours exceed unity. No clipping or truncation was applied. Sky
+The index is well behaved on this dataset: its median is 0.557, its 99th percentile is 0.801, and
+only 2 of 152,902 illuminated hours exceed unity. No clipping or truncation was applied. Sky
 conditions are classified using the conventional bands for this index, namely clear above 0.65 and
 overcast below 0.35.
 
@@ -297,18 +295,18 @@ Table 6 shows that the five sites do not form a single population.
 
 | Measure | Ankara | Antalya | Konya | Van | **Rize** |
 |---|---|---|---|---|---|
-| Daily total (kWh/m²/day) | 4.68 | 4.97 | 4.89 | 5.00 | **3.71** |
-| Mean daily clearness index | 0.574 | 0.589 | 0.589 | 0.609 | **0.463** |
-| Median hourly clearness index | 0.565 | 0.583 | 0.586 | 0.600 | **0.422** |
-| Clear-day share (kt > 0.65) | 43.8% | 43.7% | 47.4% | 50.0% | **13.8%** |
-| Overcast-day share (kt < 0.35) | 11.3% | 8.8% | 10.6% | 6.4% | **28.9%** |
-| Between-day coefficient of variation | 0.489 | 0.436 | 0.457 | 0.445 | **0.566** |
+| Daily total (kWh/m²/day) | 4.71 | 5.00 | 4.92 | 5.03 | **3.75** |
+| Mean daily clearness index | 0.575 | 0.589 | 0.589 | 0.610 | **0.464** |
+| Median hourly clearness index | 0.566 | 0.584 | 0.587 | 0.601 | **0.424** |
+| Clear-day share (kt > 0.65) | 44.0% | 44.0% | 47.4% | 50.3% | **14.2%** |
+| Overcast-day share (kt < 0.35) | 11.2% | 8.7% | 10.4% | 6.3% | **28.6%** |
+| Between-day coefficient of variation | 0.488 | 0.435 | 0.455 | 0.444 | **0.565** |
 
 Four of the sites differ from one another by 7% in mean daily total and occupy a narrow band on
-every measure in the table. Rize lies 21–26% below that band in level and, more importantly, in a
+every measure in the table. Rize lies 20–25% below that band in level and, more importantly, in a
 different position on every measure of variability: it experiences overcast days between two and
-four times as often as any other site, and reaches clear-sky conditions on roughly one day in
-seven against one day in two. Its **best** season (summer, mean clearness 0.522) is comparable to
+a half and four and a half times as often as any other site, and reaches clear-sky conditions on roughly one day in
+seven against one day in two. Its **best** season (summer, mean clearness 0.525) is comparable to
 the other sites' **winter** (0.477–0.556). The difference is therefore one of regime, not of
 degree. Figure 4 summarises this comparison.
 
@@ -334,13 +332,13 @@ informative column is the change in clearness index, which removes that componen
 
 | Site | Median \|Δ irradiance\| (W/m²) | 90th pct | 99th pct | Share > 200 W/m² | 99th pct \|Δ clearness\| |
 |---|---|---|---|---|---|
-| Ankara | 105.6 | 188.9 | 211.1 | 3.4% | 0.222 |
-| Antalya | 116.7 | 191.7 | 219.4 | 6.0% | 0.218 |
-| Konya | 111.1 | 194.4 | 216.7 | 6.1% | 0.222 |
-| Rize | 83.3 | 166.7 | 213.9 | 1.7% | 0.206 |
-| Van | 116.7 | 194.4 | 216.7 | 6.7% | 0.224 |
+| Ankara | 106.4 | 187.9 | 211.4 | 3.8% | 0.220 |
+| Antalya | 116.4 | 193.0 | 218.9 | 6.3% | 0.216 |
+| Konya | 111.3 | 193.5 | 216.3 | 6.5% | 0.221 |
+| Rize | 83.1 | 167.9 | 213.6 | 1.8% | 0.206 |
+| Van | 115.9 | 194.7 | 217.2 | 7.2% | 0.222 |
 
-On the clearness scale the five sites are strikingly similar (0.206–0.224 at the 99th percentile).
+On the clearness scale the five sites are strikingly similar (0.206–0.222 at the 99th percentile).
 Rize's smaller raw ramps therefore reflect a weaker radiative envelope rather than a steadier
 atmosphere. Figure 5 shows the cumulative distributions.
 
@@ -360,16 +358,16 @@ single prevailing direction.
 
 | Site | Mean direction (°) | Resultant length R | Circular SD (°) |
 |---|---|---|---|
-| Van | 215 | 0.468 | 71 |
-| Rize | 270 | 0.244 | 96 |
-| Konya | 337 | 0.227 | 99 |
-| Antalya | 43 | 0.188 | 105 |
-| Ankara | 332 | 0.124 | 117 |
+| Van | 216 | 0.468 | 71 |
+| Rize | 271 | 0.246 | 96 |
+| Konya | 338 | 0.229 | 98 |
+| Antalya | 43 | 0.189 | 105 |
+| Ankara | 335 | 0.124 | 117 |
 
 Only Van exhibits a pronounced prevailing direction. At the remaining four sites the distribution
 is close to uniform, and wind direction carries correspondingly little information about
-irradiance. The share of calm hours differs substantially between sites (from 8,606 at Konya to
-16,175 at Rize), and direction in those hours is essentially noise; this exclusion should be borne
+irradiance. The share of calm hours differs substantially between sites (from 8,755 at Konya to
+16,407 at Rize), and direction in those hours is essentially noise; this exclusion should be borne
 in mind whenever direction statistics are compared across sites.
 
 ## 9. Relationships among variables
@@ -386,12 +384,12 @@ two.
 
 | Variable | Raw r | Partial r (within site–month–hour) |
 |---|---|---|
-| RH2M | −0.628 | **−0.530** |
+| RH2M | −0.626 | **−0.529** |
 | T2M | +0.515 | +0.307 |
 | PRECTOTCORR | −0.168 | **−0.328** |
-| T2MDEW | +0.042 | **−0.272** |
+| T2MDEW | +0.045 | **−0.272** |
 | PS | −0.038 | **+0.268** |
-| WS2M | +0.143 | **−0.150** |
+| WS2M | +0.142 | **−0.148** |
 
 Three variables reverse sign and the association of precipitation approximately doubles. The
 mechanism is straightforward: warm, windy, high-dew-point hours are predominantly summer midday
@@ -411,21 +409,20 @@ correlation structure.
 hours, pooled across sites.
 
 Relative humidity is the only variable that is strongly associated with irradiance under both
-formulations, and it is also the variable with the largest between-site dispersion in Table 2. It
-is, on this dataset, the single most informative meteorological predictor.
+formulations. It is, on this dataset, the single most informative meteorological predictor.
 
 ### 9.2 Linearity and redundancy
 
 Spearman and Pearson coefficients agree closely: the largest discrepancy against the target is
-−0.059 for precipitation, followed by +0.047 for wind speed, and no variable exceeds 0.06. There
+−0.057 for precipitation, followed by +0.047 for wind speed, and no variable exceeds 0.06. There
 is therefore no evidence of a non-monotonic relationship. That the discrepancy concentrates in
 precipitation and wind speed is expected, both being strongly skewed, and the fact that the rank
 correlation is the larger of the two supports treating precipitation on a rank or indicator scale
 rather than as a linear quantity.
 
 Among the predictors, no pair exceeds a correlation of 0.9. The pairs exceeding 0.5 are air
-temperature with relative humidity (−0.673), air temperature with dew point (+0.609) and dew point
-with surface pressure (+0.521), all of which are physically expected and none of which indicates
+temperature with relative humidity (−0.671), air temperature with dew point (+0.610) and dew point
+with surface pressure (+0.520), all of which are physically expected and none of which indicates
 redundancy at a level requiring removal.
 
 This pairwise result should not, however, be read as evidence that the variable set is free of
@@ -456,20 +453,20 @@ resolution, by site.
 
 | | Ankara | Antalya | Konya | Rize | Van |
 |---|---|---|---|---|---|
-| Hourly, lag 1 | 0.905 | 0.866 | 0.900 | 0.920 | 0.867 |
-| Hourly, lag 2 | −0.295 | −0.373 | −0.270 | −0.345 | −0.215 |
-| Hourly, lag 3 | −0.013 | +0.087 | −0.016 | −0.006 | −0.006 |
-| Daily, lag 1 | 0.541 | 0.545 | 0.557 | **0.417** | 0.561 |
-| Daily, lag 2 | 0.098 | 0.094 | 0.076 | **−0.002** | 0.069 |
-| Daily, lag 3 | 0.112 | 0.122 | 0.082 | 0.066 | 0.110 |
+| Hourly, lag 1 | 0.905 | 0.866 | 0.900 | 0.920 | 0.868 |
+| Hourly, lag 2 | −0.302 | −0.376 | −0.274 | −0.350 | −0.218 |
+| Hourly, lag 3 | −0.010 | +0.089 | −0.016 | −0.004 | −0.004 |
+| Daily, lag 1 | 0.540 | 0.546 | 0.558 | **0.420** | 0.562 |
+| Daily, lag 2 | 0.094 | 0.094 | 0.073 | **−0.001** | 0.069 |
+| Daily, lag 3 | 0.113 | 0.122 | 0.081 | 0.071 | 0.110 |
 
 At the hourly resolution the series behaves as a second-order autoregressive process: the
 first-lag partial autocorrelation exceeds 0.87 at every site, the second lag is distinctly
 negative, and the third is indistinguishable from zero.
 
 The daily resolution is the one that governs a day-ahead forecast, and there the decay is sharp.
-The partial autocorrelation falls from 0.417–0.561 at one day to between −0.002 and 0.098 at two
-days — a five- to six-fold reduction. Beyond the first lag, the information available to a
+The partial autocorrelation falls from 0.420–0.562 at one day to between −0.001 and 0.094 at two
+days — a six-fold or greater reduction. Beyond the first lag, the information available to a
 day-ahead forecast from the target's own history is close to exhausted. The residual
 autocorrelation still visible at a lag of 30 days (0.08–0.23) reflects the seasonal cycle rather
 than memory, and is already captured by the cyclical encoding of day of year.
@@ -493,18 +490,18 @@ partitions remain comparable across sites.
 
 | Partition | Period | Hours per site | Days |
 |---|---|---|---|
-| Training | 30 Jun 2019 – 11 Aug 2024 | 44,879 | 1,870 |
-| Validation | 12 Aug 2024 – 16 May 2025 | 6,671 | 278 |
-| Test | 16 May 2025 – 30 May 2026 | 9,097 | 379 |
+| Training | 30 Jun 2019 00:00 – 3 Sep 2024 03:00 | 45,412 | 1,892 |
+| Validation | 3 Sep 2024 04:00 – 11 Jun 2025 09:00 | 6,750 | 281 |
+| Test | 11 Jun 2025 10:00 – 29 Jun 2026 23:00 | 9,206 | 384 |
 
-The proportions were chosen so that the test partition exceeds one full year, which it does at 379
+The proportions were chosen so that the test partition exceeds one full year, which it does at 384
 days. This is a deliberate constraint rather than an arbitrary split: a test period shorter than a
 year would sample the seasonal cycle unevenly and bias the reported error towards whichever
 seasons it happened to contain. As partitioned, the test period covers 13 calendar months and all
-four seasons, with 12,725 spring, 11,040 summer, 10,920 autumn and 10,800 winter hours.
+four seasons, with 11,040 spring, 13,270 summer, 10,920 autumn and 10,800 winter site-hours.
 
-The validation partition, by contrast, spans ten calendar months and contains no June and no July.
-This asymmetry is a consequence of requiring a full-year test period within a record of this length
+The validation partition, by contrast, spans ten calendar months, of which June is represented only
+by its first eleven days, and contains no July and no August. This asymmetry is a consequence of requiring a full-year test period within a record of this length
 and is noted because it constrains any procedure calibrated on the validation partition: the
 summer months absent from it are also the months of highest irradiance and lowest day-to-day
 variability.
@@ -521,16 +518,16 @@ identical windowing and evaluation procedure applied to the models.
 
 | Reference | Subset | RMSE (W/m²) | MAE (W/m²) | R² |
 |---|---|---|---|---|
-| Persistence | All 24 hours | 86.67 | 36.72 | 0.902 |
-| Climatology | All 24 hours | 78.33 | 38.53 | 0.920 |
-| Persistence | **Daylight** | 121.56 | **72.15** | 0.811 |
-| Climatology | **Daylight** | **109.86** | 75.72 | **0.846** |
+| Persistence | All 24 hours | 86.38 | 36.56 | 0.905 |
+| Climatology | All 24 hours | 77.17 | 37.94 | 0.924 |
+| Persistence | **Daylight** | 120.90 | **71.59** | 0.816 |
+| Climatology | **Daylight** | **108.00** | 74.17 | **0.853** |
 
 Three properties of this table govern how the model results in this paper should be read.
 
 **First, night observations inflate every metric.** The same climatological reference attains
-RMSE 78.3 W/m² and R² 0.920 when evaluated over all hours, but RMSE 109.9 W/m² and R² 0.846 over
-daylight hours. Including night observations reduces RMSE by 29% and raises R² by 0.074 without
+RMSE 77.2 W/m² and R² 0.924 when evaluated over all hours, but RMSE 108.0 W/m² and R² 0.853 over
+daylight hours. Including night observations reduces RMSE by 29% and raises R² by 0.071 without
 any contribution from the forecast. Because R² is normalised by the variance of the subset over
 which it is computed, and that variance is dominated by the day–night oscillation, an all-hours
 R² above 0.9 on this dataset is not evidence of forecast skill. Daylight statistics are reported
@@ -543,12 +540,12 @@ reference on RMSE and R².
 
 **Third, no single reference dominates.** Climatology is the stronger of the two on RMSE and R²,
 while persistence is stronger on MAE, reflecting the asymmetry of the error distribution. A
-forecast must therefore be shown to improve on 109.86 W/m² in RMSE, 0.846 in R² and 72.15 W/m² in
+forecast must therefore be shown to improve on 108.00 W/m² in RMSE, 0.853 in R² and 71.59 W/m² in
 MAE before it can be said to have improved on the naive references at all.
 
 Site-level reference accuracy quantifies the regime difference of Section 7. The climatological
-reference attains a daylight RMSE of 97.2 W/m² at Antalya, 98.8 at Van, 107.1 at Konya and 108.2 at
-Ankara, but 133.8 at Rize, with R² falling from 0.88 to 0.71. Figure 8 shows this comparison. The
+reference attains a daylight RMSE of 92.6 W/m² at Antalya, 96.2 at Van, 104.7 at Konya and 108.2 at
+Ankara, but 133.4 at Rize, with R² falling from 0.90 to 0.72. Figure 8 shows this comparison. The
 pooled figure, in which four similar sites outvote one dissimilar one, understates the difficulty
 Rize presents.
 
@@ -559,8 +556,8 @@ daylight hours.
 
 ## 13. Summary
 
-The dataset comprises 303,240 hourly observations distributed evenly over five Turkish sites and
-approximately seven years, with no missing values, one radiation variable and six meteorological
+The dataset comprises 306,840 hourly observations distributed evenly over five Turkish sites and
+seven years, with no missing values, one radiation variable and six meteorological
 predictors. Its principal characteristics, in the order in which they constrain the analysis, are:
 
 1. Approximately half of all observations are night hours of exactly zero irradiance, and they
@@ -575,5 +572,5 @@ predictors. Its principal characteristics, in the order in which they constrain 
    day.
 6. Most raw associations between meteorological variables and irradiance are confounded with solar
    geometry; three of six reverse sign once geometry is controlled for.
-7. The naive reference forecasts attain a daylight RMSE of 109.86 W/m² and an R² of 0.846, which
+7. The naive reference forecasts attain a daylight RMSE of 108.00 W/m² and an R² of 0.853, which
    is the threshold any learned model must exceed to constitute a result.

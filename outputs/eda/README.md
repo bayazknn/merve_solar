@@ -20,20 +20,23 @@ uv run python scripts/02_descriptive_analysis.py  # every table and figure
 
 | | |
 |---|---|
-| Source file | `SolarData_Merve(140926_V2).xlsx` (14 September 2026, V2) — **the repository's only data file** |
+| Source file | `SolarData_Merve(031026_V3).xlsx` (3 October 2026, V3) — the file every table and figure here is built from |
 | Intermediate | `outputs/processed/base_features.parquet` |
-| Span | 2019-06-30 00:00 → 2026-05-30 23:00 |
-| Rows per province | 60,648 uninterrupted hourly rows (2,527 days) |
-| Pooled | 303,240 rows; daylight subset **152,893** (50.42%) |
+| Span | 2019-06-30 00:00 → 2026-06-29 23:00 |
+| Rows per province | 61,368 uninterrupted hourly rows (2,557 days) |
+| Pooled | 306,840 rows; daylight subset **155,081** (50.54%) |
 | Features | 13 |
 
-**This file was taken with different settings from the July export** — units, parameter
-selection and record length all changed, `CLRSKY_SFC_SW_DWN` is gone, and V2 additionally
-dropped the 10 m wind. The full account is in `EDA.md` §0; no number here should be compared
-with an earlier version without reading it.
+**V3 differs from V2 in two ways:** the target `ALLSKY_SFC_SW_DWN` is now stored directly in
+W/m² (V2 stored MJ/m²/hour and was converted at read time), and the record is 30 days longer.
+Every meteorological column is bit-identical to V2. Earlier, the 14 September export had changed
+units, parameter selection and record length relative to the July export, `CLRSKY_SFC_SW_DWN`
+was gone, and V2 additionally dropped the 10 m wind. The full account is in `EDA.md` §0; no
+number here should be compared with an earlier version without reading it.
 
-**Solar geometry replaced the clear-sky column** (`src/merve_solar/solar.py`). There is no other
-data file in the repository; everything derives from this Excel file and from astronomy.
+**Solar geometry replaced the clear-sky column** (`src/merve_solar/solar.py`). Everything derives
+from the Excel file and from astronomy. (The V2 workbook may still sit in the repository root for
+reference; no table here reads it.)
 
 - `solar_elevation` — apparent solar elevation at each hour's midpoint (degrees), computed from
   the province coordinates and the timestamp with the NREL algorithm. `> 0` means daylight, and
@@ -53,7 +56,7 @@ and in particular not the target.
 
 Two alternatives were tried and rejected:
 
-- *A `target > 0` threshold.* It agrees with the geometry on 303,204 of 303,240 rows here, and
+- *A `target > 0` threshold.* It agrees with the geometry on 303,810 of 306,840 rows here, and
   is still inadmissible: (a) it selects the denominator of the headline metrics using the
   answer — an overcast twilight hour reads zero and drops out exactly where the model is worst;
   (b) **it cannot be computed 24 h ahead**, which is precisely where `clamp_night_to_zero` has
@@ -64,9 +67,11 @@ Two alternatives were tried and rejected:
   **was wrong because it is too coarse** — see the *Correction log* at the bottom.
 
 **The threshold is untuned.** Sweeping it finds a value that fits the target better (−2.0°, which
-cuts disagreement from 3,034 rows to 587), but tuning a geometric mask against the target
-destroys the reason the mask exists. The cost was measured: the climatology floor's daylight
-RMSE moves 108.78 → 109.86.
+cuts disagreement from 3,030 rows to 456 on V3), but tuning a geometric mask against the target
+destroys the reason the mask exists. The cost was measured in the September round, when the
+clear-sky column was still available: the climatology floor's daylight RMSE moved 108.78 →
+109.86. That comparison cannot be repeated on V3 (neither current export has the clear-sky
+column).
 
 **2. Monthly boxplots use daily totals, not hourly values.** Most of the width of a box drawn
 from daylight *hourly* values is the within-day solar geometry, and the box narrows in winter —
@@ -82,7 +87,7 @@ and consequences are in `EDA.md` §2.1. Practical rules:
   (`HR + 0.5`).
 - Axes are labelled "Local solar time (LST)".
 
-**4. There are deliberately no p-values and no significance stars.** With n ≈ 153,000
+**4. There are deliberately no p-values and no significance stars.** With n ≈ 155,000
 autocorrelated hourly rows every |r| > 0.01 comes out "p < 0.001", while the effective sample
 size is far smaller. Effect sizes and `partial_r_within_hour` are reported instead.
 
@@ -111,24 +116,24 @@ the month, because plasma is sequential and would otherwise set January and Dece
 opposite ends.
 
 **7. Partial years do not enter the 3-D surface.** 2019 (starting 30 June) and 2026 (ending
-30 May) are partial; `month_year_surface_*` and `month_year_anomaly_panel` use complete calendar
+29 June) are partial; `month_year_surface_*` and `month_year_anomaly_panel` use complete calendar
 years only (2020–2025).
 
 ---
 
 ## Tables (`tables/`)
 
-**Scope rule: with one exception every table uses the whole record** — 2019-06-30 → 2026-05-30,
-60,648 hours / 2,527 days per province, 303,240 rows pooled (daylight subset 152,893). The one
+**Scope rule: with one exception every table uses the whole record** — 2019-06-30 → 2026-06-29,
+61,368 hours / 2,557 days per province, 306,840 rows pooled (daylight subset 155,081). The one
 exception is `monthly_target_stats.csv`, which is the data behind the last-12-months boxplot and
-is deliberately limited to 2025-06 → 2026-05. Two exceptions exist among the figures:
+is deliberately limited to 2025-07 → 2026-06 (the final month stops on 29 June: 29 days). Two exceptions exist among the figures:
 `monthly_boxplot_last12m_*` (last 12 months) and `month_year_surface_*` /
 `month_year_anomaly_panel` (2020–2025 only).
 
 | File | Contents | Scope |
 |---|---|---|
-| `descriptive_stats_by_city_daylight.csv/.md/.tex` | **Primary table.** Daylight hours, per province + pooled. One row per (province, statistic: N, Mean, SD, Min, Q1, Median, Q3, Max), one column per variable. | full record (daylight, n = 152,893) |
-| `descriptive_stats_by_city_24h.csv/.md/.tex` | The same table over 24 hours — this is the distribution the model is trained on. | full record (n = 303,240) |
+| `descriptive_stats_by_city_daylight.csv/.md/.tex` | **Primary table.** Daylight hours, per province + pooled. One row per (province, statistic: N, Mean, SD, Min, Q1, Median, Q3, Max), one column per variable. | full record (daylight, n = 155,081) |
+| `descriptive_stats_by_city_24h.csv/.md/.tex` | The same table over 24 hours — this is the distribution the model is trained on. | full record (n = 306,840) |
 | `temporal_coverage_by_city.csv` | Coverage, hour/day counts, daylight share, mean daylight duration by season, seasonal summaries of the target. | full record |
 | `target_by_hour_by_city.csv` | The target's (province, season, LST hour) distribution — the data behind the diurnal-profile figure. | full record |
 | `time_feature_explained_variance.csv` | η² and harmonic R² for hour and day of year. Reported instead of a Pearson *r* against the sin/cos columns, because a correlation against a deterministic function of the hour is not interpretable. | full record (both 24 h and daylight) |
@@ -136,14 +141,14 @@ is deliberately limited to 2025-06 → 2026-05. Two exceptions exist among the f
 | `correlation_pearson_<province>.csv`, `correlation_spearman_<province>.csv`, `..._pooled.csv` | Correlation matrices of the 7 physical variables. | full record (daylight) |
 | `target_correlation_by_city.csv` | Raw correlation with the target plus `partial_r_within_hour`. | full record (daylight) |
 | `collinear_pairs.csv` | Pairs with \|r\| > 0.9. **Empty since V2** (the only such pair was `WS2M`–`WS10M`); an empty table is a finding here, not an error, and the header row is preserved. | full record (daylight) |
-| `seasonal_target_stats.csv` | Hourly and daily-total summaries by season. | full record (2,527 days/province) |
-| `daily_clearness_by_city.csv` | **Empirical** clearness ratio (daily total ÷ the observed 95th percentile for that day of year) and clear/overcast day shares — compares provinces on cloudiness rather than latitude. | full record (2,525 days/province; 29 February dropped for alignment) |
-| `monthly_target_stats.csv` | Daily-total summaries for the last 12 months — the boxplot's data. | **2025-06 → 2026-05 ONLY** |
+| `seasonal_target_stats.csv` | Hourly and daily-total summaries by season. | full record (2,557 days/province) |
+| `daily_clearness_by_city.csv` | **Empirical** clearness ratio (daily total ÷ the observed 95th percentile for that day of year) and clear/overcast day shares — compares provinces on cloudiness rather than latitude. | full record (2,555 days/province; 29 February dropped for alignment) |
+| `monthly_target_stats.csv` | Daily-total summaries for the last 12 months — the boxplot's data. | **2025-07 → 2026-06 ONLY** |
 | `clearness_index_by_city.csv` | **Standard** clearness index kt = GHI / (I₀ cos θz), hourly and daily, province × season. Hourly values are restricted to `toa_horizontal > 20 W/m²` (the division blows up at twilight). Sky-condition cut-offs are the literature's bands for this index: clear kt > 0.65, overcast kt < 0.35. | full record |
 | `autocorrelation_clearness.csv` | ACF and PACF of kt, hourly (lags 1–72) and daily (1–30). The evidence behind `lookback_hours`. | full record |
 | `ramp_stats_by_city.csv` | Distribution of hourly \|Δirradiance\| and \|Δkt\|, province × season. | full record (daylight) |
 | `daylight_block_structure.csv` | Lengths of the uninterrupted blocks that would remain if night rows were deleted. | full record (daylight) |
-| `persistence_baseline.csv` | Reference floor: RMSE/MAE/R²/bias for persistence and climatology. Smart persistence was removed (`EDA.md` §0.3). This table is a descriptive twin; the numbers destined for the paper come from `scripts/03_run_naive_baselines.py`, which runs through the pipeline and therefore differs in the last decimals (it counts scored elements where this counts hours). | **the model's test window** (after val_end, 9,097 hours/province) |
+| `persistence_baseline.csv` | Reference floor: RMSE/MAE/R²/bias for persistence and climatology. Smart persistence was removed (`EDA.md` §0.3). This table is a descriptive twin; the numbers destined for the paper come from `scripts/03_run_naive_baselines.py`, which runs through the pipeline and therefore differs in the last decimals (it counts scored elements where this counts hours). **The two naive rows now in `outputs/experiments_ledger.csv` were produced on V2 data and are stale until that script is re-run on V3** (`EDA.md` §8). | **the model's test window** (after val_end, 9,206 hours/province) |
 
 Three reading notes:
 
@@ -208,6 +213,49 @@ May · **Summer** = June, July, August · **Autumn** = September, October, Novem
 ---
 
 ## Correction log
+
+### 2026-10-03 — the V3 export: target stored in W/m², record 30 days longer
+
+`SolarData_Merve(140926_V2).xlsx` → `SolarData_Merve(031026_V3).xlsx` (export dated 3 October
+2026). The meteorological columns are bit-identical to V2 over the shared hours; two things
+changed, and every table and figure in this folder was regenerated.
+
+| | V2 (14 Sep) | V3 (3 Oct) |
+|---|---|---|
+| Target unit in the file | MJ/m²/hour, converted to W/m² at read time (× 277.78) | **W/m², two decimals** (no conversion) |
+| Distinct target values | 387 (quantised to 2.78 W/m² steps) | **38,385** pooled |
+| Last valid hour | 2026-05-30 23:00 | **2026-06-29 23:00** |
+| `-999` tail | 744 hours | **24 hours** (2026-06-30) |
+| Rows per province | 60,648 (2,527 days) | **61,368 (2,557 days)** |
+| Rows pooled / daylight | 303,240 / 152,893 (50.42%) | **306,840 / 155,081 (50.54%)** |
+| Train | 2019-06-30 → 2024-08-11 (44,879 h) | **2019-06-30 → 2024-09-03 03:00 (45,412 h)** |
+| Validation | 2024-08-12 → 2025-05-16 (6,671 h) | **2024-09-03 04:00 → 2025-06-11 09:00 (6,750 h)** |
+| Test | 2025-05-16 → 2026-05-30 (9,097 h / 379 days) | **2025-06-11 10:00 → 2026-06-29 23:00 (9,206 h / 383.6 days)** |
+| Validation seasons | no June, no July | **no July, no August; June only 1–11 (250 h per province)** |
+| Naive floor, daylight (descriptive twin) | clim. 109.83 / pers. 121.85 | clim. **108.00** / pers. **120.90** |
+
+What this means for the folder:
+
+- **The V2 quantisation story is gone.** No unit conversion, no 2.78 W/m² grid, no "387 distinct
+  values", and no daylight-but-zero rows (V2's EDA reported one).
+  Ramp statistics are no longer multiples of 2.78 W/m².
+- **Test-window composition changed.** June now appears twice in the test window, so Summer
+  carries 28.8% of its hours (per province: Summer 2,654, Spring 2,208, Autumn 2,184, Winter
+  2,160). The previous statement "the validation window contains no June and no July" is
+  replaced by the V3 fact above.
+- **Ledger rows are stale.** `outputs/experiments_ledger.csv` holds the two naive rows produced on
+  V2; they stay stale until `scripts/03_run_naive_baselines.py` is re-run on V3. `EDA.md` §8
+  quotes the descriptive twin (`persistence_baseline.csv`) in the meantime and says so.
+- **Not re-measurable on V3:** the cost of the untuned geometric threshold (it needed the clear-sky
+  column, 108.78 → 109.86) and the precipitation-resolution loss against the July export. Both
+  are quoted in `EDA.md` as historical measurements.
+- **Statements corrected while re-checking `EDA.md`** (they were wrong before V3, not because of
+  it): the number of variables with inconsistent raw-correlation signs is two (`PS`, `WS2M`), not
+  three; the binary rain indicator is the strongest precipitation encoding in four provinces,
+  not three; and the old "agrees with the geometry on 303,204 of 303,240 rows" did not match
+  the 2,969 disagreements reported next to it.
+- **Date bookkeeping:** `monthly_target_stats.csv` now covers 2025-07 → 2026-06 (June 2026 stops on
+  the 29th); the 3-D surfaces still use complete calendar years 2020–2025 only.
 
 ### 2026-09-14 (c) — figures, tables and EDA.md switched to English
 

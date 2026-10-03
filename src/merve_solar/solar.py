@@ -7,15 +7,16 @@ indicator that is a pure function of (site, timestamp) and never reads the reali
 
 Why not just test `target > 0`
 ------------------------------
-It is tempting, and on this dataset it agrees with the geometry on 303,204 of 303,240 rows.
+It is tempting, and on this dataset it agrees with the geometry on 303,810 of 306,840 rows.
 It is still wrong, for two reasons, and the second one is decisive:
 
 1. **It selects the evaluation set using the answer.** The daylight subset is the denominator
    of every headline metric. If membership depends on the realised target, a heavily overcast
    twilight hour reads 0 and silently leaves the subset -- i.e. the hours where the model is
-   worst are the ones that get dropped. Here that is 36 rows (the export's 2.78 W/m^2
-   quantisation makes real daylight hours store as 0.00), so the bias is tiny; the mechanism
-   is not bounded by anything, which is the problem.
+   worst are the ones that get dropped. On this record the two definitions disagree on 3,030
+   rows, all of them geometric-night hours that carry a small positive reading (twilight and
+   the provider's own horizon convention) and none a daylight hour reading 0, so the bias is
+   tiny; the mechanism is not bounded by anything, which is the problem.
 2. **It cannot be evaluated at prediction time.** `clamp_night_to_zero` has to decide, for an
    hour 24 h in the future, whether the sun will be up. `y` is not available then. A clamp that
    used it would report skill that is unattainable operationally. So geometry is required
@@ -108,7 +109,7 @@ def extraterrestrial_horizontal(city: str, local_datetimes) -> np.ndarray:
         than to one provider's clear-sky product;
       * it is better behaved. Measured on this record, kt has median 0.555 and p99 0.801, with
         2 hours of 150,746 above 1.0 -- against the clear-sky-index form's 2.9% above 1.0, an
-        artefact of the export's 2.78 W/m^2 quantisation landing on a near-unity denominator.
+        artefact of the old export's 2.78 W/m^2 quantisation landing on a near-unity denominator.
 
     The scale differs and must not be mixed with the old numbers: a cloudless hour reads
     kt ~ 0.75-0.80 here (atmospheric transmittance) where the clear-sky index read ~1.0.

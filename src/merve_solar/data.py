@@ -13,11 +13,9 @@ from merve_solar.config import (
     CITY_TO_ID,
     DROPPED_COLUMNS,
     EXPECTED_TRIMMED_ROWS_PER_SHEET,
-    IRRADIANCE_COLUMNS_MJ,
     MASK_COLUMNS,
     LAST_VALID_TIMESTAMP,
     MISSING_SENTINEL,
-    MJ_M2_HOUR_TO_W_M2,
     RAW_XLSX_PATH,
 )
 from merve_solar.solar import apparent_elevation, extraterrestrial_horizontal
@@ -51,27 +49,9 @@ def _add_cyclical_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _to_w_per_m2(df: pd.DataFrame) -> pd.DataFrame:
-    """Convert the export's MJ/m^2/hour irradiance columns to W/m^2.
-
-    The 14-Sep-2026 export uses NASA POWER's default hourly units; the whole project, the
-    reference paper and the irradiance literature are in W/m^2. The conversion is exact and
-    linear (see MJ_M2_HOUR_TO_W_M2 in config.py); it is applied BEFORE the sentinel check so
-    that -999 is still recognisable, hence the explicit mask.
-    """
-    df = df.copy()
-    for col in IRRADIANCE_COLUMNS_MJ:
-        if col not in df.columns:
-            raise ValueError(f"irradiance column {col!r} is not in the sheet.")
-        valid = df[col] != MISSING_SENTINEL
-        df.loc[valid, col] = df.loc[valid, col] * MJ_M2_HOUR_TO_W_M2
-    return df
-
-
 def load_city_sheet(city: str) -> pd.DataFrame:
-    """Load, trim, unit-convert, and feature-engineer a single city's sheet."""
+    """Load, trim, and feature-engineer a single city's sheet."""
     df = pd.read_excel(RAW_XLSX_PATH, sheet_name=city, engine="openpyxl")
-    df = _to_w_per_m2(df)
     df = _build_datetime_index(df)
 
     before = len(df)
