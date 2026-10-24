@@ -159,8 +159,8 @@ pooled sample. The pooled distribution has no aleatoric term, so raw intervals u
 `conformal_mode` (`conformal.py`, default `"none"`) is the recalibration layer, and it leaves
 RMSE/MAE/R² bit-identical to its uncorrected twin.
 
-**The floor to beat** (ledger rows from the V2 export; stale until `03_run_naive_baselines.py` is rerun on V3): pooled daylight RMSE **109.86 W/m²** and R² **0.8456**
-(climatology), daylight MAE **72.15** (persistence). A model that does not beat both is not a
+**The floor to beat** (V3 ledger rows): pooled daylight RMSE **108.20 W/m²** and R² **0.8516**
+(climatology), daylight MAE **71.85** (persistence). A model that does not beat both is not a
 result.
 
 ### Figures, tables and manuscript text

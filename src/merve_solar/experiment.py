@@ -97,7 +97,7 @@ def assert_trainable_model_family(config) -> None:
     if config.model_family != "lstm":
         raise ValueError(
             f"run_experiment only trains model_family='lstm', got {config.model_family!r}. "
-            "The non-LSTM families (climatology, persistence, smart_persistence) are not trained "
+            "The non-LSTM families (climatology, persistence) are not trained "
             "at all -- they are scored through the same windows and metrics by "
             "scripts/03_run_naive_baselines.py, which writes their ledger rows directly. "
             "Running this config would train an LSTM and label the row "

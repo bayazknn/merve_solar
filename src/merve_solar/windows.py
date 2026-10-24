@@ -65,7 +65,7 @@ def _build_city_windows(
         raise ValueError("Non-contiguous hourly series detected within a city's data.")
 
     target = city_df[TARGET_COLUMN].to_numpy(dtype=np.float32)
-    # Daylight is decided by clear-sky irradiance (pure solar geometry), never by the realised
+    # Daylight is decided by solar elevation (pure solar geometry), never by the realised
     # target — so the mask never conditions on the outcome. See config.py MASK_COLUMNS.
     daylight_hour = (city_df[DAYLIGHT_REFERENCE_COLUMN].to_numpy() > 0)
     city_id = int(city_df["city_id"].iloc[0])
