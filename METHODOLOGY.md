@@ -31,8 +31,21 @@ The procedure consists of the following stages, each described below. The terms 
 
 ## 2. Terminology: hours, periods, windows, blocks, replicates and passes
 
-The bootstrap and MC Dropout operate on different objects, and the parameters that control
-them are easy to confuse. In particular, the 24-hour input length of a window and the
+A single trained network gives a single forecast for each hour, for example 650 W/m² at 12:00
+tomorrow, and says nothing about how certain that forecast is. The approach taken here is to
+produce many slightly different forecasts for the same hour and to measure how much they
+disagree: if they all lie close to 650 W/m² the model is confident, and if they range from 350
+to 1000 W/m² it is not. Two independent mechanisms create the differences:
+
+- **Resampling (the bootstrap)** changes the *data* a network learns from. Several training
+  sets, called *replicates*, are drawn at random from the original one, and a separate network
+  is trained on each.
+- **MC Dropout** changes the *network* at prediction time. Each trained network is run
+  repeatedly on the same input with a different random subset of its neurons switched off each
+  time; each run is a *pass*.
+
+The bootstrap and MC Dropout therefore operate on different objects, and the parameters that
+control them are easy to confuse. In particular, the 24-hour input length of a window and the
 168-window length of a bootstrap block are unrelated settings, and MC Dropout involves
 neither blocks nor resampling.
 
@@ -100,7 +113,31 @@ construction, whatever happens to the window afterwards.
 
 ### 2.4 Blocks and replicates (bootstrap only)
 
-The bootstrap does not cut the series again and does not create new windows. It takes the
+The principle is easiest to see on a training set only ten weeks long. *Resampling* builds a
+new training set of the same size by drawing weeks at random and with replacement, as when
+drawing numbered balls from a bag and returning each ball after reading it. The result of one
+such draw is a *replicate*:
+
+```
+original training data:  W1  W2  W3  W4  W5  W6  W7  W8  W9  W10
+replicate 1:             W3  W7  W7  W1  W9  W2  W3  W10 W5  W8    (W4, W6 missing; W3, W7 twice)
+replicate 2:             W6  W1  W4  W4  W10 W2  W8  W8  W5  W1    (W3, W7, W9 missing)
+```
+
+One network is trained on each replicate, so each network has learned from a slightly
+different history: the network trained on replicate 1 has never seen the weather of weeks 4
+and 6. Where the networks' forecasts disagree, the forecast depends on which history the model
+happened to learn from.
+
+Whole weeks are drawn, rather than single hours, because neighbouring hours are nearly
+identical. If single hours were drawn, a missing hour would in effect be replaced by its
+near-identical neighbour, and every replicate would carry practically the same information.
+Drawing weeks means that whole weather episodes are genuinely absent from a replicate, so the
+networks differ in a meaningful way.
+
+In the actual procedure the role of a "week" is played by a *block* of 168 consecutive
+training windows, which may start at any hour rather than on a fixed weekday. The bootstrap
+does not cut the series again and does not create new windows. It takes the
 45,365 training windows of one site, in time order, and draws *blocks* of ℓ = 168 consecutive
 windows from them:
 
@@ -129,11 +166,31 @@ about 61–65% of the distinct training windows, some of them several times over
 
 ### 2.5 Passes (MC Dropout only)
 
-MC Dropout acts after training, on one window at a time. A trained network is run *M* = 100
-times on the same test window, each time with a new random dropout mask, giving 100 slightly
-different 24-hour forecasts. No periods, blocks or replicates are involved at this step: the
-windows are the ordinary test windows, used once each and in no particular order. With
-*B* = 8 networks, every test window receives 8 × 100 = 800 forecasts.
+*Dropout* is a standard training technique: at every training step a random 30% of the
+network's neurons are switched off, so that the network cannot rely too heavily on any single
+one. Ordinarily dropout is switched off when forecasts are made. MC Dropout keeps it switched
+on. The same trained network is then given the same test window *M* = 100 times, and each time
+a different random 30% of its neurons is switched off, giving 100 slightly different 24-hour
+forecasts:
+
+```
+network 1, same test window, pass 1:    12:00 -> 640 W/m²
+network 1, same test window, pass 2:    12:00 -> 710 W/m²
+network 1, same test window, pass 3:    12:00 -> 590 W/m²
+...                                      (100 passes)
+```
+
+If these forecasts stay close together, what the network has learned about this situation is
+robust; if they scatter, it is not. MC Dropout involves no new data, no resampling and no
+retraining, and it uses no periods or blocks: it runs only at prediction time, on the ordinary
+test windows, each used once and in no particular order. With *B* = 8 networks, every test
+window receives 8 × 100 = 800 forecasts.
+
+For each forecast hour, the 800 values are then summarised. The point forecast is their mean,
+and the 95% prediction interval runs from the 2.5th to the 97.5th percentile: the 800 values
+are sorted and the lowest 2.5% and highest 2.5% are cut off. For the example in Figure 1(d),
+12:00 on 17 April 2026 in Ankara, this gives a forecast of 659 W/m² and an interval of
+332–972 W/m².
 
 ### 2.6 How the pieces combine
 
@@ -148,6 +205,20 @@ test window --> 100 dropout passes through each of the 8 networks <----+
            --> 800 forecasts of the next 24 hours
            --> mean, variance decomposition, 95% interval
 ```
+
+**Table 2.** The two sampling mechanisms compared.
+
+| | Resampling (bootstrap) | MC Dropout |
+|---|---|---|
+| What is varied | The training data | The network's active neurons |
+| When | Before training | At prediction time |
+| Which data | Training period only | Test windows (and validation windows, if recalibrating) |
+| How many | 8 replicates, hence 8 networks | 100 passes per network |
+| Question it answers | Would the forecast change with a different training history? | Is this network's forecast stable? |
+
+Both mechanisms measure uncertainty in the model only. Neither represents the natural
+variability of the weather itself, such as a cloud arriving that no model could anticipate, so
+the resulting interval is expected to be too narrow; Section 8.5 describes the correction.
 
 Figure 1 shows the same steps on the real data, using the replicates and trained networks of
 the reference run.
@@ -196,14 +267,14 @@ network can still represent site-specific behaviour.
 
 ## 4. Input variables
 
-Table 2 lists the 13 model inputs. The target's own history is included as an input, so the
+Table 3 lists the 13 model inputs. The target's own history is included as an input, so the
 model is autoregressive in irradiance. Wind direction is encoded by its sine and cosine to
 remove the discontinuity at 0°/360°, and the hour of day and day of year are encoded the same
 way. Solar geometry (solar elevation and top-of-atmosphere irradiance) is computed from the
 site coordinates and the timestamp but is used only to define daylight (Section 9); it is not a
 model input, because the cyclical time encodings already carry that information.
 
-**Table 2.** Model inputs.
+**Table 3.** Model inputs.
 
 | Variable | Description | Unit |
 |---|---|---|
