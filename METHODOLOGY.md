@@ -149,6 +149,24 @@ test window --> 100 dropout passes through each of the 8 networks <----+
            --> mean, variance decomposition, 95% interval
 ```
 
+Figure 1 shows the same steps on the real data, using the replicates and trained networks of
+the reference run.
+
+![Sampling of windows, bootstrap blocks and MC Dropout passes](outputs/methodology/figures/sampling_schematic.png)
+
+**Figure 1.** How the data are sampled. (a) Windows: each window holds 24 input hours (blue)
+and the 24 hours to be forecast (orange); a new window starts every hour, so neighbouring
+windows share 47 of their 48 hours. (b) Bootstrap blocks for one site in replicate 1, over six
+weeks of the training period. Each bar is one drawn block of 168 consecutive training windows,
+labelled by the order in which it was drawn; the lower plot counts how often each window
+appears in the replicate. Windows covered by no block (red) are left out of this replicate, and
+where two blocks overlap, the windows appear twice. (c) The same count for all eight replicates
+over the whole record, one window per day: every replicate keeps a different set of weeks, and
+the validation and test periods are never resampled. (d) MC Dropout on one test window: each of
+the eight trained networks is run 100 times with fresh dropout masks (blue: the 100 passes of
+network 1; grey: networks 2–8). The 800 forecasts give the mean (solid) and the 95% interval
+(dashed); forecasts are zero when the sun is below the horizon.
+
 ## 3. Problem formulation
 
 Let *s* ∈ {1, …, 5} index the site and *t* the hour, expressed in each site's local solar time.
