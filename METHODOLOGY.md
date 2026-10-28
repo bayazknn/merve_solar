@@ -188,23 +188,30 @@ window receives 8 × 100 = 800 forecasts.
 
 For each forecast hour, the 800 values are then summarised. The point forecast is their mean,
 and the 95% prediction interval runs from the 2.5th to the 97.5th percentile: the 800 values
-are sorted and the lowest 2.5% and highest 2.5% are cut off. For the example in Figure 1(d),
+are sorted and the lowest 2.5% and highest 2.5% are cut off. For the example in Figure 2(d),
 12:00 on 17 April 2026 in Ankara, this gives a forecast of 659 W/m² and an interval of
 332–972 W/m².
 
 ### 2.6 How the pieces combine
 
-```
-training windows (5 sites)
-   |-- bootstrap with blocks --> replicate 1 --> train --> network 1 --+
-   |-- bootstrap with blocks --> replicate 2 --> train --> network 2 --+
-   |   ...                                                             |
-   '-- bootstrap with blocks --> replicate 8 --> train --> network 8 --+
-                                                                       |
-test window --> 100 dropout passes through each of the 8 networks <----+
-           --> 800 forecasts of the next 24 hours
-           --> mean, variance decomposition, 95% interval
-```
+Figure 1 summarises the whole procedure in symbols.
+
+![Schematic of windowing, moving-block bootstrap, ensemble MC Dropout and pooling](outputs/methodology/figures/methodology_schematic.png)
+
+**Figure 1.** Overview of the forecasting and uncertainty-quantification procedure. (a) Each
+site's hourly series is cut into overlapping windows of *L* input hours (blue) followed by the
+*H* hours to be forecast (orange); a new window starts every hour. (b) Moving-block bootstrap:
+for each site, block start points are drawn uniformly with replacement from its *n*<sub>*s*</sub>
+chronologically ordered training windows; the blocks of ℓ consecutive windows are concatenated
+and cut to *n*<sub>*s*</sub> windows, giving replicate 𝒟<sup>(*b*)</sup>. Colour encodes each
+window's position in the training period, so the order is preserved within a block but not
+between blocks; a block can be drawn more than once (outlined) and some windows are left out.
+The replicates of all sites are pooled, and the procedure is repeated *B* times. (c) One LSTM
+is trained on each replicate. Each trained network is run *M* times on the same test window with
+dropout kept active, giving forecasts ŷ<sup>(*b*,1)</sup>, …, ŷ<sup>(*b*,*M*)</sup> over the
+*H* horizon steps. The *B* × *M* forecasts are pooled; their mean is the point forecast μ̂ and
+their empirical 2.5th and 97.5th percentiles bound the 95% prediction interval, separately for
+every window and horizon step. Curves are illustrative.
 
 **Table 2.** The two sampling mechanisms compared.
 
@@ -220,12 +227,12 @@ Both mechanisms measure uncertainty in the model only. Neither represents the na
 variability of the weather itself, such as a cloud arriving that no model could anticipate, so
 the resulting interval is expected to be too narrow; Section 8.5 describes the correction.
 
-Figure 1 shows the same steps on the real data, using the replicates and trained networks of
+Figure 2 shows the same steps on the real data, using the replicates and trained networks of
 the reference run.
 
 ![Sampling of windows, bootstrap blocks and MC Dropout passes](outputs/methodology/figures/sampling_schematic.png)
 
-**Figure 1.** How the data are sampled. (a) Windows: each window holds 24 input hours (blue)
+**Figure 2.** How the data are sampled. (a) Windows: each window holds 24 input hours (blue)
 and the 24 hours to be forecast (orange); a new window starts every hour, so neighbouring
 windows share 47 of their 48 hours. (b) Bootstrap blocks for one site in replicate 1, over six
 weeks of the training period. Each bar is one drawn block of 168 consecutive training windows,
