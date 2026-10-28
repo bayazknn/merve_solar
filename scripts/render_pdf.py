@@ -82,6 +82,10 @@ ol, ul { margin: 0 0 0.8em 0; padding-left: 1.4em; }
 li { margin-bottom: 0.3em; }
 hr { border: none; border-top: 0.5pt solid #ccc; margin: 1.6em 0; }
 code { font-family: "DejaVu Sans Mono", monospace; font-size: 9pt; }
+
+/* Display equations: written as HTML (sub/sup) because there is no math renderer here. */
+p.eq { text-align: center; font-style: italic; margin: 0.6em 0 0.8em 0; position: relative; }
+p.eq .eqn { position: absolute; right: 0; font-style: normal; }
 """
 
 HTML = """<!doctype html>
