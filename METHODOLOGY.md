@@ -272,14 +272,48 @@ A single model is trained on all five sites jointly. Site identity enters only t
 learned embedding (Section 6), so information can be shared across climates while the
 network can still represent site-specific behaviour.
 
-## 4. Input variables
+## 4. Input variables and feature engineering
 
-Table 3 lists the 13 model inputs. The target's own history is included as an input, so the
-model is autoregressive in irradiance. Wind direction is encoded by its sine and cosine to
-remove the discontinuity at 0°/360°, and the hour of day and day of year are encoded the same
-way. Solar geometry (solar elevation and top-of-atmosphere irradiance) is computed from the
-site coordinates and the timestamp but is used only to define daylight (Section 9); it is not a
-model input, because the cyclical time encodings already carry that information.
+**Input set.** Each hour of a site's record is described by thirteen input features
+(Table 3): the lagged target, six meteorological variables, and six features derived from
+circular quantities. The meteorological variables are air temperature (T2M), relative humidity
+(RH2M), dew/frost point (T2MDEW), surface pressure (PS), wind speed (WS2M) and bias-corrected
+precipitation (PRECTOTCORR), all at 2 m. They enter the model in their native units, with no
+further transformation. Only observed quantities are used, so every input is available when
+the forecast is issued.
+
+**Autoregressive component.** All-sky surface shortwave irradiance (ALLSKY_SFC_SW_DWN) is both
+the forecast target and an input. Its values over the 24-hour input window give the network the
+recent cloudiness and the current state of the diurnal cycle. This makes the model
+autoregressive in irradiance. Because all 24 horizon steps are predicted at once (Section 3),
+earlier forecasts are never fed back as inputs.
+
+**Circular encoding of wind direction.** Wind direction is an angle, so a linear
+representation would put 359° and 1° at opposite ends of the scale. Wind direction θ is
+therefore replaced by the pair (sin θ, cos θ). This maps each direction to a point on the unit
+circle and removes the 0°/360° discontinuity.
+
+**Cyclical time encoding.** The diurnal and annual cycles are encoded in the same way. The hour
+of day *h* becomes (sin 2π*h*/24, cos 2π*h*/24), and the day of year *d* becomes
+(sin 2π*d*/365.25, cos 2π*d*/365.25). With this encoding 23:00 and 00:00, and 31 December and
+1 January, are neighbours in feature space. The year length of 365.25 days absorbs leap years.
+Timestamps are in each site's local solar time, so a given value of the hour encoding matches
+approximately the same solar hour angle at every site.
+
+**Solar geometry as a mask, not a predictor.** Two geometric quantities are computed from each
+site's coordinates and the timestamp alone: the apparent solar elevation at the midpoint of
+each hour, and the top-of-atmosphere irradiance on a horizontal surface. Neither is a model
+input. They define the night-time constraint on the forecasts (Section 9) and the daylight
+evaluation subset (Section 10.1). Excluding them keeps the input set free of information the
+cyclical time encodings already carry, and keeps the definition of the evaluation subset
+separate from what the model learns.
+
+**Site identity.** All five sites are modelled by one network. Site identity is not a
+hand-crafted feature: each site gets a learned four-dimensional embedding vector, which is
+appended to the feature vector at every hour of the window, giving seventeen inputs per hour
+(Section 6). This lets the network share structure across climate zones while still
+representing site-specific behaviour. All thirteen features, the target included, are
+standardised using statistics from the training period only (Section 5).
 
 **Table 3.** Model inputs.
 
