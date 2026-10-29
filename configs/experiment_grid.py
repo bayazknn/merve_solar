@@ -45,7 +45,7 @@ STAGE_CRITERION = {
 
 # Filled in after each stage is analysed, and committed with the analysis.
 DECISIONS = {
-    "s1": None,          # lookback_hours
+    "s1": 24,            # lookback_hours; incumbent kept: 48 h and 72 h both worse on val RMSE (+0.9, +1.1 W/m^2)
     "s2": None,          # (lstm_hidden, lstm_layers)
     "s3_dropout": None,  # dropout_rate
     "s3_lr": None,       # learning_rate

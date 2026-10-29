@@ -7,13 +7,36 @@ remote Mac (where they train) and the analysis machine. Results of each stage go
 
 ## Status (update at the end of every session)
 
-**As of 2026-10-29: S1 is running on the remote Mac. No stage is decided yet.**
+**As of 2026-10-29: S1 is decided (lookback 24 h). S2 is unlocked and ready to run on the remote Mac.**
 
 | Stage | Group | State | Decision |
 |---|---|---|---|
 | Smoke | `smoke` | Done on the analysis Mac (MPS, 3.6 min), all outputs present | n/a |
-| S1 lookback | `tune_s1_lookback` | Running on the remote Mac (9 runs, single process) | pending |
-| S2 to S5, final | | Locked until the previous decision is in `DECISIONS` | |
+| S1 lookback | `tune_s1_lookback` | Done on the remote Mac (9 runs, MPS), report in `s1_summary.csv`, `s1_patience.csv` | **24 h** (incumbent kept) |
+| S2 architecture | `tune_s2_arch` | Unlocked, 24 runs listed (64 × 2 reused from S1) | pending |
+| S3 to S5, final | | Locked until the previous decision is in `DECISIONS` | |
+
+**S1 result (validation, daylight, 3 seeds, B=1):**
+
+| Lookback | val RMSE | Paired Δ vs 24 h (mean ± sd) | val CRPS | val CP | Best epochs | Train min/network |
+|---|---|---|---|---|---|---|
+| 24 h | 100.47 | 0 | 55.14 | 0.879 | 10, 4, 2 | 4.1 |
+| 48 h | 101.41 | +0.94 ± 0.63 | 55.44 | 0.875 | 7, 4, 4 | 7.0 |
+| 72 h | 101.59 | +1.12 ± 0.12 | 55.47 | 0.883 | 4, 4, 6 | 9.3 |
+
+- Longer history makes the model slightly worse, not better. Every seed is worse at 48 h and at 72 h,
+  and CRPS agrees with RMSE. The decision rule is not even triggered, because neither challenger
+  has a positive gain. This confirms the training-dynamics expectation that more history adds
+  little.
+- Longer lookbacks lose the first 1 to 2 validation days (no window may cross the split). Re-scored
+  from `daily_scores.csv` on the 1,390 origins all arms share, the paired gaps are +0.86 ± 0.63
+  (48 h) and +0.97 ± 0.13 (72 h), so the conclusion does not depend on the target set.
+- Per province the gaps are mixed and within seed noise, except Van at 72 h (+2.3 ± 1.1). No
+  province shows a clear gain from longer history.
+- Best epoch: one network (24 h, seed 42) peaked at epoch 10. "Best epoch 0 to 5" is therefore
+  typical, not universal.
+- Patience: at patience 5 or 7, 0 of 9 networks would keep a different epoch. At patience 3, 1 of 9
+  would. Seven more patience checks come from S2 and S3 before the patience decision before S4.
 
 **Machines:**
 - **Remote Mac:** the Mac mini, user `merveer`, clone at `merve_solar/`. All tuning runs train
@@ -31,31 +54,20 @@ remote Mac (where they train) and the analysis machine. Results of each stage go
 check_outputs passed`. They start with "partial" and name the failed id if a run failed, and
 they copy any WARNING lines from the check.
 
-**Next session, in order:**
+**Next session, in order** (after S2 finishes on the remote Mac):
 1. `git pull`. Confirm the remote commit message says the check passed, then confirm here:
    ```bash
-   uv run python scripts/check_outputs.py --group tune_s1_lookback
+   uv run python scripts/check_outputs.py --group tune_s2_arch
    ```
-   Every run should show `device` mps.
-2. Run the report:
-   ```bash
-   uv run python scripts/15_tuning_report.py --stage s1
-   ```
-   It writes `s1_summary.csv` and `s1_patience.csv`. Apply the decision rule from Principles.
-   Also look at:
-   - `mean_best_epoch` and the patience table: does the best epoch stay within 0 to 5 at
-     longer lookbacks?
-   - whether validation CRPS agrees with RMSE.
-3. Write the chosen lookback into `DECISIONS["s1"]` and commit it together with the report
-   CSVs, with a one-line rationale in the message. Then confirm S2 is unlocked:
-   ```bash
-   uv run python scripts/run_all_experiments.py --group tune_s2_arch --list
-   ```
-   It should list 24 runs.
-4. Give the user the S2 commands for the remote Mac. S2 is 24 runs, about 2 to 3 h, and is
-   the first stage worth sharding (`--shard 0/2`, `--shard 1/2` in two terminals). Use `;`
-   rather than `&&` before the check.
-5. Update this Status section.
+   Every run should show `device` mps. The only expected "missing" files are the gitignored
+   `test_predictions.npz`.
+2. Run `uv run python scripts/15_tuning_report.py --stage s2` and apply the decision rule.
+   Re-score on common origins from `daily_scores.csv` only if the arms' validation sample counts
+   differ (they should not in S2: same lookback).
+   - If the remote sharded S2, `training_time_sec` is inflated, so do not read cost from it.
+3. Write `DECISIONS["s2"]`, commit it with `s2_summary.csv` and `s2_patience.csv`, then confirm
+   `tune_s3_dropout` and `tune_s3_lr` list (12 + 6 runs).
+4. Give the user the S3 commands. Update this Status section.
 
 **Open observations to carry forward:**
 - In the 2-epoch smoke run, the average of the MC-Dropout passes was about 6 W/m² worse in
@@ -241,7 +253,7 @@ uv run python scripts/check_outputs.py --group smoke --ensemble-curves         #
 uv run python scripts/run_all_experiments.py --group tune_s1_lookback --list
 uv run python scripts/run_all_experiments.py --group tune_s1_lookback --skip-existing --continue-on-error
 uv run python scripts/check_outputs.py --group tune_s1_lookback
-git add outputs/ && git commit -m "Tuning S1: lookback runs" && git push
+git add outputs/experiments outputs/experiments_ledger.csv && git commit -m "Tuning S1 (lookback): ..." && git push
 ```
 
 - For S5, add `--ensemble-curves` to both the run and the check commands.
