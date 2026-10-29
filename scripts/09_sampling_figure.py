@@ -43,7 +43,7 @@ from merve_solar.model import SolarLSTM
 from merve_solar.scaling import apply_scaler, inverse_transform_target, load_scaler
 from merve_solar.windows import build_experiment_windows, compute_split_boundaries
 
-RUN_ID = "config_002_default_full"
+RUN_ID = "config_005_default_full"
 SITE = "Ankara"
 # A partly cloudy spring day in the test period (daily irradiation 60% of the month's clearest),
 # forecast from the window whose origin is 23:00 the evening before.

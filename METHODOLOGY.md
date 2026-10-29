@@ -198,8 +198,8 @@ window receives 8 × 100 = 800 forecasts.
 For each forecast hour, the 800 values are then summarised. The point forecast is their mean,
 and the 95% prediction interval runs from the 2.5th to the 97.5th percentile: the 800 values
 are sorted and the lowest 2.5% and highest 2.5% are cut off. For the example in Figure 3(d),
-12:00 on 17 April 2026 in Ankara, this gives a forecast of 659 W/m² and an interval of
-332–972 W/m².
+12:00 on 17 April 2026 in Ankara, this gives a forecast of 670 W/m² and an interval of
+370–985 W/m².
 
 ### 2.6 How the pieces combine
 
@@ -599,7 +599,7 @@ Because the interval is taken from the pooled sample rather than from a Gaussian
 can be asymmetric, which arises naturally when the networks disagree in one direction.
 
 **What the interval states.** For one site, one forecast hour and one issue time, the interval
-is a range of irradiance values, for example 396–1009 W/m² for 12:00 on 7 April 2026 in
+is a range of irradiance values, for example 400–1011 W/m² for 12:00 on 7 April 2026 in
 Ankara, forecast at 23:00 the evening before. Its claim is about frequency, not about a single
 hour: if the intervals are well calibrated, then over many forecasts the observation falls
 inside the interval 95% of the time, below it 2.5% of the time and above it 2.5% of the time.
@@ -615,33 +615,33 @@ run, and illustrates four points.
   confident the ensemble is.
 - *The point forecast is an expectation, not the most likely value.* On the clear days of 7 and
   9 April the observation lies well above the forecast mean (at 12:00 on 7 April, 893 W/m²
-  against a mean of 723 W/m²), yet inside the interval. The mean is pulled down because, given
+  against a mean of 718 W/m²), yet inside the interval. The mean is pulled down because, given
   only the previous 24 hours, a cloudy day remains possible; the upper part of the interval
   shows what a clear day would deliver.
 - *An observation outside the interval is an event the model did not consider plausible.* The
   heavily overcast 8 April was not anticipated: at 12:00 the observation was 108 W/m² against
-  an interval of 373–986 W/m², and every daylight hour of that day falls below the interval.
+  an interval of 381–993 W/m², and 11 of the day's 13 daylight hours fall below it.
   Such days are where coverage is lost.
 - *At night the interval is zero by construction* (Section 9), so night hours carry no
   information about calibration.
 
-Figure 6(b) checks the interval over the whole test period. Pooled over sites, 90.0% of daylight
-observations fall inside the interval instead of 95%, and the misses are lopsided: 8.1% fall
-below the lower bound and 1.9% above the upper bound, against 2.5% each for a calibrated
-interval. The dominant failure is therefore an unexpectedly cloudy hour, as on 8 April, rather
-than an unexpectedly clear one. Rize, the cloudiest site, has the lowest coverage (85.8%). This
-under-coverage is expected, because the interval represents uncertainty about the model only
-(Section 8.5).
+Figure 6(b) checks the interval over the whole test period. Pooled over sites, 94.1% of daylight
+observations fall inside the interval, close to the nominal 95%, but the misses are lopsided:
+4.1% fall below the lower bound and 1.8% above the upper bound, against 2.5% each for a
+calibrated interval. The dominant failure is therefore an unexpectedly cloudy hour, as on 8 April,
+rather than an unexpectedly clear one. Coverage is close to nominal at four sites (94.4–95.5%) but
+lower at Rize, the cloudiest site (90.3%). A shortfall is to be expected, because the interval
+represents uncertainty about the model only (Section 8.5).
 
 **Use in practice.** A calibrated interval gives each forecast hour three usable numbers. The
 lower bound is a conservative planning value: irradiance falls below it only 2.5% of the time,
 so it can be used, for example, to decide how much solar generation to count on when scheduling
 reserves. The upper bound bounds the plausible maximum, relevant for curtailment or inverter
 loading. The width flags the hours and days on which the forecast deserves less trust and more
-backup capacity. These readings are valid only once the coverage matches its nominal level: in
-the reference run the lower bound is crossed 8.1% of daylight hours rather than 2.5%, so it
-would overstate the generation that can be relied on until the interval is recalibrated
-(Section 8.5).
+backup capacity. These readings are valid only to the extent that the coverage matches its
+nominal level: in the reference run the lower bound is crossed in 4.1% of daylight hours rather
+than 2.5% (6.1% at Rize), so it somewhat overstates the generation that can be relied on unless
+the interval is recalibrated (Section 8.5).
 
 ![Day-ahead forecasts with prediction intervals, and where observations fall](outputs/methodology/figures/interval_reading.png)
 
@@ -753,12 +753,12 @@ gives its daylight value for the reference run.
 
 | Metric | Question it answers | Ideal | Reference run | Reading |
 |---|---|---|---|---|
-| CP (coverage probability) | What share of observations fall inside the interval? | 0.95 | 0.900 | 10% of observations missed instead of 5%: the interval is too narrow |
-| Reliability | How far is CP from 0.95? | 0 | 0.050 | Distance only; does not say whether the interval is too narrow or too wide |
-| MPIW (W/m²) | How wide is the interval on average? | As small as possible at CP ≈ 0.95 | 382 | On average the interval spans 382 W/m² |
-| PINW | How wide, relative to the range of the observations? | As small as possible at CP ≈ 0.95 | 0.370 | The interval spans 37% of the observed range (1,033 W/m²); comparable across sites |
-| CWC | Width, penalised for under-coverage | PINW itself (no penalty) | 4.80 | PINW multiplied by 13.0 for missing the nominal coverage |
-| CRPS (W/m²) | How far is the whole forecast distribution from the observation? | 0 | 54.5 | Comparable with MAE; the point forecast's daylight MAE is 77.2 W/m² |
+| CP (coverage probability) | What share of observations fall inside the interval? | 0.95 | 0.941 | 5.9% of observations missed instead of 5%: the interval is slightly too narrow |
+| Reliability | How far is CP from 0.95? | 0 | 0.008 | Distance only; does not say whether the interval is too narrow or too wide |
+| MPIW (W/m²) | How wide is the interval on average? | As small as possible at CP ≈ 0.95 | 390 | On average the interval spans 390 W/m² |
+| PINW | How wide, relative to the range of the observations? | As small as possible at CP ≈ 0.95 | 0.377 | The interval spans 38% of the observed range (1,033 W/m²); comparable across sites |
+| CWC | Width, penalised for under-coverage | PINW itself (no penalty) | 0.954 | PINW multiplied by 2.53 for falling 0.008 short of the nominal coverage |
+| CRPS (W/m²) | How far is the whole forecast distribution from the observation? | 0 | 53.4 | Comparable with MAE; the point forecast's daylight MAE is 76.0 W/m² |
 
 **CP and Reliability** measure calibration. CP is the first number to check: if it is clearly
 below 0.95 the interval is over-confident, and the widths below describe an interval that does
@@ -773,10 +773,11 @@ better only if both have CP close to 0.95.
 
 **CWC** combines the two into one number. When CP reaches 0.95 it equals PINW; when CP falls
 short, PINW is multiplied by 1 + exp(50 × shortfall), so every 0.01 of missing coverage multiplies
-the penalty term by e<sup>0.5</sup> ≈ 1.65 (Figure 7c). The reference run's shortfall of 0.050
-gives a factor of 13.0, turning a PINW of 0.370 into a CWC of 4.80. Two consequences follow. CWC
+the penalty term by e<sup>0.5</sup> ≈ 1.65 (Figure 7c). The reference run's shortfall of 0.0085
+gives a factor of 2.53, turning a PINW of 0.377 into a CWC of 0.954. Two consequences follow. CWC
 is dominated by coverage whenever CP < 0.95, so it mostly re-expresses CP; and it jumps at
-CP = 0.95, where the factor drops from 2 to 1. It is therefore reported for comparability with
+CP = 0.95, where the factor drops from 2 to 1, so a run marginally below nominal coverage scores
+more than twice as badly as one marginally above it. It is therefore reported for comparability with
 the literature, but runs are not ranked on it alone.
 
 **CRPS** (continuous ranked probability score) evaluates the entire predictive distribution, not
@@ -787,8 +788,8 @@ happened. The first term of Eq. 17 is the mean absolute error of the individual 
 second subtracts half their mean spread, so spread is credited only insofar as it covers the
 error. For a single deterministic forecast the spread is zero and CRPS reduces to the absolute
 error. CRPS is therefore in W/m² and directly comparable with the MAE of a point forecast. In
-the reference run, the daylight CRPS of 54.5 W/m² is lower than the MAE of the model's own point
-forecast (77.2 W/m²): the distribution carries information that its mean alone does not.
+the reference run, the daylight CRPS of 53.4 W/m² is lower than the MAE of the model's own point
+forecast (76.0 W/m²): the distribution carries information that its mean alone does not.
 
 ![Coverage, width, CRPS and CWC illustrated](outputs/methodology/figures/probabilistic_metrics.png)
 
@@ -798,7 +799,7 @@ illustrative. (b) CRPS for one forecast: the cumulative distribution of 800 fore
 and the observation as a step (black); the CRPS integrates the squared gap between them over all
 irradiance values, here 111 W/m², against an absolute error of the mean of 181 W/m²
 (illustrative). (c) The CWC multiplier applied to PINW as a function of CP; the point marks the
-reference run's daylight CP of 0.900.
+reference run's daylight CP of 0.941.
 
 **How to use them.** A run is judged in the following order, on daylight hours, and only against
 runs evaluated on the same subset and with the same number of replicates and passes:
@@ -823,8 +824,3 @@ resampling generator is seeded from the master seed, and network *b* is initiali
 seed + *b*, so the replicates and their initialisations are reproducible. Results are
 reproducible on the same hardware backend; different backends do not agree bit for bit. The
 reference run was trained in PyTorch on an Apple-silicon GPU (MPS backend).
-
-**[To be updated: the reference-run values quoted in this document (Sections 2.5, 8.4 and 10.3,
-Table 5) and Figures 3, 4(b), 6 and 7(c) come from a run trained with the penalty at the
-standardised zero rather than at 0 W/m² (Section 7.2). They will be regenerated from the rerun
-with the corrected penalty.]**

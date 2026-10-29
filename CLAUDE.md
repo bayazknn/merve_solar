@@ -190,9 +190,10 @@ the ledger as descriptive references only.
 ## Open work
 
 - Declare the benchmark methodology (pending, from the user).
-- Rerun the reference model with the corrected penalty (`configs/config_005_default_full.json`),
-  then regenerate the reference-run figures (scripts 09 and 12) and the numbers quoted in
-  `METHODOLOGY.md`. `config_000_smoke` and `config_002_default_full` are pre-fix rows.
+- `config_005_default_full` is the reference run (corrected penalty, seed 42, MPS); scripts 09
+  and 12 and the numbers in `METHODOLOGY.md` come from it. `config_000_smoke` and
+  `config_002_default_full` are pre-fix rows. Every network stops early (best epoch 0–5 of
+  11–16): worth understanding before any architecture ablation.
 - Decide whether to run an ablation programme on the current dataset.
 - Comparison models (SVM, GRU, Prophet or RF/MLP) through the shared pipeline.
 - Feature-set candidates: `log1p(PRECTOTCORR)` plus a rain indicator, and dropping `T2MDEW`

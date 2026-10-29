@@ -48,7 +48,7 @@ from merve_solar.config import (
 )
 from merve_solar.scaling import load_scaler
 
-RUN_ID = "config_002_default_full"
+RUN_ID = "config_005_default_full"
 RUN_DIR = EXPERIMENTS_DIR / RUN_ID
 FIG_DIR = OUTPUTS_DIR / "methodology" / "figures"
 
@@ -492,7 +492,7 @@ def figure_metrics(cp_reference) -> None:
         m_ref = 1 + np.exp(-50 * (cp_reference - 0.95))
         c.plot([cp_reference], [m_ref], "o", color=MISS_COLOR, ms=4)
         c.annotate(f"reference run, daylight\nCP = {cp_reference:.3f} → × {m_ref:.1f}",
-                   xy=(cp_reference, m_ref), xytext=(0.915, 30), fontsize=6.2,
+                   xy=(cp_reference, m_ref), xytext=(0.84, 12), fontsize=6.2,
                    color=ps.INK_SECONDARY,
                    arrowprops=dict(arrowstyle="-", lw=0.6, color=ps.INK_MUTED))
         c.axvline(0.95, color=ps.INK_MUTED, lw=0.7, ls=":")
