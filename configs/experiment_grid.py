@@ -46,7 +46,7 @@ STAGE_CRITERION = {
 # Filled in after each stage is analysed, and committed with the analysis.
 DECISIONS = {
     "s1": 24,            # lookback_hours; incumbent kept: 48 h and 72 h both worse on val RMSE (+0.9, +1.1 W/m^2)
-    "s2": None,          # (lstm_hidden, lstm_layers)
+    "s2": (256, 1),      # (lstm_hidden, lstm_layers); -9.51 W/m^2 vs 64x2, -1.61 +/- 0.59 vs 128x1; width search stopped here on cost (TUNING_FINDINGS.md)
     "s3_dropout": None,  # dropout_rate
     "s3_lr": None,       # learning_rate
     "s4": None,          # bootstrap_block_length

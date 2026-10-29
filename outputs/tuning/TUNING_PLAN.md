@@ -8,15 +8,16 @@ in `TUNING_FINDINGS.md`**, backed by the `<stage>_*.csv` tables next to this fil
 
 ## Status (update at the end of every session)
 
-**As of 2026-10-30: S1 is decided (lookback 24 h). S2's 3 × 3 grid is done; its winner sat at
-the grid edge, so a 3-run extension (256 × 1) must run on the remote Mac before S2 is decided.**
+**As of 2026-10-30: S1 (lookback 24 h) and S2 (256 × 1) are decided. S3 is unlocked and ready
+to run on the remote Mac.**
 
 | Stage | Group | State | Decision |
 |---|---|---|---|
 | Smoke | `smoke` | Done on the analysis Mac (MPS, 3.6 min), all outputs present | n/a |
 | S1 lookback | `tune_s1_lookback` | Done (9 runs, MPS); findings final | **24 h** (incumbent kept) |
-| S2 architecture | `tune_s2_arch` | 24 grid runs done (MPS); extension `h256l1` (3 runs) pending on the remote Mac; findings provisional | pending; 128 × 1 leads by 7.9 W/m² |
-| S3 to S5, final | | Locked until the previous decision is in `DECISIONS` | |
+| S2 architecture | `tune_s2_arch` | Done (24 grid runs + 3 extension runs, MPS); findings final | **256 × 1** (width compute-bounded) |
+| S3 dropout, learning rate | `tune_s3_dropout`, `tune_s3_lr` | Unlocked: 12 + 6 runs at 256 × 1 (0.3 / 1e-3 reused from S2) | pending |
+| S4, S5, final | | Locked until the previous decision is in `DECISIONS` | |
 
 Findings for every stage, with per-province tables and robustness checks: `TUNING_FINDINGS.md`.
 
@@ -34,16 +35,32 @@ Findings for every stage, with per-province tables and robustness checks: `TUNIN
 check_outputs passed`. They start with "partial" and name the failed id if a run failed, and
 they copy any WARNING lines from the check.
 
-**Next session, in order** (after the S2 extension finishes on the remote Mac):
-1. `git pull`, then `uv run python scripts/check_outputs.py --group tune_s2_arch` (27 runs, all
-   mps; only the gitignored `test_predictions.npz` reported missing).
-2. Run `uv run python scripts/15_tuning_report.py --stage s2`. Apply the rule between 256 × 1
-   and 128 × 1. If 256 × 1 also wins clearly, it is again at the grid edge: consider 512 × 1, but
-   weigh it against the cost per network and the risk of a model too large for 5 provinces.
-3. Write `DECISIONS["s2"]`. Finalize the S2 section of `TUNING_FINDINGS.md`: add the 256 × 1 row,
-   remove "provisional", fill the Decisions table. Commit both with the four `s2_*.csv` tables,
-   then confirm `tune_s3_dropout` and `tune_s3_lr` list (12 + 6 runs).
-4. Give the user the S3 commands. Update this Status section.
+**Next session, in order** (after S3 finishes on the remote Mac):
+1. `git pull`, then check both groups. Every run should be mps, and only the gitignored
+   `test_predictions.npz` should be reported missing:
+   ```bash
+   uv run python scripts/check_outputs.py --group tune_s3_dropout
+   ```
+   ```bash
+   uv run python scripts/check_outputs.py --group tune_s3_lr
+   ```
+2. Run the two reports. Each axis is decided on its own, against the S2 winner (dropout 0.3,
+   learning rate 1e-3):
+   ```bash
+   uv run python scripts/15_tuning_report.py --stage s3_dropout
+   ```
+   ```bash
+   uv run python scripts/15_tuning_report.py --stage s3_lr
+   ```
+   Also look at:
+   - Does the 5e-4 arm peak later? Its patience table feeds the patience decision.
+   - What does dropout do to val CP? The 256 × 1 network has CP 0.78 with head-only dropout.
+     Selection stays on RMSE (see Interactions); CP is reported, not optimised.
+3. Write `DECISIONS["s3_dropout"]` and `DECISIONS["s3_lr"]`, and add the S3 section to
+   `TUNING_FINDINGS.md`. Decide the patience for S4 onward (see Early stopping) and record it in
+   the findings. Commit with the `s3_*` tables, then confirm `tune_s4_block --list` shows 12 runs.
+4. Give the user the S4 commands: 12 runs at B=8, about 12 h at 256 × 1, so shard it.
+   Update this Status section.
 
 **Open observations to carry forward:**
 - In the 2-epoch smoke run, the average of the MC-Dropout passes was about 6 W/m² worse in
@@ -94,7 +111,7 @@ that a difference can exceed seed noise.
 | Stage | Parameter | Grid | Incumbent | Step | Arms | New runs |
 |---|---|---|---|---|---|---|
 | S1 | lookback (h) | 24, 48, 72 | 24 | 1 day | 3 | 9 |
-| S2 | LSTM width × depth | {32, 64, 128} × {1, 2, 3} | 64 × 2 | ×2 width, +1 layer | 9 | 24 |
+| S2 | LSTM width × depth | {32, 64, 128} × {1, 2, 3}, + 256 × 1 | 64 × 2 | ×2 width, +1 layer | 10 | 27 |
 | S3 | dropout rate | 0.1, 0.2, 0.3, 0.4, 0.5 | 0.3 | 0.1 | 5 | 12 |
 | S3 | learning rate | 5e-4, 1e-3, 2e-3 | 1e-3 | ×2 | 3 | 6 |
 | S4 | block length (h) | L + 24 + 24k, k ∈ {3, 5, 8, 12} | 168 | days | 4 | 12 (B=8) |
@@ -212,11 +229,14 @@ Estimates per stage (lookback 24; longer lookbacks scale roughly linearly):
 |---|---|
 | S1 | ~1 h |
 | S2 | 2 to 3 h |
-| S3 | 1 to 1.5 h |
-| S4 | ~6 h |
-| S5 | ~4 h, curves included |
-| Final | 1 to 2.5 h |
-| **Total** | **15 to 18 h** |
+| S3 | 1 to 1.5 h at 64 × 2; ~2.5 h single-process at the chosen 256 × 1 |
+| S4 | ~6 h at 64 × 2; ~12 h at 256 × 1 |
+| S5 | ~4 h at 64 × 2; ~6 to 7 h at 256 × 1, curves included |
+| Final | 1 to 2.5 h at 64 × 2; ~2 h at 256 × 1 (2 new seeds at B=8) |
+| **Total** | **15 to 18 h** as planned; **about 25 h** for the remaining stages at 256 × 1 |
+
+S2 chose a network that trains in about 7.6 min instead of 3.5 to 4 min, which doubles every
+remaining stage. These are single-process figures; sharding shortens the wall clock.
 
 ## Runbook
 
