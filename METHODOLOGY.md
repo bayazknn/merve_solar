@@ -454,10 +454,10 @@ source of randomness at prediction time.
 Each network is trained on its replicate by minimising, over mini-batches of *N* windows, the
 loss
 
-<p class="eq">𝓛(θ) = (1/24N) Σ<sub>i</sub> Σ<sub>h</sub> (z̃<sub>i,h</sub> − z<sub>i,h</sub>)<sup>2</sup> + λ (1/24N) Σ<sub>i</sub> Σ<sub>h</sub> max(0, −z̃<sub>i,h</sub>)<sup>2</sup>,<span class="eqn">(3)</span></p>
+<p class="eq">𝓛(θ) = (1/24N) Σ<sub>i</sub> Σ<sub>h</sub> (z̃<sub>i,h</sub> − z<sub>i,h</sub>)<sup>2</sup> + λ (1/24N) Σ<sub>i</sub> Σ<sub>h</sub> max(0, z<sub>0</sub> − z̃<sub>i,h</sub>)<sup>2</sup>,<span class="eqn">(3)</span></p>
 
 where *z* = (*y* − ȳ)/*s*<sub>*y*</sub> is the standardised observation, z̃ the standardised
-forecast and λ = 0.1. The loss has two terms with different jobs.
+forecast, z₀ the standardised value of 0 W/m² (Section 7.2) and λ = 0.1. The loss has two terms with different jobs.
 
 **The error term** is the mean squared error between forecast and observation over all windows
 and horizon steps. It is computed on the standardised scale, on which the network works. A
@@ -468,7 +468,8 @@ irradiance given the inputs.
 negative. The output layer is unconstrained (Section 6.3), so nothing else prevents the network
 from predicting, say, −20 W/m² near sunrise. The term max(0, −z̃)² is zero when the forecast
 respects the constraint and grows with the square of the violation when it does not, so small
-violations cost little and large ones much more. This is a *soft* constraint: negative forecasts
+violations cost little and large ones much more. In W/m² the term equals
+(max(0, −ŷ)/*s*<sub>*y*</sub>)², the squared negative part of the forecast. This is a *soft* constraint: negative forecasts
 are discouraged rather than forbidden, which keeps the loss smooth and the gradients informative.
 The approach follows the physics-constrained loss of the reference method.
 
@@ -478,37 +479,33 @@ an ordinary error of √0.1 · *d* ≈ 0.32 *d*; a larger λ enforces the constr
 the expense of fitting the observations. The value 0.1 is taken over from the reference method
 and has not been tuned.
 
-### 7.2 Behaviour of the penalty as implemented
+### 7.2 Placing the penalty at 0 W/m² on the standardised scale
 
-The penalty is applied to the *standardised* forecast z̃, whose zero is not 0 W/m² but the
-training-period mean ȳ = 198.5 W/m². The term therefore penalises every forecast below
-198.5 W/m², not only negative ones (Figure 5a). This range covers about 66% of training hours,
-including every night hour, so the penalty acts as a pull towards the mean rather than as a
-non-negativity constraint.
+The network predicts standardised irradiance, whose zero is not 0 W/m² but the training-period
+mean ȳ = 198.5 W/m². In standardised units, 0 W/m² lies at
 
-A worked example shows the size of the effect. At a night hour the observation is 0 W/m² and a
-perfect forecast of 0 W/m² is z̃ = −198.5/279.7 = −0.71 on the standardised scale. The penalty
-then adds 0.1 × 0.71² = 0.050 to the loss, as much as an ordinary forecast error of 63 W/m².
-More generally, for an element whose expected irradiance E[*y*] is below the training mean,
-minimising the error term plus the penalty gives the forecast
+<p class="eq">z<sub>0</sub> = (0 − ȳ) / s<sub>y</sub> = −198.5 / 279.7 = −0.71,<span class="eqn">(4)</span></p>
 
-<p class="eq">ŷ<sup>*</sup> = (E[y] + λ ȳ) / (1 + λ),&nbsp;&nbsp; i.e. a bias of&nbsp; λ (ȳ − E[y]) / (1 + λ),<span class="eqn">(4)</span></p>
+and this is where the penalty of Eq. 3 is placed: a forecast is penalised only if z̃ < z₀, that
+is, only if it is negative in W/m². The value of z₀ is computed from the same training-period
+statistics as the standardisation itself, so it introduces no information from outside the
+training period.
 
-since the standardisation factor *s*<sub>*y*</sub> cancels. The bias is +18.0 W/m² when
-E[*y*] = 0 and +9.0 W/m² when E[*y*] = 100 W/m², and vanishes above the mean (Figure 5b). At
-night it is removed by the constraint of Section 9. At low-irradiance daylight hours (early
-morning, late afternoon, overcast conditions) it is not, and it inflates the point forecast there.
+The offset matters. Written naively as max(0, −z̃)², the penalty would act on every forecast
+below the training mean rather than below zero (Figure 5a). That range covers about 66% of
+training hours, every night hour included, and the penalty would then pull low forecasts towards
+the mean: for an element with expected irradiance E[*y*] below ȳ, the squared error plus such a
+penalty is minimised by (E[*y*] + λȳ)/(1 + λ), an upward bias of λ(ȳ − E[*y*])/(1 + λ), which
+reaches +18.0 W/m² at E[*y*] = 0 and +9.0 W/m² at 100 W/m² (Figure 5b). Placed at z₀, the
+penalty is zero for every physically possible forecast and leaves the conditional-mean target of
+the error term unchanged.
 
-![Non-negativity penalty as implemented and as intended](outputs/methodology/figures/nonneg_penalty.png)
+![Placement of the non-negativity penalty](outputs/methodology/figures/nonneg_penalty.png)
 
 **Figure 5.** The non-negativity penalty in W/m². (a) Penalty added to the loss as a function of
-the forecast, as implemented in Eq. 3 (zero only above the training-period mean of
-198.5 W/m²) and as intended (zero for every non-negative forecast). (b) Resulting bias of the
-loss-minimising forecast as a function of the expected irradiance (Eq. 4).
-
-The intended form is max(0, −(z̃ + ȳ/*s*<sub>*y*</sub>))<sup>2</sup>, which is zero for every
-non-negative forecast and penalises only genuinely negative ones. **[Known issue: the
-implemented form is the one in Eq. 3; correcting it requires retraining every network.]**
+the forecast, placed at 0 W/m² as in this study, and, for comparison, at the standardised zero
+(the training-period mean of 198.5 W/m²). (b) Upward bias that each placement puts on the
+loss-minimising forecast, as a function of the expected irradiance.
 
 ### 7.3 Optimisation
 
@@ -789,11 +786,9 @@ observed value (Figure 7b). It is low when much of the forecast probability lies
 happened. The first term of Eq. 17 is the mean absolute error of the individual forecasts; the
 second subtracts half their mean spread, so spread is credited only insofar as it covers the
 error. For a single deterministic forecast the spread is zero and CRPS reduces to the absolute
-error. CRPS is therefore in W/m² and directly comparable with the MAE of a point forecast,
-including the reference forecasts of Section 10.4. In the reference run, the daylight CRPS of
-54.5 W/m² is lower than the MAE of both the model's own point forecast (77.2 W/m²) and the
-persistence reference (71.85 W/m²): the distribution carries information that its mean alone
-does not.
+error. CRPS is therefore in W/m² and directly comparable with the MAE of a point forecast. In
+the reference run, the daylight CRPS of 54.5 W/m² is lower than the MAE of the model's own point
+forecast (77.2 W/m²): the distribution carries information that its mean alone does not.
 
 ![Coverage, width, CRPS and CWC illustrated](outputs/methodology/figures/probabilistic_metrics.png)
 
@@ -814,19 +809,12 @@ runs evaluated on the same subset and with the same number of replicates and pas
 2. **Then sharpness.** Among runs with adequate coverage, the one with smaller MPIW and PINW is
    preferred.
 3. **CRPS as the overall score.** It rewards calibration and sharpness together, needs no
-   choice of interval level, and is comparable with the MAE of the reference forecasts.
+   choice of interval level, and is comparable with the MAE of point forecasts.
 4. **CWC for comparison with published work**, not as the deciding criterion.
 
-### 10.4 Reference forecasts
+### 10.4 Benchmarks
 
-Two reference forecasts are evaluated on exactly the same test windows and subsets:
-
-- **Climatology**: the mean irradiance of the same site, calendar month and hour of day over the
-  training period;
-- **Persistence**: the observed irradiance at the same site and hour on the previous day.
-
-A model is considered informative only if it beats climatology on daylight RMSE and R² and
-persistence on daylight MAE, the strongest reference on each measure.
+**[To be decided: the benchmark methodology will be declared separately.]**
 
 ## 11. Reproducibility
 
@@ -835,3 +823,8 @@ resampling generator is seeded from the master seed, and network *b* is initiali
 seed + *b*, so the replicates and their initialisations are reproducible. Results are
 reproducible on the same hardware backend; different backends do not agree bit for bit. The
 reference run was trained in PyTorch on an Apple-silicon GPU (MPS backend).
+
+**[To be updated: the reference-run values quoted in this document (Sections 2.5, 8.4 and 10.3,
+Table 5) and Figures 3, 4(b), 6 and 7(c) come from a run trained with the penalty at the
+standardised zero rather than at 0 W/m² (Section 7.2). They will be regenerated from the rerun
+with the corrected penalty.]**

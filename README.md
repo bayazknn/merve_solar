@@ -228,8 +228,9 @@ Scores two reference forecasts — **climatology** (the training-rows
 — through the same windows, the same chronological splits and the same
 `metrics.py` as every model run, writing
 `outputs/experiments/baseline_<name>/` and one ledger row each (a rerun
-replaces those rows rather than adding new ones). They are the
-floor the LSTM has to clear; the script also prints the all-hours numbers next
+replaces those rows rather than adding new ones). They are descriptive
+references, not the benchmark: the benchmarking methodology is still to be
+declared. The script also prints the all-hours numbers next
 to the daylight ones to show how much night inflates them.
 
 Two things to know when reading their rows: they take no arguments and use no
@@ -324,7 +325,7 @@ All fields live in the `ExperimentConfig` dataclass
 | `max_epochs` | `100` | Hard cap on training epochs per model (early stopping usually kicks in well before this). |
 | `early_stop_patience` | `10` | Stop training if validation loss hasn't improved for this many consecutive epochs. |
 | `lr_reduce_factor` / `lr_reduce_patience` | `0.5` / `7` | Learning-rate is multiplied by `lr_reduce_factor` if validation loss plateaus for `lr_reduce_patience` epochs. |
-| `nonneg_penalty_weight` | `0.1` | Weight of a soft penalty discouraging negative irradiance predictions (irradiance can't physically be negative). `0` disables it. It is added on top of whichever `loss_function` is selected — it is a physics constraint, not part of the fit criterion. |
+| `nonneg_penalty_weight` | `0.1` | Weight of a soft penalty discouraging negative irradiance predictions (irradiance can't physically be negative). `0` disables it. It is added on top of whichever `loss_function` is selected — it is a physics constraint, not part of the fit criterion. It acts below 0 W/m², located on the scaled axis from the run's own scaler; ledger column `nonneg_penalty_floor` records this (`train_mean` marks rows trained before the 2026-10-29 fix, when it acted below the training mean). |
 | `loss_function` | `"mse"` | Training criterion, in *scaled* target space: `"mse"`, `"mae"` or `"huber"`. MSE is minimised by the conditional mean and MAE by the conditional median, and this target's error distribution is strongly right-skewed, so the choice moves RMSE and MAE in opposite directions — that trade-off is a recorded experiment axis, not a tuning knob. |
 | `huber_delta` | `1.0` | Huber transition point, in scaled target space (quadratic below, linear above). Only used when `loss_function="huber"`. |
 | `loss_daylight_only` | `False` | Mask the *training* loss to daylight steps only. Off by default and deliberately so: it leaves night outputs unsupervised, keeps only ~13 of the 24 horizon steps supervised (and which 13 shifts with the season), and leaves the UQ layer unconstrained at night. Evaluate it as its own experiment, never folded into another comparison. Independent of the metric subsets, which are always both reported. |

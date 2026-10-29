@@ -49,7 +49,7 @@ uv run python -m pytest tests/test_windows.py::test_no_window_start_predates_its
 
 uv run python scripts/01_prepare_base_data.py              # ONE-TIME: builds outputs/processed/base_features.parquet
 uv run python scripts/02_descriptive_analysis.py           # EDA figures/tables -> outputs/eda/
-uv run python scripts/03_run_naive_baselines.py            # climatology/persistence floor (seconds)
+uv run python scripts/03_run_naive_baselines.py            # naive climatology/persistence rows (descriptive only)
 uv run python scripts/run_experiment.py --config configs/config_000_smoke.json
 uv run python scripts/run_all_experiments.py --list        # what a sweep would run, without running it
 uv run python scripts/render_pdf.py DATASET_DESCRIPTION.md   # manuscript section -> PDF, figures embedded
@@ -116,6 +116,10 @@ field is validated in `__post_init__`. Sweeps are named groups in
 - **Daylight means `solar_elevation > 0`**, computed from site and time alone. A `target > 0`
   threshold would pick the metric's denominator using the answer and cannot be evaluated 24 h
   ahead. The threshold is deliberately untuned.
+- **The non-negativity penalty acts at 0 W/m²**, i.e. at `scaling.scaled_target_zero(scaler)`
+  on the scaled axis, never at scaled 0 (the training mean). Ledger column
+  `nonneg_penalty_floor` records it: `0_wm2` for current runs, `train_mean` for rows trained
+  before the 2026-10-29 fix, which are not comparable with anything trained since.
 - **`clamp_night_to_zero` (default on) is physics, not tuning**: elements below the horizon get
   their whole sample set set to zero, applied once in `run_experiment` for every arm.
 - **Hours are per-site Local Solar Time**, not a shared time zone: never compare an hour across
@@ -159,9 +163,10 @@ pooled sample. The pooled distribution has no aleatoric term, so raw intervals u
 `conformal_mode` (`conformal.py`, default `"none"`) is the recalibration layer, and it leaves
 RMSE/MAE/R² bit-identical to its uncorrected twin.
 
-**The floor to beat** (V3 ledger rows): pooled daylight RMSE **108.20 W/m²** and R² **0.8516**
-(climatology), daylight MAE **71.85** (persistence). A model that does not beat both is not a
-result.
+**Benchmark: to be declared.** The benchmarking methodology will be declared later by the user.
+Climatology is **not** a benchmark, and no other forecast (persistence included) is to be
+treated as a floor, or used to call a run a result, until then. The naive baseline rows stay in
+the ledger as descriptive references only.
 
 ### Figures, tables and manuscript text
 
@@ -184,9 +189,11 @@ result.
 
 ## Open work
 
-- Rewrite the methodology document from scratch, in English, from the code as it stands.
-- Decide whether to run an ablation programme on the current dataset; nothing but the naive
-  baselines has been run on it yet.
+- Declare the benchmark methodology (pending, from the user).
+- Rerun the reference model with the corrected penalty (`configs/config_005_default_full.json`),
+  then regenerate the reference-run figures (scripts 09 and 12) and the numbers quoted in
+  `METHODOLOGY.md`. `config_000_smoke` and `config_002_default_full` are pre-fix rows.
+- Decide whether to run an ablation programme on the current dataset.
 - Comparison models (SVM, GRU, Prophet or RF/MLP) through the shared pipeline.
 - Feature-set candidates: `log1p(PRECTOTCORR)` plus a rain indicator, and dropping `T2MDEW`
   (reproducible from `T2M` and `RH2M` at r = 0.999).

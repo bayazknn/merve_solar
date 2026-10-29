@@ -55,8 +55,8 @@ def test_the_nonneg_penalty_is_unchanged_by_the_criterion():
     """The physics constraint is a separate term and must not move with the fit criterion."""
     pred = torch.tensor([[-2.0, 1.0]])
     y = torch.zeros_like(pred)
-    penalty = nonneg_penalty(pred)
-    assert penalty.item() == pytest.approx(2.0)  # mean of relu(-pred)^2 = (4 + 0) / 2
+    penalty = nonneg_penalty(pred, target_floor=0.0)
+    assert penalty.item() == pytest.approx(2.0)  # mean of relu(0 - pred)^2 = (4 + 0) / 2
 
     # Criteria are element-wise now (so the daylight mask can be applied), so go through
     # fit_loss -- the path the training loop actually takes.

@@ -533,10 +533,7 @@ non-parametric reference forecasts were evaluated on the test partition: **persi
 repeats the value observed 24 h earlier, and **climatology**, the mean of the corresponding
 (site, month, hour) cell computed on the training partition alone. Both were scored through the
 same windowing procedure as the models. The descriptive summary below, like the other tables of this
-description, is computed on the hours with positive irradiance (Section 5). The comparison with
-learned models is made on the geometric daylight subset, on which the same references are scored
-through the identical evaluation procedure; its values differ from those of Table 12 by roughly one
-percent, and it is the subset on which a model has to improve on them.
+description, is computed on the hours with positive irradiance (Section 5).
 
 **Table 12.** Reference forecast accuracy on the test partition, pooled over sites.
 
@@ -545,7 +542,7 @@ percent, and it is the subset on which a model has to improve on them.
 | Persistence | **Target > 0** | 119.76 | **70.27** | 0.822 |
 | Climatology | **Target > 0** | **106.99** | 72.84 | **0.858** |
 
-Three properties of this table govern how the model results in this paper should be read.
+Two properties of this table bear on how forecast accuracy on this dataset should be read.
 
 **First, the choice of subset decides the scale of every metric.** Night hours, which make up
 48.47% of the observations, are exactly zero and trivially predictable, so a score computed over all
@@ -556,16 +553,9 @@ is not evidence of forecast skill. For this reason the reference scores are repo
 hours only (Table 12), and daytime statistics (geometric daylight for forecasts, positive-irradiance
 hours for description) are reported throughout this work as the primary results.
 
-**Second, the reference to beat is climatology, not persistence.** At a horizon of 24 h,
-persistence is aligned with the diurnal cycle and therefore inherits the deterministic geometric
-component at no cost; exceeding it is not in itself informative. Climatology is the stronger
-reference on RMSE and R².
-
-**Third, no single reference dominates.** Climatology is the stronger of the two on RMSE and R²,
-while persistence is stronger on MAE, reflecting the asymmetry of the error distribution. A
-forecast must therefore be shown to improve on the climatological RMSE and R² and on the persistence
-MAE (107.0 W/m², 0.858 and 70.3 W/m² respectively in Table 12) before it can be said to have improved
-on the naive references at all.
+**Second, no single reference dominates.** Climatology is the more accurate of the two on RMSE
+and R², while persistence is more accurate on MAE, reflecting the asymmetry of the error
+distribution.
 
 Site-level reference accuracy quantifies the regime difference of Section 7. The climatological
 reference attains an RMSE over positive-irradiance hours of 92.0 W/m² at Antalya, 95.3 at Van,
@@ -597,6 +587,4 @@ predictors. Its principal characteristics, in the order in which they constrain 
 6. Most raw associations between meteorological variables and irradiance are confounded with solar
    geometry; three of six reverse sign once geometry is controlled for.
 7. The naive reference forecasts attain an RMSE of 106.99 W/m² and an R² of 0.858 over hours with
-   positive irradiance (climatology), and a MAE of 70.27 W/m² (persistence); on the geometric
-   daylight subset used for evaluation the values are about 1% different, and they are the threshold
-   any learned model must exceed to constitute a result.
+   positive irradiance (climatology), and a MAE of 70.27 W/m² (persistence).

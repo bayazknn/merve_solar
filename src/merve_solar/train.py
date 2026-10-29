@@ -6,6 +6,12 @@ machinery that transfers directly to irradiance (irradiance can't be negative ei
 the paper's capacity-ceiling term has no analog for irradiance and is not included. It is
 added on top of whichever fit criterion is selected -- it is a physics constraint, not part
 of the fit criterion, so it must not change when the criterion does.
+
+The penalty acts at 0 W/m^2, which on the scaled axis the network predicts on is
+`target_floor` = -mean/std of the training-period target (scaling.scaled_target_zero). Until
+2026-10-29 it was applied at scaled 0, i.e. below the training MEAN (~198 W/m^2): it penalised
+~66% of training hours, all nights included, and pulled low forecasts up by up to ~18 W/m^2.
+Ledger rows trained that way carry nonneg_penalty_floor="train_mean".
 """
 import copy
 
@@ -50,11 +56,17 @@ def fit_loss(criterion, pred, target, daylight, daylight_only: bool):
     return per_element[daylight].mean()
 
 
-def nonneg_penalty(pred: torch.Tensor) -> torch.Tensor:
-    return torch.relu(-pred).pow(2).mean()
+# Written to the ledger's nonneg_penalty_floor column for every trained model.
+NONNEG_PENALTY_FLOOR = "0_wm2"
 
 
-def train_model(model: nn.Module, train_data: dict, val_data: dict, config, device: str | None = None):
+def nonneg_penalty(pred: torch.Tensor, target_floor: float) -> torch.Tensor:
+    """Mean squared shortfall below 0 W/m^2, with `pred` and `target_floor` in scaled units."""
+    return torch.relu(target_floor - pred).pow(2).mean()
+
+
+def train_model(model: nn.Module, train_data: dict, val_data: dict, config, target_floor: float,
+                device: str | None = None):
     device = device or get_device()
     train_loader = make_dataloader(
         train_data["X"], train_data["y"], train_data["city_id"], config.batch_size,
@@ -90,7 +102,7 @@ def train_model(model: nn.Module, train_data: dict, val_data: dict, config, devi
             fit = fit_loss(criterion, pred, y, daylight, config.loss_daylight_only)
             if fit is None:  # no daylight element in this batch; nothing to learn from
                 continue
-            loss = fit + config.nonneg_penalty_weight * nonneg_penalty(pred)
+            loss = fit + config.nonneg_penalty_weight * nonneg_penalty(pred, target_floor)
             loss.backward()
             optimizer.step()
             train_loss_sum += loss.item() * X.size(0)
@@ -107,7 +119,7 @@ def train_model(model: nn.Module, train_data: dict, val_data: dict, config, devi
                 fit = fit_loss(criterion, pred, y, daylight, config.loss_daylight_only)
                 if fit is None:
                     continue
-                loss = fit + config.nonneg_penalty_weight * nonneg_penalty(pred)
+                loss = fit + config.nonneg_penalty_weight * nonneg_penalty(pred, target_floor)
                 val_loss_sum += loss.item() * X.size(0)
                 n_val += X.size(0)
         val_loss = val_loss_sum / max(n_val, 1)

@@ -35,8 +35,14 @@ from merve_solar.metrics import (
     summarize_predictive_distribution,
 )
 from merve_solar.model import SolarLSTM
-from merve_solar.scaling import apply_scaler, fit_scaler, inverse_transform_target, save_scaler
-from merve_solar.train import train_model
+from merve_solar.scaling import (
+    apply_scaler,
+    fit_scaler,
+    inverse_transform_target,
+    save_scaler,
+    scaled_target_zero,
+)
+from merve_solar.train import NONNEG_PENALTY_FLOOR, train_model
 from merve_solar.utils import get_device, plot_forecast_with_ci, plot_metric_vs_horizon, set_seed
 from merve_solar.windows import build_experiment_windows, compute_split_boundaries
 
@@ -52,7 +58,7 @@ LEDGER_COLUMNS: tuple[str, ...] = (
     "n_bootstrap", "bootstrap_block_length", "mc_dropout_passes",
     "batch_size", "learning_rate", "lr_reduce_factor", "lr_reduce_patience",
     "max_epochs", "early_stop_patience",
-    "loss_function", "huber_delta", "nonneg_penalty_weight",
+    "loss_function", "huber_delta", "nonneg_penalty_weight", "nonneg_penalty_floor",
     "loss_daylight_only", "per_city_scaler",
     "clamp_night_to_zero", "conformal_mode", "seed", "device",
     "RMSE", "MAE", "R2", "CP", "PINW", "MPIW", "Reliability", "CWC", "CRPS",
@@ -194,6 +200,10 @@ def _ledger_row(config, subsets: dict, run_stats: dict, training_time_sec: float
         "loss_function": config.loss_function,
         "huber_delta": config.huber_delta,
         "nonneg_penalty_weight": config.nonneg_penalty_weight,
+        # Where the penalty starts. Not a config field: it records a bug fix, so the old value
+        # cannot be requested. Rows trained before the fix were backfilled "train_mean" (penalty
+        # below the training-mean irradiance); untrained baselines have no penalty at all.
+        "nonneg_penalty_floor": NONNEG_PENALTY_FLOOR if config.model_family == "lstm" else "n/a",
         "loss_daylight_only": config.loss_daylight_only,
         "per_city_scaler": config.per_city_scaler,
         "clamp_night_to_zero": config.clamp_night_to_zero,
@@ -385,7 +395,7 @@ def _save_test_predictions(exp_dir, dist, y_true, city_id, daylight, window_star
 
 
 def _predict_replicas(splits, config, n_cities, device, exp_dir, checkpoint_stem,
-                      seed_base, rng, log_prefix, log_lines, calibrate=False):
+                      seed_base, rng, log_prefix, log_lines, target_floor, calibrate=False):
     """Train n_bootstrap replicas on `splits` and MC-Dropout predict the test split.
 
     Returns ((n_bootstrap * mc_dropout_passes, N_test, horizon) float32, SCALED units), an
@@ -417,7 +427,8 @@ def _predict_replicas(splits, config, n_cities, device, exp_dir, checkpoint_stem
             else resample_train_split(splits["train"], config.bootstrap_block_length, rng)
         )
         model = SolarLSTM(len(NUMERIC_FEATURE_COLUMNS), n_cities, config)
-        model, history = train_model(model, replica_train, splits["val"], config, device=device)
+        model, history = train_model(model, replica_train, splits["val"], config,
+                                     target_floor=target_floor, device=device)
         torch.save(model.state_dict(), exp_dir / "checkpoints" / f"{checkpoint_stem}_{b}.pt")
 
         out[b * passes:(b + 1) * passes] = mc_dropout_predict(
@@ -520,7 +531,8 @@ def _run_global_scope(base_df, config, train_end, val_end, layout, device, exp_d
     pooled_scaled, calibration, stats = _predict_replicas(
         splits, config, len(CITIES), device, exp_dir, "bootstrap_model",
         seed_base=config.seed + 1, rng=np.random.default_rng(config.seed),
-        log_prefix="", log_lines=log_lines, calibrate=calibrate,
+        log_prefix="", log_lines=log_lines, target_floor=scaled_target_zero(scaler),
+        calibrate=calibrate,
     )
     out = inverse_transform_target(scaler, pooled_scaled)
     del pooled_scaled
@@ -580,7 +592,8 @@ def _run_per_city_scope(base_df, config, train_end, val_end, layout, device, exp
             _zero_city_ids(splits), config, 1, device, exp_dir, f"bootstrap_model_{city}",
             seed_base=config.seed + 1 + city_idx * config.n_bootstrap,
             rng=np.random.default_rng([config.seed, city_idx]),
-            log_prefix=f"{city} ", log_lines=log_lines, calibrate=calibrate,
+            log_prefix=f"{city} ", log_lines=log_lines,
+            target_floor=scaled_target_zero(city_scaler), calibrate=calibrate,
         )
         pooled[:, slot, :] = inverse_transform_target(city_scaler, scaled_preds)
         if city_calibration is not None:

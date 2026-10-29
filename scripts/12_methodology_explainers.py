@@ -7,9 +7,9 @@ Writes four figures to outputs/methodology/figures/, each as .png and .pdf:
     network_architecture   Section 6: layer diagram with tensor shapes and parameter counts,
                            and the site embedding as a one-hot vector times a lookup table
                            (the table shown is network 1 of the reference run).
-    nonneg_penalty         Section 7: the non-negativity penalty as implemented and as
-                           intended, in W/m^2, and the bias each puts on the loss-minimising
-                           forecast.
+    nonneg_penalty         Section 7: the non-negativity penalty placed at 0 W/m^2 (as trained)
+                           and, for comparison, at the standardised zero (the training mean), in
+                           W/m^2, and the bias each puts on the loss-minimising forecast.
     interval_reading       Section 8.4: four consecutive day-ahead forecasts with their 95 %
                            intervals from the reference run, and where the observations fell
                            relative to the interval, per site.
@@ -315,8 +315,8 @@ def figure_penalty(config, y_mean, y_std) -> None:
         a.axvspan(-150, 0, color=ps.GRID, alpha=0.6, lw=0)
         a.text(-75, 0.088, "physically\nimpossible", ha="center", va="top", fontsize=6.2,
                color=ps.INK_SECONDARY)
-        a.plot(yhat, implemented, color=MISS_COLOR, lw=1.6, label="as implemented (Eq. 2)")
-        a.plot(yhat, intended, color=INPUT_COLOR, lw=1.6, ls="--", label="intended")
+        a.plot(yhat, intended, color=INPUT_COLOR, lw=1.6, label="at 0 W/m² (this study)")
+        a.plot(yhat, implemented, color=MISS_COLOR, lw=1.6, ls="--", label="at standardised zero")
         a.axvline(y_mean, color=ps.INK_MUTED, lw=0.7, ls=":")
         a.text(y_mean + 6, 0.06, f"training mean\n{y_mean:.1f} W/m²", fontsize=6.0,
                color=ps.INK_SECONDARY, va="bottom")
@@ -327,8 +327,8 @@ def figure_penalty(config, y_mean, y_std) -> None:
         a.set_title("(a) Penalty added to the loss")
         a.legend(loc="upper right", frameon=False, fontsize=6.3)
 
-        b.plot(obs, bias_impl, color=MISS_COLOR, lw=1.6, label="as implemented")
-        b.plot(obs, np.zeros_like(obs), color=INPUT_COLOR, lw=1.6, ls="--", label="intended")
+        b.plot(obs, np.zeros_like(obs), color=INPUT_COLOR, lw=1.6, label="at 0 W/m² (this study)")
+        b.plot(obs, bias_impl, color=MISS_COLOR, lw=1.6, ls="--", label="at standardised zero")
         b.axvline(y_mean, color=ps.INK_MUTED, lw=0.7, ls=":")
         b.annotate(f"+{lam / (1 + lam) * y_mean:.1f} W/m²\nat 0 W/m²",
                    xy=(0, lam / (1 + lam) * y_mean), xytext=(60, 16.5), fontsize=6.0,

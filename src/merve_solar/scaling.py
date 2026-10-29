@@ -31,6 +31,16 @@ def load_scaler(path) -> StandardScaler:
     return joblib.load(path)
 
 
+def scaled_target_zero(scaler: StandardScaler) -> float:
+    """Where 0 W/m^2 lies on the scaled target axis: -mean/std of the training-period target.
+
+    The non-negativity penalty needs this, because the network predicts SCALED irradiance and a
+    scaled value of 0 is the training mean (~198 W/m^2), not zero irradiance.
+    """
+    target_idx = NUMERIC_FEATURE_COLUMNS.index(TARGET_COLUMN)
+    return float(-scaler.mean_[target_idx] / scaler.scale_[target_idx])
+
+
 def inverse_transform_target(scaler: StandardScaler, scaled_values: np.ndarray) -> np.ndarray:
     """Inverse-transform an array of scaled target values back to W/m^2.
 
