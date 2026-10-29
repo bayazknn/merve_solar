@@ -1,0 +1,2 @@
+city,replica,seed,resampled,best_epoch,n_epochs,best_val_loss,last_val_loss,hit_max_epochs,train_time_sec
+all,0,45,False,4,15,0.06615161748770594,0.07498548183066435,False,262.738893032074
