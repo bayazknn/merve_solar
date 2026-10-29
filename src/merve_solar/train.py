@@ -66,7 +66,13 @@ def nonneg_penalty(pred: torch.Tensor, target_floor: float) -> torch.Tensor:
 
 
 def train_model(model: nn.Module, train_data: dict, val_data: dict, config, target_floor: float,
-                device: str | None = None):
+                device: str | None = None, epoch_callback=None):
+    """Train with early stopping; return the best-validation-loss weights and the history.
+
+    `epoch_callback(epoch, model)`, if given, runs after each epoch's validation pass with the
+    model in eval mode. It exists for diagnostics (scripts/13_training_dynamics.py) and must
+    not change the model.
+    """
     device = device or get_device()
     train_loader = make_dataloader(
         train_data["X"], train_data["y"], train_data["city_id"], config.batch_size,
@@ -92,6 +98,7 @@ def train_model(model: nn.Module, train_data: dict, val_data: dict, config, targ
     history = []
 
     for epoch in range(config.max_epochs):
+        epoch_lr = optimizer.param_groups[0]["lr"]  # the rate this epoch trains at
         model.train()
         train_loss_sum, n_train = 0.0, 0
         for X, city_id, y, daylight in train_loader:
@@ -125,7 +132,10 @@ def train_model(model: nn.Module, train_data: dict, val_data: dict, config, targ
         val_loss = val_loss_sum / max(n_val, 1)
 
         scheduler.step(val_loss)
-        history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss})
+        history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
+                        "lr": epoch_lr})
+        if epoch_callback is not None:
+            epoch_callback(epoch, model)
 
         if val_loss < best_val_loss - 1e-6:
             best_val_loss = val_loss

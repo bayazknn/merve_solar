@@ -192,8 +192,9 @@ the ledger as descriptive references only.
 - Declare the benchmark methodology (pending, from the user).
 - `config_005_default_full` is the reference run (corrected penalty, seed 42, MPS); scripts 09
   and 12 and the numbers in `METHODOLOGY.md` come from it. `config_000_smoke` and
-  `config_002_default_full` are pre-fix rows. Every network stops early (best epoch 0–5 of
-  11–16): worth understanding before any architecture ablation.
+  `config_002_default_full` are pre-fix rows. Every network stops early (best epoch 0–5); this
+  is genuine overfitting after a plateau, not a bug (`outputs/diagnostics/training_dynamics/`),
+  so epoch selection is noisy at the ~4 W/m² level and arm comparisons need several seeds.
 - Decide whether to run an ablation programme on the current dataset.
 - Comparison models (SVM, GRU, Prophet or RF/MLP) through the shared pipeline.
 - Feature-set candidates: `log1p(PRECTOTCORR)` plus a rain indicator, and dropping `T2MDEW`
