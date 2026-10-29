@@ -12,6 +12,7 @@ from experiment_grid import (
     DECISIONS,
     EXPERIMENT_GROUPS,
     INCUMBENT,
+    S2_EXTENSION,
     StageNotReady,
     TUNE_SEEDS,
     block_grid,
@@ -78,10 +79,10 @@ def test_stage_one_moves_only_the_lookback():
 def test_stage_two_is_the_full_width_by_depth_grid_and_reuses_the_stage_one_winner(decided):
     decided(s1=48)
     arms = stage_arms("s2")
-    assert len(arms) == 9
+    assert len(arms) == 9 + len(S2_EXTENSION)
     assert arms["h64l2"] == stage_arms("s1")["lb48"]
     new = build_experiment_grid(["tune_s2_arch"])
-    assert len(new) == 8 * len(TUNE_SEEDS)
+    assert len(new) == (8 + len(S2_EXTENSION)) * len(TUNE_SEEDS)
     for c in new:
         assert c.lookback_hours == 48
         assert c.hidden_sizes[1] == c.hidden_sizes[0] // 2

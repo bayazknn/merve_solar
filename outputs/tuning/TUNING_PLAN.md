@@ -7,14 +7,47 @@ remote Mac (where they train) and the analysis machine. Results of each stage go
 
 ## Status (update at the end of every session)
 
-**As of 2026-10-29: S1 is decided (lookback 24 h). S2 is unlocked and ready to run on the remote Mac.**
+**As of 2026-10-30: S1 is decided (lookback 24 h). S2's 3 × 3 grid is done; its winner sat at
+the grid edge, so a 3-run extension (256 × 1) must run on the remote Mac before S2 is decided.**
 
 | Stage | Group | State | Decision |
 |---|---|---|---|
 | Smoke | `smoke` | Done on the analysis Mac (MPS, 3.6 min), all outputs present | n/a |
 | S1 lookback | `tune_s1_lookback` | Done on the remote Mac (9 runs, MPS), report in `s1_summary.csv`, `s1_patience.csv` | **24 h** (incumbent kept) |
-| S2 architecture | `tune_s2_arch` | Unlocked, 24 runs listed (64 × 2 reused from S1) | pending |
+| S2 architecture | `tune_s2_arch` | 24 grid runs done (MPS). Extension `h256l1` (3 runs) pending on the remote Mac | pending; 128 × 1 leads |
 | S3 to S5, final | | Locked until the previous decision is in `DECISIONS` | |
+
+**S2 interim result (validation, daylight, 3 seeds, B=1; paired Δ vs the incumbent 64 × 2):**
+
+| Width × depth | val RMSE | Paired Δ RMSE (mean ± sd) | val CRPS | val CP | Mean best epoch |
+|---|---|---|---|---|---|
+| **128 × 1** | **92.57** | **−7.89 ± 0.13** | **49.55** | 0.809 | 5.7 |
+| 64 × 1 | 95.10 | −5.37 ± 1.04 | 51.50 | 0.875 | 13.7 |
+| 128 × 2 | 96.05 | −4.42 ± 1.02 | 51.57 | 0.836 | 3.0 |
+| 128 × 3 | 96.58 | −3.88 ± 0.35 | 51.84 | 0.849 | 1.7 |
+| 64 × 2 (incumbent) | 100.47 | 0 | 55.14 | 0.879 | 5.3 |
+| 64 × 3 | 101.54 | +1.07 ± 0.59 | 55.97 | 0.871 | 3.7 |
+| 32 × 1 | 105.19 | +4.73 ± 0.40 | 58.36 | 0.893 | 29.3 |
+| 32 × 2 | 112.45 | +11.98 ± 1.24 | 63.21 | 0.887 | 10.7 |
+| 32 × 3 | 114.92 | +14.45 ± 1.72 | 64.52 | 0.877 | 8.3 |
+
+- 128 × 1 passes the decision rule by a wide margin (gain 7.9, paired sd 0.13). It wins in every
+  province (−6.5 Rize to −9.3 Antalya), and CRPS agrees (−5.6).
+- **It won at the corner of the grid** (widest, shallowest), so the grid did not bracket the
+  optimum. `S2_EXTENSION` adds 256 × 1 (3 seeds). The decision is taken after it: 256 × 1 replaces
+  128 × 1 only under the same rule. Depth is not extended, since 1 layer is best at every width.
+- **Depth is confounded with dropout.** `nn.LSTM` applies dropout between stacked layers only
+  when there are 2 or more, so a 1-layer model has dropout only in the head. "Deeper is worse"
+  here means "deeper with 0.3 inter-layer dropout is worse". The paper must say this, not that
+  depth hurts. For S3 it means the dropout sweep at 1 layer tunes head dropout only.
+- **CP falls as the model gets better** (0.879 → 0.809). In a 1-layer network the MC-Dropout spread
+  comes only from the head. A sharper, more accurate network with a thin stochastic layer
+  under-covers at B=1. This is the job of the bootstrap (S4/S5) and the conformal layer, and it
+  is selected on CRPS there. Carry it forward: it bears directly on the paper's MC-Dropout claim.
+- **Patience:** small networks peak late (32 × 1 up to epoch 33, 64 × 1 at 13.7 on average), and
+  patience 5 would have changed 8 of the 27 S2 networks. Every 128-wide network would be unchanged.
+  Lowering the patience is therefore justified only for the chosen architecture, and only if
+  S3's lower learning rate does not push its best epoch later.
 
 **S1 result (validation, daylight, 3 seeds, B=1):**
 
@@ -41,11 +74,9 @@ remote Mac (where they train) and the analysis machine. Results of each stage go
 **Machines:**
 - **Remote Mac:** the Mac mini, user `merveer`, clone at `merve_solar/`. All tuning runs train
   here, on MPS.
-  - Its clone pulled over SSH, which GitHub rejected ("Permission denied (publickey)").
-  - Fix in progress: install `gh`, run `gh auth login` over HTTPS, set the remote to
-    `https://github.com/bayazknn/merve_solar.git`. The narrower alternative is a deploy key
-    with write access on the repository.
-  - If a pull or push fails there, this is the first thing to check.
+  - It pulls and pushes over HTTPS (`https://github.com/bayazknn/merve_solar.git`).
+  - Never edit tracked files there. If both machines committed, `git pull --rebase` and then
+    `git push` (S2 was pushed this way).
 - **Analysis Mac:** this machine. Pull, report, decide, commit `DECISIONS`.
 
 **Remote commit convention.** After `check_outputs.py` passes, commit only the result paths
@@ -54,17 +85,12 @@ remote Mac (where they train) and the analysis machine. Results of each stage go
 check_outputs passed`. They start with "partial" and name the failed id if a run failed, and
 they copy any WARNING lines from the check.
 
-**Next session, in order** (after S2 finishes on the remote Mac):
-1. `git pull`. Confirm the remote commit message says the check passed, then confirm here:
-   ```bash
-   uv run python scripts/check_outputs.py --group tune_s2_arch
-   ```
-   Every run should show `device` mps. The only expected "missing" files are the gitignored
-   `test_predictions.npz`.
-2. Run `uv run python scripts/15_tuning_report.py --stage s2` and apply the decision rule.
-   Re-score on common origins from `daily_scores.csv` only if the arms' validation sample counts
-   differ (they should not in S2: same lookback).
-   - If the remote sharded S2, `training_time_sec` is inflated, so do not read cost from it.
+**Next session, in order** (after the S2 extension finishes on the remote Mac):
+1. `git pull`, then `uv run python scripts/check_outputs.py --group tune_s2_arch` (27 runs, all
+   mps; only the gitignored `test_predictions.npz` reported missing).
+2. Run `uv run python scripts/15_tuning_report.py --stage s2`. Apply the rule between 256 × 1
+   and 128 × 1. If 256 × 1 also wins clearly, it is again at the grid edge: consider 512 × 1, but
+   weigh it against the cost per network and the risk of a model too large for 5 provinces.
 3. Write `DECISIONS["s2"]`, commit it with `s2_summary.csv` and `s2_patience.csv`, then confirm
    `tune_s3_dropout` and `tune_s3_lr` list (12 + 6 runs).
 4. Give the user the S3 commands. Update this Status section.
@@ -77,7 +103,8 @@ they copy any WARNING lines from the check.
   - The S5 curves measure exactly this contrast on identical, fully trained weights. If it
     holds, it matters for the paper's MC-Dropout claim.
 - Patience stays at 10 through S3. The decision to lower it before S4 comes from the
-  `<stage>_patience.csv` files (see Early stopping).
+  `<stage>_patience.csv` files (see Early stopping). S2 already shows it is not safe for small
+  networks.
 - The benchmark methodology is still undeclared (CLAUDE.md). Nothing in tuning depends on it.
 
 ## Principles

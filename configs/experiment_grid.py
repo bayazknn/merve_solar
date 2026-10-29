@@ -62,6 +62,10 @@ LOOKBACK_GRID = (24, 48, 72)
 # always one hidden layer of half the LSTM width, as in the incumbent.
 HIDDEN_GRID = (32, 64, 128)
 LAYERS_GRID = (1, 2, 3)
+# Added after the S2 report: 128 x 1 won at the corner of the grid (widest, shallowest), so one
+# more width step at the winning depth checks whether the optimum lies beyond it. Depth is not
+# extended: 1 layer was best at every width.
+S2_EXTENSION = ((256, 1),)
 DROPOUT_GRID = (0.1, 0.2, 0.3, 0.4, 0.5)
 # A factor of two either side of 1e-3. A lower rate also spreads the optimum over more epochs,
 # which makes the per-epoch early-stopping choice less coarse.
@@ -121,14 +125,13 @@ def _s2() -> dict:
     _need("s1")
     L = DECISIONS["s1"]
     arms = {}
-    for h in HIDDEN_GRID:
-        for n in LAYERS_GRID:
-            label = f"h{h}l{n}"
-            if (h, n) == (64, 2):
-                arms[label] = _s1()[f"lb{L}"]
-            else:
-                arms[label] = _arm(f"tune_s2_lb{L}_{label}", lookback_hours=L, **_arch(h, n),
-                                   **SCREEN_FIDELITY)
+    for h, n in [(h, n) for h in HIDDEN_GRID for n in LAYERS_GRID] + list(S2_EXTENSION):
+        label = f"h{h}l{n}"
+        if (h, n) == (64, 2):
+            arms[label] = _s1()[f"lb{L}"]
+        else:
+            arms[label] = _arm(f"tune_s2_lb{L}_{label}", lookback_hours=L, **_arch(h, n),
+                               **SCREEN_FIDELITY)
     return arms
 
 
