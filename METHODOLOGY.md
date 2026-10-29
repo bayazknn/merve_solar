@@ -29,6 +29,15 @@ The procedure consists of the following stages, each described below. The terms 
 8. Optionally recalibrate the interval width by split-conformal prediction.
 9. Evaluate on the test period.
 
+Figure 1 shows the same stages arranged by the period of the data each one uses.
+
+![Pipeline swimlanes by data period](outputs/methodology/figures/pipeline_swimlanes.png)
+
+**Figure 1.** The forecasting pipeline, one column per data period. The standardisation and the
+bootstrap use the training period only; the validation period drives early stopping and, when
+used, conformal recalibration; the test period is only predicted and scored. Dashed boxes are the
+optional recalibration step.
+
 ## 2. Terminology: hours, periods, windows, blocks, replicates and passes
 
 A single trained network gives a single forecast for each hour, for example 650 W/m² at 12:00
@@ -188,17 +197,17 @@ window receives 8 × 100 = 800 forecasts.
 
 For each forecast hour, the 800 values are then summarised. The point forecast is their mean,
 and the 95% prediction interval runs from the 2.5th to the 97.5th percentile: the 800 values
-are sorted and the lowest 2.5% and highest 2.5% are cut off. For the example in Figure 2(d),
+are sorted and the lowest 2.5% and highest 2.5% are cut off. For the example in Figure 3(d),
 12:00 on 17 April 2026 in Ankara, this gives a forecast of 659 W/m² and an interval of
 332–972 W/m².
 
 ### 2.6 How the pieces combine
 
-Figure 1 summarises the whole procedure in symbols.
+Figure 2 summarises the whole procedure in symbols.
 
 ![Schematic of windowing, moving-block bootstrap, ensemble MC Dropout and pooling](outputs/methodology/figures/methodology_schematic.png)
 
-**Figure 1.** Overview of the forecasting and uncertainty-quantification procedure. (a) Each
+**Figure 2.** Overview of the forecasting and uncertainty-quantification procedure. (a) Each
 site's hourly series is cut into overlapping windows of *L* input hours (blue) followed by the
 *H* hours to be forecast (orange); a new window starts every hour. (b) Moving-block bootstrap:
 for each site, block start points are drawn uniformly with replacement from its *n*<sub>*s*</sub>
@@ -227,12 +236,12 @@ Both mechanisms measure uncertainty in the model only. Neither represents the na
 variability of the weather itself, such as a cloud arriving that no model could anticipate, so
 the resulting interval is expected to be too narrow; Section 8.5 describes the correction.
 
-Figure 2 shows the same steps on the real data, using the replicates and trained networks of
+Figure 3 shows the same steps on the real data, using the replicates and trained networks of
 the reference run.
 
 ![Sampling of windows, bootstrap blocks and MC Dropout passes](outputs/methodology/figures/sampling_schematic.png)
 
-**Figure 2.** How the data are sampled. (a) Windows: each window holds 24 input hours (blue)
+**Figure 3.** How the data are sampled. (a) Windows: each window holds 24 input hours (blue)
 and the 24 hours to be forecast (orange); a new window starts every hour, so neighbouring
 windows share 47 of their 48 hours. (b) Bootstrap blocks for one site in replicate 1, over six
 weeks of the training period. Each bar is one drawn block of 168 consecutive training windows,
@@ -348,45 +357,163 @@ training, 33,515 validation and 45,795 test windows.
 
 ## 6. Network architecture
 
-The network has three parts.
+The network takes one window and the identity of its site and returns the 24 standardised
+forecasts of Eq. 1. It has three parts, shown in Figure 4: a site embedding, a recurrent encoder
+of two stacked LSTM layers, and a fully connected output head.
 
-- **Site embedding.** Each site is mapped to a learned 4-dimensional vector, which is
-  concatenated to the feature vector at every hour of the window, giving 17 inputs per hour.
-- **Recurrent encoder.** Two stacked LSTM layers with 64 hidden units each read the 24 input
-  hours in order. Dropout (rate *p* = 0.3) is applied between the two layers, and again to the
-  hidden state of the second layer at the last input hour, which summarises the window.
-- **Output head.** A fully connected layer with 32 units and ReLU activation, followed by
-  dropout (*p* = 0.3) and a linear layer with 24 outputs, one per horizon step.
+![Network architecture and site embedding](outputs/methodology/figures/network_architecture.png)
 
-The network has 57,420 trainable parameters. It contains no batch normalisation, because MC
-Dropout runs the network in training mode at prediction time, where batch normalisation would
-use the statistics of the prediction batch rather than fixed ones. Dropout is therefore the only
+**Figure 4.** (a) Network architecture. Each of the 24 input hours carries 13 standardised
+features (blue) and the 4-value embedding of the site (purple). Two stacked LSTM layers read the
+hours in order, each passing its state from one hour to the next (grey arrows). The hidden state
+of the second layer at the last input hour *t* summarises the window and is passed to a dense
+layer and a linear layer with one output per horizon step. Dropout (red) is applied between the
+LSTM layers, to the summary state and after the dense layer, and is kept active at prediction
+time. (b) The site embedding is a one-hot code of the site multiplied by a learned 5 × 4
+table, which selects that site's row; values shown are those of network 1 of the reference run.
+
+### 6.1 Site embedding
+
+A single network serves all five sites, so it must be told which site a window comes from. Site
+identity is a category, not a quantity, and the way it is encoded matters:
+
+- **An integer code** (Ankara = 1, …, Van = 5) would impose an order and a distance that do not
+  exist: Konya would lie "between" Antalya and Rize, and Van would be "five times" Ankara.
+- **A one-hot code** removes this: each site becomes a vector of five binary values with a single
+  1 (Rize = (0, 0, 0, 1, 0)). Every site is then equally distant from every other, which is
+  neutral but carries no information about which sites behave alike.
+- **An embedding**, used here, is a one-hot code followed by a learned table. Multiplying the
+  one-hot vector by a 5 × 4 table **E** simply picks out one row of the table (Figure 4b), so
+  each site is represented by four real numbers,
+  **e**<sub>*s*</sub> = **E**<sub>*s*,·</sub> ∈ ℝ<sup>4</sup>.
+
+The embedding is therefore an encoding of the site, like one-hot encoding, with one difference:
+the code values are not fixed by hand but learned. The 20 numbers of **E** are parameters of the
+network, initialised at random and updated by the same loss and the same gradient steps as every
+other weight. During training, sites whose irradiance responds to the inputs in similar ways
+tend to receive similar rows, and sites that behave differently receive different ones.
+
+The site's vector is appended to the 13 features at every one of the 24 input hours, so the LSTM
+receives 17 values per hour:
+
+<p class="eq">x̃<sub>s,τ</sub> = (<b>x</b><sub>s,τ</sub>, <b>e</b><sub>s</sub>) ∈ ℝ<sup>17</sup>,&nbsp;&nbsp; τ = t − 23, …, t.<span class="eqn">(2)</span></p>
+
+Repeating it at every hour, rather than adding it once at the end, lets the site change how
+every input hour is read. The same relative humidity or the same afternoon irradiance, for
+example, can carry a different signal about tomorrow's cloud in humid, coastal Rize than in
+continental Van.
+
+Three properties follow. First, the individual numbers of **E** have no physical meaning: each
+of the eight networks learns its own table, and any rotation of it would serve equally well, so
+only the differences between sites' rows are informative. Second, the embedding is the only
+site-specific part of the network; all other weights are shared by the five sites, which is what
+allows information to transfer between climates. Third, the network has a row only for the five
+sites it was trained on, so it cannot forecast a new site without retraining. Four dimensions are
+enough to give five sites distinct positions while adding only 20 parameters.
+
+### 6.2 Recurrent encoder
+
+An LSTM reads a sequence one step at a time and carries an internal memory, its hidden and cell
+states, from each hour to the next. At every hour it combines the new input with this memory
+through learned gates that decide what to keep, what to forget and what to pass on. After the
+last input hour *t* the hidden state is a learned summary of the whole 24-hour window.
+
+The encoder stacks two LSTM layers of 64 hidden units each. The first reads the 17 inputs of
+each hour; the second reads the hidden states of the first, hour by hour. Dropout (rate
+*p* = 0.3) is applied to the signal passed from the first layer to the second. Only the hidden
+state of the second layer at hour *t*, a vector of 64 values, is passed on.
+
+### 6.3 Output head
+
+The 64-value summary goes through dropout (*p* = 0.3), a fully connected layer of 32 units with
+ReLU activation, dropout again (*p* = 0.3), and a linear layer with 24 outputs, one per horizon
+step. The outputs are standardised irradiance, transformed back to W/m² after prediction
+(Section 5). The final layer has no activation, so the outputs are not constrained to be
+non-negative; Sections 7.1 and 9 deal with negative values.
+
+**Table 4.** Layers and trainable parameters.
+
+| Layer | Input → output | Parameters |
+|---|---|---|
+| Site embedding | site → 4 | 20 |
+| LSTM layer 1 | 24 × 17 → 24 × 64 | 21,248 |
+| LSTM layer 2 | 24 × 64 → 64 (last hour) | 33,280 |
+| Dense + ReLU | 64 → 32 | 2,080 |
+| Linear output | 32 → 24 | 792 |
+| **Total** | | **57,420** |
+
+The network contains no batch normalisation, because MC Dropout runs the network in training
+mode at prediction time, where batch normalisation would use the statistics of the prediction
+batch rather than fixed ones. Dropout, at the three positions above, is therefore the only
 source of randomness at prediction time.
 
 ## 7. Training
 
-Each network is trained on its replicate by minimising, over mini-batches of *N* windows, the
-mean squared error on the standardised target plus a penalty on negative standardised
-forecasts:
+### 7.1 Loss function
 
-<p class="eq">𝓛(θ) = (1/24N) Σ<sub>i</sub> Σ<sub>h</sub> (z̃<sub>i,h</sub> − z<sub>i,h</sub>)<sup>2</sup> + λ (1/24N) Σ<sub>i</sub> Σ<sub>h</sub> max(0, −z̃<sub>i,h</sub>)<sup>2</sup>,<span class="eqn">(2)</span></p>
+Each network is trained on its replicate by minimising, over mini-batches of *N* windows, the
+loss
+
+<p class="eq">𝓛(θ) = (1/24N) Σ<sub>i</sub> Σ<sub>h</sub> (z̃<sub>i,h</sub> − z<sub>i,h</sub>)<sup>2</sup> + λ (1/24N) Σ<sub>i</sub> Σ<sub>h</sub> max(0, −z̃<sub>i,h</sub>)<sup>2</sup>,<span class="eqn">(3)</span></p>
 
 where *z* = (*y* − ȳ)/*s*<sub>*y*</sub> is the standardised observation, z̃ the standardised
-forecast, and λ = 0.1. The squared error targets the conditional mean, so the point forecast is
-an estimate of expected irradiance.
+forecast and λ = 0.1. The loss has two terms with different jobs.
 
-The penalty is intended to discourage physically impossible negative irradiance. Because it is
-evaluated on the standardised scale, however, it acts on forecasts below the training-period
-mean, ŷ < ȳ = 198.5 W/m², rather than below 0 W/m². This covers about 66% of training hours,
-including every night hour, so the penalty pulls low forecasts upward, towards the mean. At
-night the resulting bias is removed by the constraint of Section 9; on low-irradiance daylight
-hours (early morning, late afternoon, overcast conditions) it is not. The physically intended
-form would be max(0, −(z̃ + ȳ/*s*<sub>*y*</sub>))<sup>2</sup>, which is zero for every
-non-negative forecast. **[Known issue: the implemented form is the one in Eq. 2; correcting it
-requires retraining every network.]**
+**The error term** is the mean squared error between forecast and observation over all windows
+and horizon steps. It is computed on the standardised scale, on which the network works. A
+squared error is minimised by the conditional mean, so the point forecast estimates the expected
+irradiance given the inputs.
+
+**The penalty term** encodes a physical fact the error term does not: irradiance cannot be
+negative. The output layer is unconstrained (Section 6.3), so nothing else prevents the network
+from predicting, say, −20 W/m² near sunrise. The term max(0, −z̃)² is zero when the forecast
+respects the constraint and grows with the square of the violation when it does not, so small
+violations cost little and large ones much more. This is a *soft* constraint: negative forecasts
+are discouraged rather than forbidden, which keeps the loss smooth and the gradients informative.
+The approach follows the physics-constrained loss of the reference method.
+
+**The penalty constant** λ sets how much a violation costs relative to an error of the same
+size. With λ = 0.1, a forecast that is *d* units below the boundary adds as much to the loss as
+an ordinary error of √0.1 · *d* ≈ 0.32 *d*; a larger λ enforces the constraint more strictly at
+the expense of fitting the observations. The value 0.1 is taken over from the reference method
+and has not been tuned.
+
+### 7.2 Behaviour of the penalty as implemented
+
+The penalty is applied to the *standardised* forecast z̃, whose zero is not 0 W/m² but the
+training-period mean ȳ = 198.5 W/m². The term therefore penalises every forecast below
+198.5 W/m², not only negative ones (Figure 5a). This range covers about 66% of training hours,
+including every night hour, so the penalty acts as a pull towards the mean rather than as a
+non-negativity constraint.
+
+A worked example shows the size of the effect. At a night hour the observation is 0 W/m² and a
+perfect forecast of 0 W/m² is z̃ = −198.5/279.7 = −0.71 on the standardised scale. The penalty
+then adds 0.1 × 0.71² = 0.050 to the loss, as much as an ordinary forecast error of 63 W/m².
+More generally, for an element whose expected irradiance E[*y*] is below the training mean,
+minimising the error term plus the penalty gives the forecast
+
+<p class="eq">ŷ<sup>*</sup> = (E[y] + λ ȳ) / (1 + λ),&nbsp;&nbsp; i.e. a bias of&nbsp; λ (ȳ − E[y]) / (1 + λ),<span class="eqn">(4)</span></p>
+
+since the standardisation factor *s*<sub>*y*</sub> cancels. The bias is +18.0 W/m² when
+E[*y*] = 0 and +9.0 W/m² when E[*y*] = 100 W/m², and vanishes above the mean (Figure 5b). At
+night it is removed by the constraint of Section 9. At low-irradiance daylight hours (early
+morning, late afternoon, overcast conditions) it is not, and it inflates the point forecast there.
+
+![Non-negativity penalty as implemented and as intended](outputs/methodology/figures/nonneg_penalty.png)
+
+**Figure 5.** The non-negativity penalty in W/m². (a) Penalty added to the loss as a function of
+the forecast, as implemented in Eq. 3 (zero only above the training-period mean of
+198.5 W/m²) and as intended (zero for every non-negative forecast). (b) Resulting bias of the
+loss-minimising forecast as a function of the expected irradiance (Eq. 4).
+
+The intended form is max(0, −(z̃ + ȳ/*s*<sub>*y*</sub>))<sup>2</sup>, which is zero for every
+non-negative forecast and penalises only genuinely negative ones. **[Known issue: the
+implemented form is the one in Eq. 3; correcting it requires retraining every network.]**
+
+### 7.3 Optimisation
 
 Optimisation uses Adam with an initial learning rate of 10<sup>−3</sup> and mini-batches of 128
-windows, reshuffled every epoch. After each epoch the loss of Eq. 2, penalty included, is
+windows, reshuffled every epoch. After each epoch the loss of Eq. 3, penalty included, is
 computed on the validation windows with dropout disabled. The learning rate is halved when this
 validation loss has not improved for 7 epochs. Training stops when it has not improved for 10
 epochs, or after 100 epochs, and the weights from the epoch with the lowest validation loss are
@@ -404,7 +531,7 @@ positions are drawn uniformly and with replacement from {1, …, *n*<sub>*s*</su
 blocks of ℓ consecutive windows are joined and cut to exactly *n*<sub>*s*</sub> windows. This
 is repeated for every site, and the five resampled sets are pooled into one replicate:
 
-<p class="eq">𝒟<sup>(1)</sup>, 𝒟<sup>(2)</sup>, …, 𝒟<sup>(B)</sup>.<span class="eqn">(3)</span></p>
+<p class="eq">𝒟<sup>(1)</sup>, 𝒟<sup>(2)</sup>, …, 𝒟<sup>(B)</sup>.<span class="eqn">(5)</span></p>
 
 With *n*<sub>*s*</sub> = 45,365 and ℓ = 168, each site contributes 271 blocks per replicate.
 Resampling site by site keeps the number of windows per site identical in every replicate, so
@@ -429,7 +556,7 @@ prediction time it is kept active, so each forward pass applies a fresh random d
 **z**<sub>*b*,*m*</sub>, drawn independently for every window. With *M* passes per network,
 every input window receives *B* × *M* stochastic forecasts (Section 2.5):
 
-<p class="eq">ŷ<sup>(b,m)</sup> = f<sub>θ<sub>b</sub></sub>(X, s; <b>z</b><sub>b,m</sub>),&nbsp;&nbsp; b = 1, …, B,&nbsp; m = 1, …, M.<span class="eqn">(4)</span></p>
+<p class="eq">ŷ<sup>(b,m)</sup> = f<sub>θ<sub>b</sub></sub>(X, s; <b>z</b><sub>b,m</sub>),&nbsp;&nbsp; b = 1, …, B,&nbsp; m = 1, …, M.<span class="eqn">(6)</span></p>
 
 This study uses *B* = 8 and *M* = 100, giving 800 forecasts for every window and horizon step.
 All quantities below are computed separately for each element, i.e. for each window and horizon
@@ -439,23 +566,23 @@ step.
 
 The point forecast is the mean over all *B* × *M* forecasts:
 
-<p class="eq">μ̂ = (1/BM) Σ<sub>b=1</sub><sup>B</sup> Σ<sub>m=1</sub><sup>M</sup> ŷ<sup>(b,m)</sup>.<span class="eqn">(5)</span></p>
+<p class="eq">μ̂ = (1/BM) Σ<sub>b=1</sub><sup>B</sup> Σ<sub>m=1</sub><sup>M</sup> ŷ<sup>(b,m)</sup>.<span class="eqn">(7)</span></p>
 
 The spread of the pooled forecasts has two sources. Writing the mean of network *b* as
 
-<p class="eq">μ̂<sub>b</sub> = (1/M) Σ<sub>m=1</sub><sup>M</sup> ŷ<sup>(b,m)</sup>,<span class="eqn">(6)</span></p>
+<p class="eq">μ̂<sub>b</sub> = (1/M) Σ<sub>m=1</sub><sup>M</sup> ŷ<sup>(b,m)</sup>,<span class="eqn">(8)</span></p>
 
 the variability within each network due to dropout is
 
-<p class="eq">σ<sup>2</sup><sub>MC</sub> = (1/B) Σ<sub>b=1</sub><sup>B</sup> (1/M) Σ<sub>m=1</sub><sup>M</sup> (ŷ<sup>(b,m)</sup> − μ̂<sub>b</sub>)<sup>2</sup>,<span class="eqn">(7)</span></p>
+<p class="eq">σ<sup>2</sup><sub>MC</sub> = (1/B) Σ<sub>b=1</sub><sup>B</sup> (1/M) Σ<sub>m=1</sub><sup>M</sup> (ŷ<sup>(b,m)</sup> − μ̂<sub>b</sub>)<sup>2</sup>,<span class="eqn">(9)</span></p>
 
 and the variability between networks due to the bootstrap replicates is
 
-<p class="eq">σ<sup>2</sup><sub>boot</sub> = (1/B) Σ<sub>b=1</sub><sup>B</sup> (μ̂<sub>b</sub> − μ̂)<sup>2</sup>.<span class="eqn">(8)</span></p>
+<p class="eq">σ<sup>2</sup><sub>boot</sub> = (1/B) Σ<sub>b=1</sub><sup>B</sup> (μ̂<sub>b</sub> − μ̂)<sup>2</sup>.<span class="eqn">(10)</span></p>
 
 By the law of total variance, their sum is exactly the variance of the pooled forecasts:
 
-<p class="eq">σ<sup>2</sup><sub>epi</sub> = σ<sup>2</sup><sub>MC</sub> + σ<sup>2</sup><sub>boot</sub> = (1/BM) Σ<sub>b</sub> Σ<sub>m</sub> (ŷ<sup>(b,m)</sup> − μ̂)<sup>2</sup>.<span class="eqn">(9)</span></p>
+<p class="eq">σ<sup>2</sup><sub>epi</sub> = σ<sup>2</sup><sub>MC</sub> + σ<sup>2</sup><sub>boot</sub> = (1/BM) Σ<sub>b</sub> Σ<sub>m</sub> (ŷ<sup>(b,m)</sup> − μ̂)<sup>2</sup>.<span class="eqn">(11)</span></p>
 
 Both components describe uncertainty about the model, that is, epistemic uncertainty: how much
 the conditional-mean forecast would change with different training data (σ²<sub>boot</sub>) and
@@ -469,10 +596,64 @@ two components require a small change to be reported.]**
 The nominal 95% prediction interval is given by the empirical 2.5th and 97.5th percentiles of
 the *B* × *M* pooled forecasts:
 
-<p class="eq">PI<sub>95</sub> = [Q<sub>0.025</sub>({ŷ<sup>(b,m)</sup>}), Q<sub>0.975</sub>({ŷ<sup>(b,m)</sup>})].<span class="eqn">(10)</span></p>
+<p class="eq">PI<sub>95</sub> = [Q<sub>0.025</sub>({ŷ<sup>(b,m)</sup>}), Q<sub>0.975</sub>({ŷ<sup>(b,m)</sup>})].<span class="eqn">(12)</span></p>
 
 Because the interval is taken from the pooled sample rather than from a Gaussian assumption, it
 can be asymmetric, which arises naturally when the networks disagree in one direction.
+
+**What the interval states.** For one site, one forecast hour and one issue time, the interval
+is a range of irradiance values, for example 396–1009 W/m² for 12:00 on 7 April 2026 in
+Ankara, forecast at 23:00 the evening before. Its claim is about frequency, not about a single
+hour: if the intervals are well calibrated, then over many forecasts the observation falls
+inside the interval 95% of the time, below it 2.5% of the time and above it 2.5% of the time.
+Whether one particular interval contains its observation says little; the share of intervals
+that do, over the test period, is what is measured (Section 10.3).
+
+**How to read it.** Figure 6(a) shows four consecutive day-ahead forecasts from the reference
+run, and illustrates four points.
+
+- *Width is the model's uncertainty.* The interval is narrow at dawn and dusk, where irradiance
+  is low whatever the weather, and widest around solar noon, where the difference between a
+  clear and an overcast sky is largest. Its width also changes from day to day with how
+  confident the ensemble is.
+- *The point forecast is an expectation, not the most likely value.* On the clear days of 7 and
+  9 April the observation lies well above the forecast mean (at 12:00 on 7 April, 893 W/m²
+  against a mean of 723 W/m²), yet inside the interval. The mean is pulled down because, given
+  only the previous 24 hours, a cloudy day remains possible; the upper part of the interval
+  shows what a clear day would deliver.
+- *An observation outside the interval is an event the model did not consider plausible.* The
+  heavily overcast 8 April was not anticipated: at 12:00 the observation was 108 W/m² against
+  an interval of 373–986 W/m², and every daylight hour of that day falls below the interval.
+  Such days are where coverage is lost.
+- *At night the interval is zero by construction* (Section 9), so night hours carry no
+  information about calibration.
+
+Figure 6(b) checks the interval over the whole test period. Pooled over sites, 90.0% of daylight
+observations fall inside the interval instead of 95%, and the misses are lopsided: 8.1% fall
+below the lower bound and 1.9% above the upper bound, against 2.5% each for a calibrated
+interval. The dominant failure is therefore an unexpectedly cloudy hour, as on 8 April, rather
+than an unexpectedly clear one. Rize, the cloudiest site, has the lowest coverage (85.8%). This
+under-coverage is expected, because the interval represents uncertainty about the model only
+(Section 8.5).
+
+**Use in practice.** A calibrated interval gives each forecast hour three usable numbers. The
+lower bound is a conservative planning value: irradiance falls below it only 2.5% of the time,
+so it can be used, for example, to decide how much solar generation to count on when scheduling
+reserves. The upper bound bounds the plausible maximum, relevant for curtailment or inverter
+loading. The width flags the hours and days on which the forecast deserves less trust and more
+backup capacity. These readings are valid only once the coverage matches its nominal level: in
+the reference run the lower bound is crossed 8.1% of daylight hours rather than 2.5%, so it
+would overstate the generation that can be relied on until the interval is recalibrated
+(Section 8.5).
+
+![Day-ahead forecasts with prediction intervals, and where observations fall](outputs/methodology/figures/interval_reading.png)
+
+**Figure 6.** Reading the prediction interval (reference run, test period). (a) Day-ahead
+forecasts for Ankara, 6–9 April 2026, each day forecast from the window ending at 23:00 the
+evening before: observation (black), point forecast (orange line) and 95% prediction interval
+(shaded). Circled observations fall outside the interval. (b) Share of daylight test elements,
+over all horizon steps, whose observation falls below, inside or above the interval, per site
+and pooled; dashed lines mark the nominal 2.5% and 97.5%.
 
 ### 8.5 Aleatoric uncertainty and interval recalibration
 
@@ -485,7 +666,7 @@ cover fewer than 95% of observations.
 This can be corrected by split-conformal recalibration on the validation period. The pooled
 forecasts for each element are rescaled about their own mean,
 
-<p class="eq">ŷ<sup>(b,m)</sup> → μ̂ + k (ŷ<sup>(b,m)</sup> − μ̂),<span class="eqn">(11)</span></p>
+<p class="eq">ŷ<sup>(b,m)</sup> → μ̂ + k (ŷ<sup>(b,m)</sup> − μ̂),<span class="eqn">(13)</span></p>
 
 so the point forecast, and hence every point-accuracy metric, is unchanged, while the interval
 endpoints and the whole predictive distribution scale together. To estimate *k*, every network
@@ -493,7 +674,7 @@ is also run *M* times on each validation window, exactly as on the test windows.
 validation element with observation *y* and interval [*L*, *U*], the conformity score is the
 smallest factor that would have covered it:
 
-<p class="eq">r = (y − μ̂) / (U − μ̂) if y ≥ μ̂,&nbsp;&nbsp; r = (μ̂ − y) / (μ̂ − L) otherwise.<span class="eqn">(12)</span></p>
+<p class="eq">r = (y − μ̂) / (U − μ̂) if y ≥ μ̂,&nbsp;&nbsp; r = (μ̂ − y) / (μ̂ − L) otherwise.<span class="eqn">(14)</span></p>
 
 Given *n* scores, *k* is the ⌈(*n* + 1)(1 − α)⌉-th smallest, with α = 0.05. Factors are
 estimated separately for each cell of a grid defined by **[to be decided: the grid, e.g. site
@@ -539,28 +720,102 @@ than Rize (which forms a distinct radiative regime), and for each horizon step.
 With μ̂<sub>*i*</sub> the point forecast and *y*<sub>*i*</sub> the observation over the *N*
 elements of a subset:
 
-<p class="eq">RMSE = √[(1/N) Σ<sub>i</sub> (μ̂<sub>i</sub> − y<sub>i</sub>)<sup>2</sup>],&nbsp;&nbsp; MAE = (1/N) Σ<sub>i</sub> |μ̂<sub>i</sub> − y<sub>i</sub>|,&nbsp;&nbsp; R<sup>2</sup> = 1 − Σ<sub>i</sub>(y<sub>i</sub> − μ̂<sub>i</sub>)<sup>2</sup> / Σ<sub>i</sub>(y<sub>i</sub> − ȳ<sub>sub</sub>)<sup>2</sup>,<span class="eqn">(13)</span></p>
+<p class="eq">RMSE = √[(1/N) Σ<sub>i</sub> (μ̂<sub>i</sub> − y<sub>i</sub>)<sup>2</sup>],&nbsp;&nbsp; MAE = (1/N) Σ<sub>i</sub> |μ̂<sub>i</sub> − y<sub>i</sub>|,&nbsp;&nbsp; R<sup>2</sup> = 1 − Σ<sub>i</sub>(y<sub>i</sub> − μ̂<sub>i</sub>)<sup>2</sup> / Σ<sub>i</sub>(y<sub>i</sub> − ȳ<sub>sub</sub>)<sup>2</sup>,<span class="eqn">(15)</span></p>
 
 where ȳ<sub>sub</sub> is the mean observation of the subset.
 
 ### 10.3 Probabilistic metrics
 
-With [*L*<sub>*i*</sub>, *U*<sub>*i*</sub>] the 95% interval and μ = 0.95 the nominal coverage:
+Point metrics judge only the mean of the 800 forecasts. Probabilistic metrics judge the interval
+and the predictive distribution, along two properties that pull in opposite directions:
 
-- **Coverage probability**, CP = (1/N) Σ<sub>*i*</sub> 𝟙(*L*<sub>*i*</sub> ≤ *y*<sub>*i*</sub> ≤ *U*<sub>*i*</sub>);
-- **Reliability**, |CP − μ|;
-- **Mean prediction interval width**, MPIW = (1/N) Σ<sub>*i*</sub> (*U*<sub>*i*</sub> − *L*<sub>*i*</sub>), in W/m²;
-- **Prediction interval normalised width**, PINW = MPIW / (max *y* − min *y*), with the range taken over the subset;
-- **Coverage width-based criterion**, CWC = PINW · [1 + γ exp(−η (CP − μ))], with γ = 1 if CP < μ and 0 otherwise, and η = 50;
-- **Continuous ranked probability score**, estimated from the *S* = *B* × *M* pooled forecasts as
+- **Calibration**: do the stated probabilities hold? A 95% interval should contain the
+  observation 95% of the time.
+- **Sharpness**: how narrow is the interval? A narrower interval is more useful, provided it is
+  still calibrated.
 
-<p class="eq">CRPS = (1/N) Σ<sub>i</sub> [ (1/S) Σ<sub>j</sub> |ŷ<sub>i</sub><sup>(j)</sup> − y<sub>i</sub>| − (1/2S<sup>2</sup>) Σ<sub>j</sub> Σ<sub>j′</sub> |ŷ<sub>i</sub><sup>(j)</sup> − ŷ<sub>i</sub><sup>(j′)</sup>| ],<span class="eqn">(14)</span></p>
+Neither property is meaningful alone. An interval from 0 to 1,200 W/m² covers every observation
+and is useless; a very narrow interval looks precise but misses often. Figure 7(a) shows the
+trade-off on the same point forecasts with three interval widths: too narrow (coverage 0.63),
+calibrated (0.95) and too wide (1.00, at more than twice the width).
 
-in W/m². CRPS rewards calibration and sharpness together and reduces to MAE for a
-deterministic forecast, which makes it directly comparable with the reference forecasts below.
+With [*L*<sub>*i*</sub>, *U*<sub>*i*</sub>] the 95% interval of element *i*, *y*<sub>*i*</sub>
+its observation, 1 − α = 0.95 the nominal coverage and *N* the number of elements in the subset:
 
-A run is judged first on whether daylight CP is close to 0.95, then on interval sharpness
-(PINW, CWC) and CRPS, alongside the point metrics.
+<p class="eq">CP = (1/N) Σ<sub>i</sub> 𝟙(L<sub>i</sub> ≤ y<sub>i</sub> ≤ U<sub>i</sub>),&nbsp;&nbsp; Reliability = |CP − (1 − α)|,&nbsp;&nbsp; MPIW = (1/N) Σ<sub>i</sub> (U<sub>i</sub> − L<sub>i</sub>),&nbsp;&nbsp; PINW = MPIW / (max y − min y),<span class="eqn">(16)</span></p>
+
+<p class="eq">CWC = PINW · [1 + γ exp(−η (CP − (1 − α)))],&nbsp;&nbsp; γ = 1 if CP &lt; 1 − α, else 0,&nbsp;&nbsp; η = 50,</p>
+
+<p class="eq">CRPS = (1/N) Σ<sub>i</sub> [ (1/S) Σ<sub>j</sub> |ŷ<sub>i</sub><sup>(j)</sup> − y<sub>i</sub>| − (1/2S<sup>2</sup>) Σ<sub>j</sub> Σ<sub>j′</sub> |ŷ<sub>i</sub><sup>(j)</sup> − ŷ<sub>i</sub><sup>(j′)</sup>| ],<span class="eqn">(17)</span></p>
+
+where the range in PINW is taken over the subset and the CRPS uses the *S* = *B* × *M* pooled
+forecasts ŷ<sub>*i*</sub><sup>(*j*)</sup> of each element. Table 5 explains each metric and
+gives its daylight value for the reference run.
+
+**Table 5.** Probabilistic metrics, with the pooled daylight values of the reference run.
+
+| Metric | Question it answers | Ideal | Reference run | Reading |
+|---|---|---|---|---|
+| CP (coverage probability) | What share of observations fall inside the interval? | 0.95 | 0.900 | 10% of observations missed instead of 5%: the interval is too narrow |
+| Reliability | How far is CP from 0.95? | 0 | 0.050 | Distance only; does not say whether the interval is too narrow or too wide |
+| MPIW (W/m²) | How wide is the interval on average? | As small as possible at CP ≈ 0.95 | 382 | On average the interval spans 382 W/m² |
+| PINW | How wide, relative to the range of the observations? | As small as possible at CP ≈ 0.95 | 0.370 | The interval spans 37% of the observed range (1,033 W/m²); comparable across sites |
+| CWC | Width, penalised for under-coverage | PINW itself (no penalty) | 4.80 | PINW multiplied by 13.0 for missing the nominal coverage |
+| CRPS (W/m²) | How far is the whole forecast distribution from the observation? | 0 | 54.5 | Comparable with MAE; the point forecast's daylight MAE is 77.2 W/m² |
+
+**CP and Reliability** measure calibration. CP is the first number to check: if it is clearly
+below 0.95 the interval is over-confident, and the widths below describe an interval that does
+not deliver what it states. Reliability is the absolute distance from 0.95 and is useful for
+ranking, but loses the direction, so CP is reported alongside it. Because about half of all
+elements are night hours whose interval covers by construction, CP is judged on daylight hours.
+
+**MPIW and PINW** measure sharpness. MPIW is in W/m² and easy to interpret for one site; PINW
+divides it by the range of the observations so that sites and subsets with different irradiance
+levels can be compared. Width is only a merit at adequate coverage: of two runs, the narrower is
+better only if both have CP close to 0.95.
+
+**CWC** combines the two into one number. When CP reaches 0.95 it equals PINW; when CP falls
+short, PINW is multiplied by 1 + exp(50 × shortfall), so every 0.01 of missing coverage multiplies
+the penalty term by e<sup>0.5</sup> ≈ 1.65 (Figure 7c). The reference run's shortfall of 0.050
+gives a factor of 13.0, turning a PINW of 0.370 into a CWC of 4.80. Two consequences follow. CWC
+is dominated by coverage whenever CP < 0.95, so it mostly re-expresses CP; and it jumps at
+CP = 0.95, where the factor drops from 2 to 1. It is therefore reported for comparability with
+the literature, but runs are not ranked on it alone.
+
+**CRPS** (continuous ranked probability score) evaluates the entire predictive distribution, not
+only its 2.5th and 97.5th percentiles. Geometrically, it is the squared distance between the
+cumulative distribution of the 800 forecasts and a step function that jumps from 0 to 1 at the
+observed value (Figure 7b). It is low when much of the forecast probability lies close to what
+happened. The first term of Eq. 17 is the mean absolute error of the individual forecasts; the
+second subtracts half their mean spread, so spread is credited only insofar as it covers the
+error. For a single deterministic forecast the spread is zero and CRPS reduces to the absolute
+error. CRPS is therefore in W/m² and directly comparable with the MAE of a point forecast,
+including the reference forecasts of Section 10.4. In the reference run, the daylight CRPS of
+54.5 W/m² is lower than the MAE of both the model's own point forecast (77.2 W/m²) and the
+persistence reference (71.85 W/m²): the distribution carries information that its mean alone
+does not.
+
+![Coverage, width, CRPS and CWC illustrated](outputs/methodology/figures/probabilistic_metrics.png)
+
+**Figure 7.** The probabilistic metrics. (a) The same point forecasts and observations with three
+interval widths: coverage alone rewards the widest interval, width alone the narrowest; values are
+illustrative. (b) CRPS for one forecast: the cumulative distribution of 800 forecasts (orange)
+and the observation as a step (black); the CRPS integrates the squared gap between them over all
+irradiance values, here 111 W/m², against an absolute error of the mean of 181 W/m²
+(illustrative). (c) The CWC multiplier applied to PINW as a function of CP; the point marks the
+reference run's daylight CP of 0.900.
+
+**How to use them.** A run is judged in the following order, on daylight hours, and only against
+runs evaluated on the same subset and with the same number of replicates and passes:
+
+1. **Coverage first.** Is CP close to 0.95, overall, per site and per horizon step? If it is
+   clearly lower, the interval is over-confident and must be recalibrated (Section 8.5) before
+   its width is compared with anything.
+2. **Then sharpness.** Among runs with adequate coverage, the one with smaller MPIW and PINW is
+   preferred.
+3. **CRPS as the overall score.** It rewards calibration and sharpness together, needs no
+   choice of interval level, and is comparable with the MAE of the reference forecasts.
+4. **CWC for comparison with published work**, not as the deciding criterion.
 
 ### 10.4 Reference forecasts
 
