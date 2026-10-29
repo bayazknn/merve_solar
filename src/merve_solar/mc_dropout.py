@@ -40,6 +40,32 @@ def mc_dropout_predict(
     return np.stack(passes, axis=0)
 
 
+def deterministic_predict(
+    model: nn.Module,
+    X: np.ndarray,
+    city_id: np.ndarray,
+    batch_size: int = 512,
+    device: str | None = None,
+) -> np.ndarray:
+    """Ordinary inference, dropout off: one pass, shape (1, N, horizon).
+
+    The inference_mode="deterministic" arm. The model is put back into train mode afterwards so
+    a later MC-Dropout call on the same object cannot inherit eval mode by accident.
+    """
+    device = device or get_device()
+    model.to(device)
+    model.eval()
+    X_t = torch.as_tensor(X, dtype=torch.float32)
+    city_id_t = torch.as_tensor(city_id, dtype=torch.long)
+    outputs = []
+    with torch.no_grad():
+        for start in range(0, len(X), batch_size):
+            end = min(start + batch_size, len(X))
+            outputs.append(model(X_t[start:end].to(device), city_id_t[start:end].to(device)).cpu().numpy())
+    model.train()
+    return np.concatenate(outputs, axis=0)[None]
+
+
 # One pooled calibration block, in array elements (S * columns). The conformal layer needs the
 # 2.5/97.5 percentiles over all B*T passes on the CALIBRATION split, which at full fidelity is a
 # second ~2.5 GB array alongside the test one. Chunking over the window axis is exact (every

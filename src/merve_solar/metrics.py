@@ -78,32 +78,37 @@ def coverage_width_criterion(pinw: float, cp: float, target: float = TARGET_CI_C
     return float(pinw * (1 + penalty * np.exp(-eta * (cp - target))))
 
 
-def empirical_crps(pooled_preds: np.ndarray, y_true: np.ndarray, chunk_elements: int = CHUNK_ELEMENTS) -> float:
-    """CRPS(F, y) = E|X-y| - 0.5*E|X-X'|, X,X' ~ F, estimated from a finite sample.
+def crps_per_element(pooled_preds: np.ndarray, y_true: np.ndarray,
+                     chunk_elements: int = CHUNK_ELEMENTS) -> np.ndarray:
+    """CRPS(F, y) = E|X-y| - 0.5*E|X-X'|, X,X' ~ F, for every element of y separately.
 
-    Uses the O(S log S) rearrangement E|X-X'| = (2/S^2) * sum_i (2i-S-1)*x_(i)
-    (sorted ascending) instead of the naive O(S^2) pairwise sum.
+    pooled_preds is (S, *y_true.shape); returns float64 of y_true's shape. Uses the O(S log S)
+    rearrangement E|X-X'| = (2/S^2) * sum_i (2i-S-1)*x_(i) (sorted ascending) instead of the
+    naive O(S^2) pairwise sum. Keeping the per-element values lets any subset (daylight, a
+    province, a day) be scored as their mean without the sample, which is never persisted.
     """
     S = pooled_preds.shape[0]
     flat_preds = pooled_preds.reshape(S, -1)
     flat_y = y_true.reshape(-1)
-    n_cols = flat_y.size
-    if n_cols == 0:
-        return float("nan")
-
+    out = np.empty(flat_y.size, dtype=np.float64)
     weights = (2 * np.arange(1, S + 1, dtype=np.float64) - S - 1).reshape(-1, 1)
     step = max(1, chunk_elements // max(1, S))
-    total = 0.0  # float64 accumulator: a float32 running sum over ~1e6 columns loses 3-4 digits
 
-    for start in range(0, n_cols, step):
-        stop = min(start + step, n_cols)
+    for start in range(0, flat_y.size, step):
+        stop = min(start + step, flat_y.size)
         preds_block = flat_preds[:, start:stop]
         term1 = np.abs(preds_block - flat_y[None, start:stop]).mean(axis=0, dtype=np.float64)
         sorted_block = np.sort(preds_block, axis=0)
         half_pairwise = (weights * sorted_block).sum(axis=0, dtype=np.float64) / (S**2)
-        total += float((term1 - half_pairwise).sum())
+        out[start:stop] = term1 - half_pairwise
+    return out.reshape(y_true.shape)
 
-    return float(total / n_cols)
+
+def empirical_crps(pooled_preds: np.ndarray, y_true: np.ndarray, chunk_elements: int = CHUNK_ELEMENTS) -> float:
+    """Mean CRPS over every element of y_true; see crps_per_element."""
+    if y_true.size == 0:
+        return float("nan")
+    return float(crps_per_element(pooled_preds, y_true, chunk_elements).mean())
 
 
 def r2(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -130,6 +135,7 @@ def compute_metrics_for_subset(
     y_true: np.ndarray,
     element_mask: np.ndarray | None = None,
     dist: dict | None = None,
+    crps_elements: np.ndarray | None = None,
 ) -> dict:
     """Metrics for one group of windows, optionally restricted to selected elements.
 
@@ -148,6 +154,10 @@ def compute_metrics_for_subset(
     runs in: the (S, N, horizon) sample is ~3.4 GB and is never persisted, while
     test_predictions.npz keeps mean/lower/upper, so a finished run can be re-sliced (per city
     per horizon, conformal rescaling, paired tests) without retraining anything.
+
+    `crps_elements` (same shape as y_true, from crps_per_element) supplies CRPS without the
+    sample: the subset's CRPS is the mean of its elements' values, which is exactly what
+    empirical_crps computes from the sample. It takes precedence over `pooled_preds`.
     """
     if pooled_preds is None and dist is None:
         raise ValueError("compute_metrics_for_subset needs either pooled_preds or dist")
@@ -157,11 +167,13 @@ def compute_metrics_for_subset(
         y, mean = y_true, dist["mean"]
         lower, upper = dist["lower"], dist["upper"]
         preds = pooled_preds
+        crps_sel = crps_elements
         n_samples = int(y_true.shape[0])
     else:
         y, mean = y_true[element_mask], dist["mean"][element_mask]
         lower, upper = dist["lower"][element_mask], dist["upper"][element_mask]
-        preds = None if pooled_preds is None else pooled_preds[:, element_mask]
+        preds = None if pooled_preds is None or crps_elements is not None else pooled_preds[:, element_mask]
+        crps_sel = None if crps_elements is None else crps_elements[element_mask]
         n_samples = int(element_mask.any(axis=1).sum())
 
     if y.size == 0:
@@ -180,7 +192,8 @@ def compute_metrics_for_subset(
         "MPIW": mean_prediction_interval_width(lower, upper),
         "Reliability": reliability(cp),
         "CWC": coverage_width_criterion(pinw, cp),
-        "CRPS": float("nan") if preds is None else empirical_crps(preds, y),
+        "CRPS": (float(np.mean(crps_sel, dtype=np.float64)) if crps_sel is not None
+                 else float("nan") if preds is None else empirical_crps(preds, y)),
         "n_samples": n_samples,
         "n_elements": int(y.size),
     }
@@ -193,8 +206,12 @@ def compute_all_metrics(
     cities: list,
     element_mask: np.ndarray | None = None,
     dist: dict | None = None,
+    crps_elements: np.ndarray | None = None,
 ) -> dict:
-    """pooled_preds: (S, N, horizon); y_true/city_id: (N, horizon)/(N,).
+    """pooled_preds: (S, N, horizon) or None; y_true/city_id: (N, horizon)/(N,).
+
+    With `crps_elements` supplied, `pooled_preds` may be None and every metric, CRPS included,
+    is computed from `dist` and the per-element CRPS alone.
 
     Returns {'aggregate', 'aggregate_excl', 'per_city', 'per_horizon'}.
     """
@@ -203,15 +220,18 @@ def compute_all_metrics(
     def _subset(rows=None, step=None):
         if rows is not None:
             return compute_metrics_for_subset(
-                pooled_preds[:, rows, :], y_true[rows],
-                None if element_mask is None else element_mask[rows], _slice_dist(dist, rows))
+                None if pooled_preds is None else pooled_preds[:, rows, :], y_true[rows],
+                None if element_mask is None else element_mask[rows], _slice_dist(dist, rows),
+                None if crps_elements is None else crps_elements[rows])
         sl = slice(step, step + 1)
         return compute_metrics_for_subset(
-            pooled_preds[:, :, sl], y_true[:, sl],
+            None if pooled_preds is None else pooled_preds[:, :, sl], y_true[:, sl],
             None if element_mask is None else element_mask[:, sl],
-            {k: v[:, sl] for k, v in dist.items()})
+            {k: v[:, sl] for k, v in dist.items()},
+            None if crps_elements is None else crps_elements[:, sl])
 
-    result = {"aggregate": compute_metrics_for_subset(pooled_preds, y_true, element_mask, dist)}
+    result = {"aggregate": compute_metrics_for_subset(pooled_preds, y_true, element_mask, dist,
+                                                      crps_elements)}
 
     # City ids come from the frame via CITY_TO_ID and are NEVER renumbered, so `cities` here is
     # a list of provinces to REPORT, not an index mapping. Using enumerate() instead would
@@ -244,6 +264,7 @@ def compute_metric_subsets(
     cities: list,
     daylight: np.ndarray | None = None,
     dist: dict | None = None,
+    crps_elements: np.ndarray | None = None,
 ) -> dict:
     """Both reporting subsets: {'all_hours': ..., 'daylight': ...}.
 
@@ -257,10 +278,13 @@ def compute_metric_subsets(
     time to arrive at the same numbers. The caller is responsible for `dist` describing the
     sample it passes in -- CRPS reads the sample directly and everything else reads `dist`.
     """
-    dist = summarize_predictive_distribution(pooled_preds) if dist is None else dist
-    subsets = {"all_hours": compute_all_metrics(pooled_preds, y_true, city_id, cities, None, dist)}
+    if dist is None:
+        dist = summarize_predictive_distribution(pooled_preds)
+    subsets = {"all_hours": compute_all_metrics(pooled_preds, y_true, city_id, cities, None, dist,
+                                                crps_elements)}
     if daylight is not None:
-        subsets["daylight"] = compute_all_metrics(pooled_preds, y_true, city_id, cities, daylight, dist)
+        subsets["daylight"] = compute_all_metrics(pooled_preds, y_true, city_id, cities, daylight,
+                                                  dist, crps_elements)
     return subsets
 
 

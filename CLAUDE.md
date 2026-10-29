@@ -52,17 +52,21 @@ uv run python scripts/02_descriptive_analysis.py           # EDA figures/tables 
 uv run python scripts/03_run_naive_baselines.py            # naive climatology/persistence rows (descriptive only)
 uv run python scripts/run_experiment.py --config configs/config_000_smoke.json
 uv run python scripts/run_all_experiments.py --list        # what a sweep would run, without running it
+uv run python scripts/run_all_experiments.py --group smoke --ensemble-curves   # real data, minutes
+uv run python scripts/check_outputs.py --group tune_s1_lookback   # on the run machine, before committing
+uv run python scripts/15_tuning_report.py --stage s1        # validation-only stage summary
+uv run python scripts/14_ensemble_curves.py --experiment-id ID   # B x T sub-ensemble curves (needs checkpoints)
 uv run python scripts/render_pdf.py DATASET_DESCRIPTION.md   # manuscript section -> PDF, figures embedded
 ```
 
 `run_experiment.py` also takes `--exclude-city NAME`, `--loss {mse,mae,huber}` and
 `--experiment-id ID`; any override requires `--experiment-id`, so a changed run never overwrites
-the config's own id. `run_all_experiments.py` with no `--group` selects *every* group in
-`configs/experiment_grid.py`, which is far more than anyone usually means: always `--list` first.
+the config's own id. `run_all_experiments.py` with no `--group` selects every group in
+`configs/experiment_grid.py` whose prerequisites are decided: always `--list` first.
 Full CLI and per-field config reference: `README.md`.
 
-**Before proposing a full run**, sanity-check the code path with a smoke config
-(`n_bootstrap=1, max_epochs=5, mc_dropout_passes=10`): a full run is 8 replicas × 100 MC passes,
+**Before proposing a full run**, sanity-check the code path with the `smoke` group (or a smoke
+config: `n_bootstrap=1, max_epochs=5, mc_dropout_passes=10`): a full run is 8 replicas × 100 MC passes,
 and a crash at the metrics step after hours of training is the expensive failure. State the
 backend (`cpu`/`mps`/`cuda`) with any cost estimate.
 
@@ -76,9 +80,14 @@ backend (`cpu`/`mps`/`cuda`) with any cost estimate.
    sin-cos features, and caches everything to a parquet.
 2. **One experiment**: `experiment.py::run_experiment(config)` is the orchestrator; read it first.
    Chronological split boundaries on the full frame → drop `excluded_cities` → fit scaler on train
-   rows only → build windows → per bootstrap replica: moving-block resample, train, MC-Dropout
-   predict → pool passes → inverse-transform to W/m² → night clamp → metrics → CSVs,
-   `test_predictions.npz`, figures, one ledger row.
+   rows only → build windows → train every replica (moving-block resample unless
+   `bootstrap_resample=False`) → score VALIDATION, then TEST, with `evaluation.evaluate_split`,
+   which streams chunks of windows: predict (`inference_mode`), inverse-transform to W/m², night
+   clamp, optional conformal rescale, summary + per-element CRPS. The pooled sample is never
+   materialised, so B=16 costs no more memory than B=1. Outputs: metrics CSVs (test and
+   validation), `daily_scores.csv`, `replicas.csv`, `training_history.csv`,
+   `test_predictions.npz`, figures, one ledger row; `experiment.REQUIRED_RUN_OUTPUTS` lists them
+   and the run raises if one is missing.
 
 `ExperimentConfig` (`config.py`) is the unit of work, serialized to JSON; `experiment_id` names the
 output directory `outputs/experiments/<id>/` and the row in `outputs/experiments_ledger.csv`. Every
@@ -126,8 +135,9 @@ field is validated in `__post_init__`. Sweeps are named groups in
   cities, and label hour axes as local solar time.
 - **`excluded_cities` never renumbers city ids** (`CITY_TO_ID` is fixed); `config.active_cities`
   is the single source of truth for which provinces a run uses.
-- **`hidden_sizes` is overloaded**: `[0]` is the LSTM hidden size, `len()` the number of stacked
-  LSTM layers, `[1:]` extra Linear layers in the head.
+- **`hidden_sizes` is overloaded**: `[0]` is the LSTM hidden size, `[1:]` extra Linear layers in
+  the head, and, while `lstm_layers` is `None`, `len()` the number of stacked LSTM layers
+  (`[64, 32]` is a 2-layer LSTM). Read depth through `config.n_lstm_layers`.
 - **Data-integrity checks in `data.py` raise rather than warn.** If the xlsx is refreshed,
   `LAST_VALID_TIMESTAMP`, `EXPECTED_TRIMMED_ROWS_PER_SHEET` (`config.py`) and
   `FULL_ROWS_PER_SHEET` (`tests/test_data.py`) change together.
@@ -154,7 +164,11 @@ The paper's tables come straight out of the ledger, so its rows must be comparab
 ### Metrics
 
 `metrics.py` reports RMSE/MAE/R²/CP/PINW/MPIW/Reliability/CWC/CRPS aggregate, per city and per
-horizon step, each for two subsets, `all_hours` and `daylight`. **Headline numbers come from
+horizon step, each for two subsets, `all_hours` and `daylight`, for the test split and (in
+`val_results_summary.csv` and the `val_*` ledger columns) the validation split. **Every tuning or
+design choice is made on the validation columns; test metrics are never used to select
+anything** (`scripts/15_tuning_report.py` does not read them). Rows trained before 2026-10-29
+have no validation columns. **Headline numbers come from
 `daylight`**: about half of all elements are exact night zeros, which pull RMSE/MAE down, push
 all-hours R² above 0.9 for even a climatology, and, under the night clamp, make every night
 interval cover by construction. Judge a run by daylight CP ≈ 0.95 first, then daylight
@@ -188,6 +202,12 @@ the ledger as descriptive references only.
   or pointers to working documents); embedded image `src` paths are the one exception.
 
 ## Open work
+
+- **Tuning programme in progress** (`outputs/tuning/TUNING_PLAN.md`): sequential stages S1
+  lookback → S2 width × depth → S3 dropout, learning rate → S4 block length → S5 ensemble size
+  and MC passes, then a frozen five-seed reference. Each stage's choice is recorded in
+  `configs/experiment_grid.py::DECISIONS` after its report; runs happen on the remote Mac, the
+  analysis here after a pull. The ablation programme follows on the frozen configuration.
 
 - Declare the benchmark methodology (pending, from the user).
 - `config_005_default_full` is the reference run (corrected penalty, seed 42, MPS); scripts 09

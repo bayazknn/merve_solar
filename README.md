@@ -193,15 +193,20 @@ uv run python scripts/run_experiment.py --config configs/config_002_default_full
 
 `configs/experiment_grid.py` enumerates the `ExperimentConfig`s in **named
 groups**, so an hours-long study can be selected precisely instead of running
-everything: `smoke` (minutes, proves the code path) and `main` (the
-hyperparameter sweep — hidden sizes, lookback, dropout, split ratio). The other
-groups were built for an ablation programme on an earlier dataset and have not
-been run on the current one. Edit this file to add your own.
+everything: `smoke` (minutes on the real data, exercises every code path), the
+sequential tuning stages `tune_s1_lookback` → `tune_s2_arch` →
+`tune_s3_dropout` / `tune_s3_lr` → `tune_s4_block` → `tune_s5_ensemble`, and
+`final_reference`. A stage is built from the earlier stages' choices in
+`DECISIONS`; until they are recorded, selecting it stops with "stage not
+ready". The plan, the reasons for each grid and the run order are in
+`outputs/tuning/TUNING_PLAN.md`.
 
 ```bash
-uv run python scripts/run_all_experiments.py --list                # print what would run, exit
-uv run python scripts/run_all_experiments.py --group smoke         # one group
-uv run python scripts/run_all_experiments.py --group main --skip-existing --continue-on-error
+uv run python scripts/run_all_experiments.py --list                # print what can run now, exit
+uv run python scripts/run_all_experiments.py --group smoke --ensemble-curves
+uv run python scripts/run_all_experiments.py --group tune_s1_lookback --skip-existing --continue-on-error
+uv run python scripts/check_outputs.py --group tune_s1_lookback    # before committing the results
+uv run python scripts/15_tuning_report.py --stage s1               # validation-only stage summary
 ```
 
 | Flag | Meaning |
@@ -209,7 +214,8 @@ uv run python scripts/run_all_experiments.py --group main --skip-existing --cont
 | `--group NAME` | Repeatable; restrict to these groups. Default: every group. |
 | `--only ID [ID ...]` | Run exactly these `experiment_id`s (intersected with `--group` if both are given). Errors if an id is not in the selection. |
 | `--list` | Print the selected ids and exit without running anything. Use this before every long sweep. |
-| `--skip-existing` | Skip configs that already have `metrics/results_summary.csv`, so an interrupted sweep resumes instead of restarting. Keyed on the results file, not `config.json`, so a run that crashed mid-training is retried while a completed one is skipped. |
+| `--skip-existing` | Skip configs that already have every required output (`experiment.REQUIRED_RUN_OUTPUTS`), so an interrupted sweep resumes instead of restarting. Keyed on the output files, not `config.json`, so a run that crashed mid-way is retried while a completed one is skipped. |
+| `--ensemble-curves` | After the runs, write `metrics/ensemble_curves.csv` for every global MC-Dropout run that lacks it (see `scripts/14_ensemble_curves.py`). Needed by `tune_s5_ensemble`. |
 | `--continue-on-error` | Keep going if one config raises; the failures are listed at the end and the script exits non-zero. |
 
 Every selected config runs one after another, each writing to its own
@@ -317,7 +323,8 @@ All fields live in the `ExperimentConfig` dataclass
 | `window_stride` | `1` | Step size (in hours) between consecutive training windows. `1` = a new window every hour (more training data, slower to build); `24` = one window per calendar day. |
 | `train_ratio` | `0.74` | Fraction of the usable date range (chronologically, earliest first) used for training. |
 | `val_ratio` | `0.11` | Fraction used for validation/early-stopping (immediately after the training range). The remainder (`1 - train_ratio - val_ratio`, ≈`0.15` by default) is the held-out test set (the most recent data — with the defaults it spans 9,097 hours = 379 days, i.e. slightly over a full seasonal year, so all four seasons are covered; important for solar irradiance, otherwise the test score is biased toward one season). |
-| `hidden_sizes` | `[64, 32]` | Model size/depth. The first number is the LSTM's hidden size, and `len(hidden_sizes)` is the number of stacked LSTM layers. Any additional numbers become extra `Linear` layers in the output head (e.g. `[64, 32]` → a 1-layer-hidden LSTM(64) feeding a Linear(64→32)→Linear(32→horizon_hours) head; `[128, 64, 32]` → a 2-layer LSTM(128) feeding a deeper head). |
+| `hidden_sizes` | `[64, 32]` | The first number is the LSTM's hidden size; any further numbers become hidden `Linear` layers of the output head (e.g. `[64, 32]` → LSTM(64) feeding Linear(64→32)→ReLU→Dropout→Linear(32→horizon_hours)). With `lstm_layers=None` the number of stacked LSTM layers is `len(hidden_sizes)`, so `[64, 32]` is a **2-layer** LSTM(64). |
+| `lstm_layers` | `None` | Number of stacked LSTM layers. `None` keeps the coupling to `len(hidden_sizes)` above (every earlier row); an explicit value decouples depth from the head, as the architecture sweep does. The ledger records the effective number. |
 | `dropout_rate` | `0.3` | Dropout probability, used both for regularization during training *and* as the source of randomness for Monte Carlo Dropout at inference — don't set this to `0`, or MC-Dropout will produce identical predictions every pass (no epistemic uncertainty). |
 | `city_embedding_dim` | `4` | Size of the learned vector representing which city a window belongs to. |
 | `learning_rate` | `1e-3` | Adam optimizer's initial learning rate. |
@@ -334,10 +341,12 @@ All fields live in the `ExperimentConfig` dataclass
 | `excluded_cities` | `[]` | Provinces dropped from this run **entirely** — train, val and test alike — so the metric table covers only the remainder. City ids are *not* renumbered (the embedding table keeps a row per province; the excluded row simply never receives a gradient), so checkpoints and predictions stay comparable across runs. Split boundaries are computed on the full frame before the exclusion, so every arm splits on identical dates. Leaving a single province is allowed only with `training_scope="per_city"`. |
 | `model_family` | `"lstm"` | Which model produced the row. `"lstm"` is the only value `run_experiment` trains; `"climatology"` and `"persistence"` are written by `scripts/03_run_naive_baselines.py` so their rows are identifiable in the ledger. |
 | `clamp_night_to_zero` | `True` | Zero every prediction at hours where `solar_elevation <= 0`, applied after the inverse transform to W/m². Not a heuristic: below the horizon the target is exactly `0` and this is known from solar geometry alone, without reading the target. It lowers all-hours error at no cost, **but it also inflates all-hours CP by construction** — see [Metrics explained](#metrics-explained). |
-| `conformal_mode` | `"none"` | Granularity of the split-conformal recalibration of the predictive interval: `"none"`, `"global"`, `"per_horizon"`, `"per_city"`, `"per_season"`, `"city_horizon"`, `"city_season"`, `"season_horizon"`, `"city_season_horizon"`. Anything but `"none"` makes the run additionally predict the **validation** split, pooled over the same `n_bootstrap × mc_dropout_passes` passes, and fit one factor `k` per grid cell; the predictive distribution is then rescaled about its own mean, `x → m + k(x − m)`. That rescales the interval and CRPS coherently and leaves the mean — hence RMSE/MAE/R² — bit-identical, so a conformal row differs from its uncorrected twin in the interval alone. Costs roughly 13% wall clock. Each grid axis fixes only its own conditional (province, season or horizon coverage), so choose the mode with `scripts/08_conformal_mode_selection.py`, which fits on validation and scores several conditionals. No mode has been selected on the current dataset. Night is never calibrated and never corrected. Two limitations: the calibration set is the same validation split early stopping used, and it covers ten of twelve months — no June, no July. |
+| `conformal_mode` | `"none"` | Granularity of the split-conformal recalibration of the predictive interval: `"none"`, `"global"`, `"per_horizon"`, `"per_city"`, `"per_season"`, `"city_horizon"`, `"city_season"`, `"season_horizon"`, `"city_season_horizon"`. Anything but `"none"` fits one factor `k` per grid cell on the **validation** predictions every run already makes; the predictive distribution is then rescaled about its own mean, `x → m + k(x − m)`. That rescales the interval and CRPS coherently and leaves the mean — hence RMSE/MAE/R² — bit-identical, so a conformal row differs from its uncorrected twin in the interval alone. Each grid axis fixes only its own conditional (province, season or horizon coverage), so choose the mode with `scripts/08_conformal_mode_selection.py`, which fits on validation and scores several conditionals. No mode has been selected on the current dataset. Night is never calibrated and never corrected. Two limitations: the calibration set is the same validation split early stopping used, and it covers ten of twelve months — no June, no July. |
 | `n_bootstrap` | `8` | Number of bootstrap-resampled model replicas trained for the ensemble (the paper recommends 5–10). **Set to `1` for a fast sanity-check run** — with only one replica there's no resampling, just a single trained LSTM, still scored via MC-Dropout alone. |
 | `mc_dropout_passes` | `100` | Number of stochastic forward passes per replica at inference time (the paper recommends 50–100). Total predictions pooled per test point = `n_bootstrap × mc_dropout_passes` (e.g. 8×100=800 by default). |
-| `bootstrap_block_length` | `168` | Block length (in windows) for the moving-block bootstrap resampling — resampling in contiguous blocks (default ≈1 week) rather than individually preserves the data's temporal autocorrelation. Only relevant when `n_bootstrap > 1`. |
+| `bootstrap_block_length` | `168` | Block length (in windows) for the moving-block bootstrap resampling — resampling in contiguous blocks (default ≈1 week) rather than individually preserves the data's temporal autocorrelation. Only relevant when `n_bootstrap > 1`. It should be at least the window span (`lookback_hours + horizon_hours`) plus the ~3-day weather memory; see `outputs/tuning/TUNING_PLAN.md`. |
+| `bootstrap_resample` | `True` | `False` trains the `n_bootstrap` networks on the full training set, differing only in seed: a plain seed ensemble, the ablation arm that isolates what resampling adds. Irrelevant at `n_bootstrap=1`. |
+| `inference_mode` | `"mc_dropout"` | `"mc_dropout"` = `mc_dropout_passes` stochastic passes per network with dropout active (the method). `"deterministic"` = ordinary inference, dropout off, one pass per network; requires `mc_dropout_passes=1`, and is the only mode that allows `dropout_rate=0`. With one network it is a point forecast: interval metrics are NaN and CRPS equals MAE. |
 | `seed` | `42` | Random seed (each bootstrap replica additionally offsets this so replicas aren't identical). |
 
 ## Interpreting results
@@ -349,7 +358,7 @@ outputs/
 ├── experiments/<experiment_id>/
 │   ├── config.json                    # the exact (post-override) config used for this run
 │   ├── log.txt                        # device, scope/loss/active cities, split dates,
-│   │                                  #   per-replica val loss, night elements clamped, total time
+│   │                                  #   per-replica val loss, night elements clamped, train and total time
 │   ├── checkpoints/                   # *.pt are gitignored; regenerate from the seeded config
 │   │   ├── bootstrap_model_<b>.pt      # global arm: trained weights per replica
 │   │   ├── bootstrap_model_<city>_<b>.pt  # per_city arm: per province, per replica
@@ -359,6 +368,15 @@ outputs/
 │   │   ├── results_summary.csv         # one row per (subset, group); group ∈ {Aggregate,
 │   │   │                               #   Aggregate_excl_Rize, and each active city}
 │   │   ├── results_by_horizon.csv      # one row per (subset, horizon step 1..24)
+│   │   ├── val_results_summary.csv     # results_summary.csv for the VALIDATION split (tuning criterion;
+│   │   │                               #   before any conformal correction)
+│   │   ├── daily_scores.csv            # daylight sums per (split, city, forecast-origin date):
+│   │   │                               #   n, error, |error|, error², CRPS, covered, width — the
+│   │   │                               #   committed input for paired significance tests
+│   │   ├── replicas.csv                # per network: seed, resampled, best_epoch, epochs, losses, time
+│   │   ├── training_history.csv        # per network and epoch: train_loss, val_loss, lr
+│   │   ├── ensemble_curves.csv         # scripts/14_ensemble_curves.py: daylight metrics per
+│   │   │                               #   sub-ensemble (B networks x T passes, and deterministic)
 │   │   ├── conformal_grid.csv          # conformal_mode != "none": per cell n, k, fallback flag
 │   │   ├── conformal_effect.csv        # before/after CP, MPIW, Reliability, CWC per group and step
 │   │   ├── conformal_month_stability.csv  # k refitted month by month on the calibration split
@@ -395,10 +413,11 @@ misalign against the header. The columns, in order:
   `excluded_cities` (a `|`-joined string, empty when nothing is excluded)
 - **windowing** — `lookback_hours`, `horizon_hours`, `window_stride`,
   `n_features`
-- **architecture** — `hidden_sizes`, `dropout_rate`, `city_embedding_dim`
+- **architecture** — `hidden_sizes`, `lstm_layers`, `dropout_rate`, `city_embedding_dim`
 - **splits** — `train_ratio`, `val_ratio`
 - **UQ / training budget** — `n_bootstrap`, `bootstrap_block_length`,
-  `mc_dropout_passes`, `max_epochs`, `early_stop_patience`
+  `bootstrap_resample`, `mc_dropout_passes`, `inference_mode`, `max_epochs`,
+  `early_stop_patience`
 - **optimizer** — `batch_size`, `learning_rate`, `lr_reduce_factor`,
   `lr_reduce_patience`
 - **criterion / post-processing** — `loss_function`, `huber_delta`, `nonneg_penalty_weight`,
@@ -409,8 +428,14 @@ misalign against the header. The columns, in order:
 - **all-hours metrics** — `RMSE`, `MAE`, `R2`, `CP`, `PINW`, `MPIW`,
   `Reliability`, `CWC`, `CRPS`, `n_samples`, `n_elements`
 - **daylight metrics** — `RMSE_daylight`, `MAE_daylight`, `R2_daylight`,
-  `CP_daylight`, `n_elements_daylight`
-- **run stats** — `best_val_loss` (see below), `hit_max_epochs` (how many
+  `CP_daylight`, `n_elements_daylight`, `PINW_daylight`, `MPIW_daylight`,
+  `CWC_daylight`, `CRPS_daylight`
+- **validation daylight metrics** (the tuning criterion; before any conformal
+  correction) — `val_RMSE_daylight`, `val_MAE_daylight`, `val_R2_daylight`,
+  `val_CP_daylight`, `val_PINW_daylight`, `val_CRPS_daylight`. Empty for rows
+  trained before 2026-10-29.
+- **run stats** — `best_val_loss` (see below), `mean_best_epoch` (mean over the
+  run's networks of the kept epoch, 0-based), `hit_max_epochs` (how many
   replicas stopped at the epoch cap instead of by early stopping — check this
   before any arm-to-arm claim), `n_models_trained`, `training_time_sec`
 

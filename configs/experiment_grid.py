@@ -1,879 +1,268 @@
 """Enumerates the ExperimentConfig sweep, in named groups.
 
-Groups exist so an hours-long run can be selected precisely rather than by running everything:
-`smoke` is minutes and proves the code path, `main` is the hyperparameter sweep, `ablation` is
-the global-vs-per-province comparison that tests the paper's cross-city transfer claim.
+The tuning programme is sequential: each stage starts from the previous stages' decisions,
+recorded in DECISIONS below after the stage's validation results are analysed. A stage whose
+prerequisites are undecided raises StageNotReady when selected, so it cannot be run (or
+listed) on a guessed base. The plan, its rationale and the run commands are in
+outputs/tuning/TUNING_PLAN.md.
 
-Keeping the smoke config in its own group also fixes a real hazard: it used to sit in the
-default sweep, so every run of run_all_experiments.py appended another duplicate row for the
-same experiment_id, which the comparability rules forbid.
+Rules every stage follows:
+- Selection is on the VALIDATION split (ledger columns val_*). Test metrics are recorded but are
+  not used for any choice; scripts/15_tuning_report.py does not print them.
+- Three seeds per arm (TUNE_SEEDS). FINDINGS on training dynamics put epoch-selection noise near
+  4 W/m^2 for one network, so a one-seed difference is not evidence.
+- An arm that is identical to an earlier stage's winner is not rerun: stage_arms() lists the
+  earlier runs under the new stage's label, and the report reads them from there.
+- Grids are centred on the incumbent (the config_005_default_full values) with steps coarse
+  enough that a difference can exceed seed noise.
 """
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from dataclasses import fields
+from merve_solar.config import ExperimentConfig
 
-from merve_solar.config import CITIES, ExperimentConfig
+TUNE_SEEDS = (42, 43, 44)
+FINAL_SEEDS = (42, 43, 44, 45, 46)
 
-# The ablation pair's shared settings. Both arms are constructed from this one dict so the pair
-# provably differs only in training_scope (and seed) -- far safer than two hand-written blocks
-# that can silently drift apart.
-#
-# max_epochs/early_stop_patience are raised above the ExperimentConfig defaults on purpose: a
-# per-province model sees a fifth of the windows per epoch at the same batch size, so it gets a
-# fifth of the optimizer steps and the default patience is effectively five times tighter. Both
-# arms get the same generous budget so neither is judged on truncated training.
-ABLATION_FULL = dict(
-    lookback_hours=24,
-    horizon_hours=24,
-    window_stride=1,
-    train_ratio=0.74,
-    val_ratio=0.11,
-    hidden_sizes=[64, 32],
-    dropout_rate=0.3,
-    city_embedding_dim=4,
-    learning_rate=1e-3,
-    batch_size=128,
-    max_epochs=200,
-    early_stop_patience=15,
-    n_bootstrap=8,
-    mc_dropout_passes=100,
-    bootstrap_block_length=168,
+# The incumbent, i.e. config_005_default_full, with the LSTM depth written out (hidden_sizes
+# [64, 32] has always meant two stacked LSTM layers of 64 plus a 32-unit head).
+INCUMBENT = dict(
+    lookback_hours=24, hidden_sizes=[64, 32], lstm_layers=2, dropout_rate=0.3,
+    learning_rate=1e-3, bootstrap_block_length=168, n_bootstrap=8, mc_dropout_passes=100,
 )
 
-ABLATION_SMOKE = dict(n_bootstrap=1, mc_dropout_passes=10, max_epochs=5, early_stop_patience=3)
+# Point-structure stages (S1-S3) run one network, no resampling, and are judged on point
+# accuracy; the uncertainty stages (S4-S5) run the full ensemble and are judged on CRPS.
+SCREEN_FIDELITY = dict(n_bootstrap=1, mc_dropout_passes=100)
+FULL_FIDELITY = dict(n_bootstrap=8, mc_dropout_passes=100)
 
-ABLATION_SEEDS = (42, 43, 44)
+STAGE_CRITERION = {
+    "s1": "val_RMSE_daylight", "s2": "val_RMSE_daylight", "s3_dropout": "val_RMSE_daylight",
+    "s3_lr": "val_RMSE_daylight", "s4": "val_CRPS_daylight", "s5": "val_CRPS_daylight",
+}
+
+# Filled in after each stage is analysed, and committed with the analysis.
+DECISIONS = {
+    "s1": None,          # lookback_hours
+    "s2": None,          # (lstm_hidden, lstm_layers)
+    "s3_dropout": None,  # dropout_rate
+    "s3_lr": None,       # learning_rate
+    "s4": None,          # bootstrap_block_length
+    "s5": None,          # (n_bootstrap, mc_dropout_passes)
+}
+
+# --- grids ---------------------------------------------------------------------------------------
+
+# Lookback in whole days. Below 24 h a window issued at night contains no daylight at all, and
+# 24 h is the incumbent, so the grid can only extend upwards.
+LOOKBACK_GRID = (24, 48, 72)
+# LSTM width doubles per step around 64; depth around the incumbent's 2 layers. The head is
+# always one hidden layer of half the LSTM width, as in the incumbent.
+HIDDEN_GRID = (32, 64, 128)
+LAYERS_GRID = (1, 2, 3)
+DROPOUT_GRID = (0.1, 0.2, 0.3, 0.4, 0.5)
+# A factor of two either side of 1e-3. A lower rate also spreads the optimum over more epochs,
+# which makes the per-epoch early-stopping choice less coarse.
+LR_GRID = (5e-4, 1e-3, 2e-3)
+# Block length in hours of window starts. Windows whose starts are less than lookback + horizon
+# apart share raw hours, and daily cloudiness anomalies stay autocorrelated for about 3 days
+# (outputs/tuning/TUNING_PLAN.md), so the shortest block that keeps dependent samples together
+# is the window span plus 3 days. The grid adds k whole days to the span, k centred on the
+# incumbent's 168 h = 48 h span + 5 days at lookback 24.
+BLOCK_EXTRA_DAYS = (3, 5, 8, 12)
+HORIZON_HOURS = 24
+# Ensemble size and MC passes come from ONE B=16 run per seed (scripts/14_ensemble_curves.py
+# scores every sub-ensemble), so these grids cost no extra training.
+ENSEMBLE_B_GRID = (4, 6, 8, 10, 12, 14, 16)
+ENSEMBLE_T_GRID = (50, 75, 100, 125, 150)
+
+
+def block_grid(lookback_hours: int) -> tuple:
+    return tuple(lookback_hours + HORIZON_HOURS + 24 * k for k in BLOCK_EXTRA_DAYS)
+
+
+class StageNotReady(RuntimeError):
+    pass
+
+
+def _need(*stages):
+    missing = [s for s in stages if DECISIONS[s] is None]
+    if missing:
+        raise StageNotReady(f"decide {missing} in DECISIONS first (run the report for that stage)")
+
+
+def _lr_tag(lr: float) -> str:
+    return f"{lr:.0e}".replace("e-0", "e-")
+
+
+def _cfg(experiment_id: str, seed: int, **fields) -> ExperimentConfig:
+    return ExperimentConfig(experiment_id=f"{experiment_id}_s{seed}", seed=seed,
+                            **{**INCUMBENT, **fields})
+
+
+def _arm(prefix: str, seeds=TUNE_SEEDS, **fields) -> list:
+    return [_cfg(prefix, seed, **fields) for seed in seeds]
+
+
+def _arch(hidden: int, layers: int) -> dict:
+    return dict(hidden_sizes=[hidden, hidden // 2], lstm_layers=layers)
+
+
+# --- stages: arm label -> configs, including arms reused from an earlier stage --------------------
+
+def _s1() -> dict:
+    return {f"lb{L}": _arm(f"tune_s1_lb{L}", lookback_hours=L, **SCREEN_FIDELITY)
+            for L in LOOKBACK_GRID}
+
+
+def _s2() -> dict:
+    _need("s1")
+    L = DECISIONS["s1"]
+    arms = {}
+    for h in HIDDEN_GRID:
+        for n in LAYERS_GRID:
+            label = f"h{h}l{n}"
+            if (h, n) == (64, 2):
+                arms[label] = _s1()[f"lb{L}"]
+            else:
+                arms[label] = _arm(f"tune_s2_lb{L}_{label}", lookback_hours=L, **_arch(h, n),
+                                   **SCREEN_FIDELITY)
+    return arms
+
+
+def _s2_winner() -> tuple[str, dict]:
+    _need("s1", "s2")
+    h, n = DECISIONS["s2"]
+    return f"lb{DECISIONS['s1']}_h{h}l{n}", dict(lookback_hours=DECISIONS["s1"], **_arch(h, n))
+
+
+def _s3_dropout() -> dict:
+    tag, base = _s2_winner()
+    winner = _s2()[f"h{DECISIONS['s2'][0]}l{DECISIONS['s2'][1]}"]
+    return {f"do{d:.1f}": winner if d == INCUMBENT["dropout_rate"] else
+            _arm(f"tune_s3_{tag}_do{int(round(d * 10)):02d}", dropout_rate=d, **base, **SCREEN_FIDELITY)
+            for d in DROPOUT_GRID}
+
+
+def _s3_lr() -> dict:
+    tag, base = _s2_winner()
+    winner = _s2()[f"h{DECISIONS['s2'][0]}l{DECISIONS['s2'][1]}"]
+    return {f"lr{_lr_tag(lr)}": winner if lr == INCUMBENT["learning_rate"] else
+            _arm(f"tune_s3_{tag}_lr{_lr_tag(lr)}", learning_rate=lr, **base, **SCREEN_FIDELITY)
+            for lr in LR_GRID}
+
+
+def _s3_winner() -> tuple[str, dict]:
+    _need("s3_dropout", "s3_lr")
+    tag, base = _s2_winner()
+    d, lr = DECISIONS["s3_dropout"], DECISIONS["s3_lr"]
+    return (f"{tag}_do{int(round(d * 10)):02d}_lr{_lr_tag(lr)}",
+            dict(base, dropout_rate=d, learning_rate=lr))
+
+
+def _s4() -> dict:
+    tag, base = _s3_winner()
+    return {f"blk{blk}": _arm(f"tune_s4_{tag}_blk{blk}", bootstrap_block_length=blk, **base,
+                              **FULL_FIDELITY)
+            for blk in block_grid(base["lookback_hours"])}
+
+
+def _s4_winner() -> tuple[str, dict]:
+    _need("s4")
+    tag, base = _s3_winner()
+    return f"{tag}_blk{DECISIONS['s4']}", dict(base, bootstrap_block_length=DECISIONS["s4"])
+
+
+def _s5() -> dict:
+    tag, base = _s4_winner()
+    return {"b16": _arm(f"tune_s5_{tag}_b16", **base, n_bootstrap=16, mc_dropout_passes=100)}
+
+
+def _final() -> dict:
+    """The frozen configuration at five seeds: the reference row of the paper.
+
+    When the decided ensemble is the stage-4 fidelity (B=8, T=100) the stage-4 winner already
+    holds seeds 42-44 of exactly this config, so only the remaining seeds are new runs.
+    """
+    _need("s5")
+    tag, base = _s4_winner()
+    b, t = DECISIONS["s5"]
+    if (b, t) == (FULL_FIDELITY["n_bootstrap"], FULL_FIDELITY["mc_dropout_passes"]):
+        reused = _s4()[f"blk{DECISIONS['s4']}"]
+        new = _arm("final", seeds=FINAL_SEEDS[len(reused):], **base, **FULL_FIDELITY)
+        return {"final": reused + new}
+    return {"final": _arm("final", seeds=FINAL_SEEDS, **base, n_bootstrap=b, mc_dropout_passes=t)}
+
+
+STAGES = {"s1": _s1, "s2": _s2, "s3_dropout": _s3_dropout, "s3_lr": _s3_lr, "s4": _s4,
+          "s5": _s5, "final": _final}
+
+
+def stage_arms(stage: str) -> dict:
+    return STAGES[stage]()
+
+
+def _new_runs(stage: str, prefix: str):
+    """The configs a stage actually has to train: its arms minus those reused from earlier."""
+    def build():
+        return [c for configs in stage_arms(stage).values() for c in configs
+                if c.experiment_id.startswith(prefix)]
+    return build
+
+
+# --- smoke --------------------------------------------------------------------------------------
+
+SMOKE = dict(max_epochs=2, early_stop_patience=2, mc_dropout_passes=5)
 
 
 def _smoke_configs() -> list:
-    """Minutes, on CPU. Exercises both scope arms end to end before anything expensive."""
+    """Minutes on the real data. Exercises every code path the tuning and ablation runs use,
+    so a crash surfaces before an overnight sweep rather than in it."""
     return [
-        ExperimentConfig(experiment_id="abl_scope_smoke_global", training_scope="global", **ABLATION_SMOKE),
-        ExperimentConfig(experiment_id="abl_scope_smoke_percity", training_scope="per_city", **ABLATION_SMOKE),
-    ]
-
-
-def _main_configs() -> list:
-    configs = []
-    # Architecture sweep (the source paper's Table 6 hidden-layer options).
-    for i, hidden_sizes in enumerate([[32, 16], [64, 32], [128, 64]], start=1):
-        configs.append(
-            ExperimentConfig(
-                experiment_id=f"config_{i:03d}_hidden_{'-'.join(map(str, hidden_sizes))}",
-                hidden_sizes=hidden_sizes,
-            )
-        )
-    # Lookback sweep -- no precedent in the source paper's PCNN, our own sequence-design axis.
-    for lookback in [12, 24, 48]:
-        configs.append(
-            ExperimentConfig(experiment_id=f"config_lookback_{lookback}h", lookback_hours=lookback)
-        )
-    for dropout in [0.1, 0.2, 0.3]:
-        configs.append(
-            ExperimentConfig(experiment_id=f"config_dropout_{dropout}", dropout_rate=dropout)
-        )
-    # Our default split (test lands on a full seasonal year) against the source paper's 64/16/20.
-    configs.append(
-        ExperimentConfig(experiment_id="config_split_paper_64_16_20", train_ratio=0.64, val_ratio=0.16)
-    )
-    return configs
-
-
-def _ablation_configs() -> list:
-    """Global vs per-province, three seeds, plus two sensitivity runs.
-
-    Three seeds because a single-seed comparison of two arms is not publishable evidence: a seed
-    changes both the weight init and the bootstrap draw, so it is the right unit of variability.
-    If the gap between arms is smaller than the spread across seeds, the honest conclusion is
-    that there is no detectable difference.
-    """
-    configs = []
-    for seed in ABLATION_SEEDS:
-        for scope, tag in (("global", "global"), ("per_city", "percity")):
-            configs.append(
-                ExperimentConfig(
-                    experiment_id=f"abl_scope_full_{tag}_s{seed}",
-                    training_scope=scope,
-                    seed=seed,
-                    **ABLATION_FULL,
-                )
-            )
-
-    # Sensitivity 1: the hyperparameters above were chosen for the pooled regime (218,745
-    # windows). On 43,749 the same model may simply overfit, which would show up as a per-province
-    # loss that reflects capacity mismatch rather than absence of transfer. This confound points
-    # the opposite way to the scaler one below; they compound rather than cancel.
-    small = {**ABLATION_FULL, "hidden_sizes": [32, 16]}
-    configs.append(
-        ExperimentConfig(
-            experiment_id="abl_sens_percity_small_s42", training_scope="per_city", seed=42, **small
-        )
-    )
-
-    # Sensitivity 2: per-province training with the pooled scaler, isolating the normalisation
-    # effect from the training effect.
-    configs.append(
-        ExperimentConfig(
-            experiment_id="abl_sens_percity_globalscaler_s42",
-            training_scope="per_city",
-            per_city_scaler=False,
-            seed=42,
-            **ABLATION_FULL,
-        )
-    )
-    return configs
-
-
-# ---------------------------------------------------------------------------------------------
-# Rize transfer curve: the paper's cross-province claim, tested in the direction it is made.
-#
-# The claim is that pooling improves EACH province's forecast versus a province-specific model --
-# transfer *into* a province. Rize is the sharpest place to test it: the EDA puts it in a separate
-# climatic regime (daily clear-sky index 0.697 against 0.806-0.840, overcast-day share 8.0%
-# against 1.0-2.8%, its best season near the others' winter), and it is where the model currently
-# earns its keep -- the global smoke run beats climatology by 14.1% on Rize against 0.2-3.0%
-# elsewhere. If pooling buys anything, it should show up there.
-#
-# So instead of removing Rize, we remove the OTHERS and watch Rize degrade. Every arm is scored on
-# Rize's own test windows, which are identical across arms because the split boundaries come from
-# the full frame before any exclusion.
-#
-# The confound is that adding provinces also adds data, so a monotone curve alone cannot separate
-# "more data" from "more diverse data". The pair arms are the control: Rize+Ankara and
-# Rize+Antalya train on exactly the same number of windows, and differ only in WHICH province is
-# added -- Ankara being the cloudiest of the other four (kt 0.806) and Antalya the sunniest
-# (0.840). If transfer is about information rather than volume, those two should not be equal.
-RIZE = "Rize"
-_OTHERS = [c for c in CITIES if c != RIZE]
-
-RIZE_CURVE_ARMS = [
-    # (id suffix,        provinces kept,                      scope,       what it isolates)
-    ("solo",             [RIZE],                              "per_city"),   # zero transfer
-    ("plus_ankara",      [RIZE, "Ankara"],                    "global"),     # +1, cloudiest partner
-    ("plus_antalya",     [RIZE, "Antalya"],                   "global"),     # +1, sunniest partner
-    ("minus_antalya",    [RIZE, "Ankara", "Konya", "Van"],    "global"),     # 4 of 5
-    ("all5",             [RIZE] + _OTHERS,                    "global"),     # full pooling
-]
-
-
-# Reduced-fidelity variant of ABLATION_FULL, used because the full setting does not fit the
-# available compute. MEASURED on this CPU-only host (12 cores, torch using 6 threads) with a
-# timing probe over the real windows: 25.7 s/epoch and 1.83 s/MC-pass on the pooled five-province
-# split (218,745 train windows), 9.9 s / 0.72 s on a two-province split, 5.0 s / 0.37 s on Rize
-# alone. At B=8 x T=100 the twelve-arm study costs 22 h if early stopping bites at epoch 40 and
-# 96 h if every replica runs to the 200-epoch cap -- days, not hours.
-#
-# What is given up, and why it is the right thing to give up:
-#   n_bootstrap 8 -> 1  is the sanctioned fast path, not a separate code path (experiment.py):
-#       no moving-block resampling, one LSTM, still scored by MC-Dropout alone. It removes the
-#       data/sampling component of the UQ layer, so the interval metrics of a B=1 arm are
-#       MC-Dropout-only and must not be compared against a B=8 row. The point metrics are the
-#       mean over T=100 stochastic passes, which is what this study reads.
-#   max_epochs 200 -> 100 with early_stop_patience kept at 15: the minimum setting at which
-#       early stopping, rather than the cap, is expected to decide when training ends. Whether
-#       it actually did is recorded per arm in the ledger's hit_max_epochs column and MUST be
-#       checked before any arm-to-arm claim -- arms that differ in training amount are not
-#       comparable.
-# T=100 MC passes is unchanged, so the percentile CI is estimated from the same sample size.
-#
-# The two dicts are deliberately built from one another rather than written out twice: the
-# reduced arms must differ from the full ones in exactly these three fields and nothing else.
-ABLATION_B1 = {**ABLATION_FULL, "n_bootstrap": 1, "max_epochs": 100}
-
-# Smoke fidelity for the curve's two structurally new code paths (a per_city arm with four
-# provinces excluded, and a global arm with three excluded). Minutes, and it is what stops a
-# multi-hour sweep from dying at the metrics step.
-RIZE_SMOKE_ARMS = ("solo", "plus_ankara")
-
-
-def _rize_curve_configs(fidelity: dict = ABLATION_FULL, suffix: str = "",
-                        arms=None, seeds_override=None, loss: str | None = None,
-                        include_stage1: bool = True, **extra) -> list:
-    """The transfer curve, plus a loss-selection stage that must run first.
-
-    SUPERSEDED AS A GROUP TO RUN. Called with no arguments -- which is what the `rize_curve`
-    group does -- this builds twelve arms at B=8 under the ExperimentConfig default loss, i.e.
-    MSE. Stage 1 has since measured MSE to be the worst of the three criteria, and section 2 of
-    ABLATION.md shows the criterion changes the curve's conclusion, not just its level. Running
-    `--group rize_curve` would therefore spend ~15 h reproducing a curve we already know is
-    measured with the wrong instrument. Use `rize_curve_full_l1` instead. The group is kept
-    because its ids appear in the plan and in ABLATION.md's threat list, and because deleting a
-    declared group silently changes what `build_experiment_grid(None)` returns.
-
-
-    Stage 1 fixes pooling at all five provinces and varies the loss, so the headline criterion is
-    chosen once on a comparison where nothing else moves. Stage 2 fixes that criterion and varies
-    pooling. Running the full cross product would multiply cost for no extra claim.
-
-The `loss` argument is what connects the two stages. Left None, stage 2 runs at the
-    ExperimentConfig default ("mse") -- which is what the `_b1` group did, before stage 1 had
-    been run and therefore before its answer was known. Stage 1 selected `mae`, so the
-    `rize_curve_l1` group passes it explicitly and is the version of the curve that actually
-    follows its own two-stage design. The `_b1` curve is kept as-is: it is a real measurement
-    under a different criterion, and deleting it would discard the only evidence about how much
-    the criterion moves the curve.
-
-    `fidelity` and `suffix` exist so a reduced-cost replica of the whole study is provably the
-    same study: the arms, provinces, scopes and seeds come from the same code, and only the
-    fidelity dict and the id suffix differ.
-    """
-    configs = []
-
-    # Stage 1 -- loss selection, all five provinces, one axis moving. Skipped when the criterion
-    # has already been selected and only the curve is being re-run.
-    if include_stage1:
-        for stage1_loss in ("mse", "mae", "huber"):
-            configs.append(
-                ExperimentConfig(
-                    experiment_id=f"abl_loss_{stage1_loss}_s42{suffix}",
-                    loss_function=stage1_loss, seed=42, **fidelity,
-                )
-            )
-
-    # Stage 2 -- the curve. Seeds: the two endpoints carry the headline claim and get three each,
-    # since a one-seed gap between two arms is not evidence; the intermediate arms are mechanism
-    # evidence about the SHAPE of the curve and get one.
-    for suffix_arm, kept, scope in (arms if arms is not None else RIZE_CURVE_ARMS):
-        excluded = [c for c in CITIES if c not in kept]
-        if seeds_override is not None:
-            seeds = seeds_override
-        else:
-            seeds = ABLATION_SEEDS if suffix_arm in ("solo", "all5") else (42,)
-        for seed in seeds:
-            configs.append(
-                ExperimentConfig(
-                    experiment_id=f"abl_rize_{suffix_arm}_s{seed}{suffix}",
-                    training_scope=scope,
-                    excluded_cities=excluded,
-                    seed=seed,
-                    **({"loss_function": loss} if loss else {}),
-                    **extra,
-                    **fidelity,
-                )
-            )
-    return configs
-
-
-def _rize_curve_b1_configs() -> list:
-    """The same twelve arms at the reduced fidelity that fits this host. See ABLATION_B1."""
-    return _rize_curve_configs(ABLATION_B1, suffix="_b1")
-
-
-def _rize_curve_l1_configs() -> list:
-    """Stage 2 re-run under L1 -- the criterion stage 1 actually selected -- with three seeds
-    on every arm.
-
-    Two reasons this supersedes the `_b1` curve rather than merely extending it.
-
-    The criterion moves Rize further than pooling does. Stage 1 measured, on the same five
-    provinces, Rize daylight RMSE 112.88 under MSE against 109.56 under L1 -- 3.3 W/m2. The
-    pooling effect the curve exists to measure is 1.5 W/m2. Reading a 1.5 W/m2 effect through an
-    instrument that a criterion change moves by 3.3 is measuring with the wrong instrument, and
-    the criterion is a free choice while the pooling effect is the finding.
-
-    Every arm gets three seeds, not just the endpoints. In the `_b1` curve H2 -- the claim that
-    WHICH province is added matters, which is the study's actual positive result -- rested on two
-    single-seed arms (plus_ankara 109.80 vs plus_antalya 119.66). A 9.86 W/m2 gap against a
-    seed spread of 2.15 is suggestive, but the finding the paper leans on should not be the one
-    with no replication. The intermediate arms are no longer only shape evidence.
-    """
-    return _rize_curve_configs(
-        ABLATION_B1, suffix="_l1", loss="mae",
-        seeds_override=ABLATION_SEEDS, include_stage1=False,
-    )
-
-
-def _rize_curve_full_l1_configs() -> list:
-    """The curve at full fidelity (B=8, T=100) under L1. The run the paper's table comes from.
-
-    Everything measured so far is B=1, which is the sanctioned fast path but removes the
-    bootstrap component of the UQ layer entirely: those arms' CP/PINW/MPIW/CWC are MC-Dropout
-    only. This group is the first time the interval metrics are produced by the method the
-    methodology actually describes -- Bootstrap Ensemble x MC-Dropout, |P| = B*T = 800 -- so
-    it is the first run whose interval numbers may be quoted.
-
-    It also strengthens H1. The B=1 curve puts the solo-vs-all5 gap at -5.11 W/m2, p = 0.037 on
-    three seeds; a claim resting on three single-replica runs is thinner than the compute now
-    available justifies.
-
-    Cost, from the unit costs in ABLATION_B1's comment and the 18-39 epochs early stopping
-    actually used (so ~25 epochs), at B=8 both training and the 800 MC passes scale:
-
-        arm             per arm      x3 seeds
-        solo             ~22 min      ~66 min
-        plus_ankara      ~43 min     ~129 min
-        plus_antalya     ~43 min     ~129 min
-        minus_antalya    ~88 min     ~264 min
-        all5            ~110 min     ~330 min
-                                    ~15.3 h   on the CPU host; ~7 h at the 2.17x MPS speedup
-                                              measured in ABLATION.md 1.11
-
-    MEMORY IS THE REAL RISK, not time. At B=8 x T=100 the pooled prediction array for a
-    five-province arm is 800 x 44,155 x 24 float32 = 3.4 GB, and this is precisely what killed
-    `config_002_default_full` before metrics.py was chunked. Peak is ~4 GB now, but on a 16 GB
-    Mac that pool shares unified memory with the MPS backend. Run ONE all5 arm first: it is the
-    largest and the only one that can fail this way, so it is the correct canary even though it
-    is not the cheapest. `--skip-existing` means a successful canary is not repeated work.
-
-    Not repeated at this fidelity: stage 1. The criterion is settled (10.1.1) and re-running it
-    at B=8 would cost 5.5 h to re-answer a question already answered on a clean one-axis
-    comparison.
-    """
-    return _rize_curve_configs(
-        ABLATION_FULL, suffix="_full", loss="mae",
-        seeds_override=ABLATION_SEEDS, include_stage1=False,
-    )
-
-
-# Three more seeds for the full-fidelity curve. Same ids scheme and same `_full` suffix as
-# rize_curve_full_l1, so the two groups' arms pool directly into one n=6 sample.
-EXTRA_SEEDS = (45, 46, 47)
-
-
-def _rize_curve_full_seeds_configs() -> list:
-    """Seeds 45-47 of the full-fidelity curve. Power, not a new question.
-
-    At n = 3 the paired t-test has two degrees of freedom, and that -- not the effect size --
-    is what stops H1. The paired differences are [-1.98, -3.65, -0.51], mean -2.05, sd 1.57:
-
-        n = 3   SE 0.907   t = -2.26   p = 0.153
-        n = 6   SE 0.641   t = -3.19   p = 0.024
-        n = 9   SE 0.524   t = -3.91   p = 0.0045
-
-    So n = 6 is the point where H1 clears 0.05 as a single test, assuming the spread holds.
-
-    It does NOT clear Benjamini-Hochberg over the four contrasts of ABLATION.md 3.3, which
-    would need n = 9. The answer to that is not three times the compute -- it is that those
-    four are not co-primary. H1 is the paper's claim; minus_antalya-vs-all5 and the rest are
-    exploratory observations that came out of looking at the curve. Pre-specifying H1 as the
-    primary endpoint and reporting the others as exploratory, without significance claims, is
-    both standard and the honest description of how they arose. The four-way correction in 3.3
-    was over-conservative for treating them as equals.
-
-    All five arms are declared so the choice of how far to go is operational. Priority order,
-    with measured per-arm costs on the Mac at B=8:
-
-        solo (~9 min) + all5 (~42 min), 3 seeds each   ~2.5 h   <- the H1 contrast, run this
-        minus_antalya (~33 min), 3 seeds               +1.7 h      the strongest exploratory one
-        the two pair arms (~16 min each), 3 seeds      +1.6 h      H2, currently 2/3 and p=0.30
-    """
-    return _rize_curve_configs(
-        ABLATION_FULL, suffix="_full", loss="mae",
-        seeds_override=EXTRA_SEEDS, include_stage1=False,
-    )
-
-
-# --- Architecture sweep -------------------------------------------------------------------
-#
-# Nothing in the ledger has ever varied the architecture: every LSTM row is hidden_sizes=[64,32],
-# lookback_hours=24, dropout_rate=0.3. These are first guesses inherited from the plan, not
-# measurements.
-#
-# One axis at a time from the current default, never a cross product: 3 x 3 x 3 would be 27
-# configs x 3 seeds for a question that does not need interaction terms answered.
-#
-# The incumbent is NOT re-run. abl_rize_all5_s{42,43,44}_l1 already is [64,32] / 24 / 0.3 at this
-# exact fidelity, criterion and province set, so it is the baseline these are compared against --
-# which is also why early_stop_patience stays at 15 despite ABLATION.md T-14 showing that best
-# epochs land at 3-9 and the patience wastes most of the wall clock. Lowering it here would make
-# the sweep incomparable with the baseline it is measured against. Lower it AFTER the winner is
-# chosen, as its own one-axis change.
-ARCH_SWEEP_AXES = [
-    # (id fragment,      overrides)
-    ("h32x16",           {"hidden_sizes": [32, 16]}),
-    ("h128x64",          {"hidden_sizes": [128, 64]}),
-    ("h64x64x32",        {"hidden_sizes": [64, 64, 32]}),
-    ("lookback48",       {"lookback_hours": 48}),
-    ("lookback72",       {"lookback_hours": 72}),
-    ("dropout02",        {"dropout_rate": 0.2}),
-    ("dropout04",        {"dropout_rate": 0.4}),
-]
-
-
-def _arch_sweep_configs() -> list:
-    """Seven one-axis departures from the default, three seeds each, on the all5 arm.
-
-    SELECT ON `best_val_loss`, NOT ON THE TEST METRIC. Choosing an architecture by its test
-    score folds the test set into model selection and makes the reported test performance
-    optimistic -- the same class of error as scaler leakage, and easier to miss because nothing
-    crashes. The ledger carries best_val_loss for exactly this. Test rows for the losing
-    configurations exist but must not be read as results.
-
-    Two axes need reading with care, and neither is a reason not to sweep them:
-
-    `lookback_hours` changes the windows themselves. A 48- or 72-hour lookback needs a longer
-    contiguous span, so more windows straddle a split boundary and are dropped, and the
-    validation set is a slightly smaller subset. best_val_loss is a per-element mean so the
-    comparison is still meaningful, but it is not scored on an identical set the way the other
-    two axes are. Check n_samples alongside it.
-
-    `dropout_rate` is not only a regulariser here: it is the ONLY source of MC-Dropout
-    randomness (a project invariant), so changing it changes the width of every predictive
-    interval. Selecting it on validation loss optimises point accuracy alone. Whatever value
-    wins, its CP must be checked before it is adopted -- ABLATION.md 3.5 has four provinces
-    already over-covering at 0.981-0.984, so a larger dropout would push them further out.
-
-    Cost: 7 configs x 3 seeds at B=1 on the all5 split, ~400 s each on the Mac, ~2.3 h.
-    B=1 rather than B=8 because selection reads best_val_loss, which is per model and needs no
-    ensemble; three seeds give the spread that tells a real difference from init noise.
-    """
-    configs = []
-    for fragment, overrides in ARCH_SWEEP_AXES:
-        for seed in ABLATION_SEEDS:
-            configs.append(
-                ExperimentConfig(
-                    experiment_id=f"abl_arch_{fragment}_s{seed}",
-                    loss_function="mae",
-                    seed=seed,
-                    **{**ABLATION_B1, **overrides},
-                )
-            )
-    return configs
-
-
-# Completing the sweep. Restructured after ABLATION_REVIEW.md, which found that the capacity
-# ladder is confounded with the learning-rate schedule.
-#
-# THE CONFOUND. `best_epoch` falls monotonically as capacity rises: [32,16] -> 12,
-# [64,64,32] -> 10, dropout0.2 -> 8, [128,64] -> 3. With `lr_reduce_patience=7`, the learning
-# rate never dropped before the winner reached its own optimum -- so no arm on the ladder ever
-# entered a refinement phase, and [256,128] at lr=1e-3 would very likely peak at epoch 1-2.
-# Run that way, the ladder measures "which model gets furthest before overfitting at 1e-3",
-# not capacity. A [256,128] arm at the default lr could therefore come back WORSE and we would
-# wrongly conclude the ladder had turned over.
-#
-# So the extension is staged: settle whether the learning rate matters first, cheaply, then
-# extend the ladder at whichever rate wins.
-ARCH_SWEEP_X_AXES = [
-    # The incumbent, re-run under its own id. abl_rize_all5_s*_l1 IS this configuration and is
-    # already comparable on the TEST metrics -- all thirteen config fields match -- but those
-    # rows predate the best_val_loss column and their logs recorded the last epoch's loss
-    # rather than the best. This buys the missing selection statistic, nothing else. It doubles
-    # as a determinism check: its test metrics must reproduce the _l1 arms'.
-    ("base",            {}),
-    # One axis from the incumbent: does a lower rate help at all, given nothing ever refined?
-    ("lr3e4",           {"learning_rate": 3e-4}),
-    # Deliberately TWO axes from the incumbent, and not part of the one-axis screen: the
-    # question is an interaction. Testing the rate only at [64,32] cannot say whether the
-    # ladder's leader improves when it is allowed to refine, and that is what decides how the
-    # ladder is extended.
-    ("h128x64_lr3e4",   {"hidden_sizes": [128, 64], "learning_rate": 3e-4}),
-]
-
-# Conditional on the stage above; declared now so the ids are fixed and reviewable.
-ARCH_FRONTIER_AXES = [
-    ("h256x128",        {"hidden_sizes": [256, 128]}),
-    ("h256x128_lr3e4",  {"hidden_sizes": [256, 128], "learning_rate": 3e-4}),
-    # The accuracy-vs-coverage frontier probe. Every one-axis departure so far lands on a single
-    # CP-vs-log(MPIW) curve per province: coverage is a pure function of interval width, and
-    # nothing has moved the frontier itself. This cell asks whether the extra capacity plus more
-    # dropout can buy back the coverage that capacity alone gives up -- i.e. whether the frontier
-    # moves at all, or whether only the bootstrap component can move it.
-    ("h128x64_do04",    {"hidden_sizes": [128, 64], "dropout_rate": 0.4}),
-]
-
-
-def _arch_configs(axes: list) -> list:
-    """Shared builder: same fidelity, criterion, province set and patience as `arch_sweep`, so
-    every configuration lands in one comparable table. Selection is on `best_val_loss`."""
-    return [
-        ExperimentConfig(
-            experiment_id=f"abl_arch_{fragment}_s{seed}",
-            loss_function="mae",
-            seed=seed,
-            **{**ABLATION_B1, **overrides},
-        )
-        for fragment, overrides in axes
-        for seed in ABLATION_SEEDS
-    ]
-
-
-def _arch_sweep_x_configs() -> list:
-    """Stage 1 of the extension: the missing baseline plus the learning-rate question. ~55 min."""
-    return _arch_configs(ARCH_SWEEP_X_AXES)
-
-
-def _arch_frontier_configs() -> list:
-    """Stage 2: extend the ladder at the winning rate, and probe the coverage frontier. ~85 min.
-
-    Run AFTER arch_sweep_x. If the rate turns out not to matter, only the `h256x128` arm is
-    needed and `h256x128_lr3e4` is redundant; if it does matter, the reverse. Both are declared
-    so the choice is a `--only` away rather than an edit.
-
-    ANSWERED, 2026-08-29 (ABLATION.md 4.5, B-3): the rate does not matter. 1e-3 -> 3e-4 moves
-    best_epoch 4.3 -> 14.0 at [128,64] -- so the mechanism is real, the model genuinely trains
-    past the point the default rate stopped at -- and lands in the same place (val_loss
-    -0.0016, p = 0.175; test RMSE +0.62, p = 0.338). At [64,32] likewise (p = 0.33 / 0.81).
-    The "the ladder only looks monotone because no arm reached its refinement stage" confound
-    is therefore measured and dead, and [256,128] can be read at the default rate.
-
-    So run six of the nine, and hold the other three:
-
-        --group arch_frontier --only \
-            abl_arch_h256x128_s42 abl_arch_h256x128_s43 abl_arch_h256x128_s44 \
-            abl_arch_h128x64_do04_s42 abl_arch_h128x64_do04_s43 abl_arch_h128x64_do04_s44
-
-    Run `h256x128_lr3e4` only if `h256x128` LOSES to `[128,64]` on best_val_loss. A win needs
-    no explanation; a loss is the one result the optimizer could still be faking, because
-    [256,128] is another doubling past the capacity where best_epoch was already 4.
-    """
-    return _arch_configs(ARCH_FRONTIER_AXES)
-
-
-# The transfer curve has one endpoint. The paper claims pooling helps every province and has
-# tested the one where it was most likely to work -- Rize, the cloudiest and least predictable.
-# ABLATION_REVIEW.md makes the risk concrete: the [64,32] -> [128,64] capacity gain is
-# -3.5 to -6.3 W/m2 in the four Anatolian provinces and -0.40 (p = 0.88) in Rize, so nearly all
-# the learnable signal lives in the four, and pooling may well cost them what it buys Rize.
-#
-# RUN, 2026-08-29 (ABLATION.md 5): it does not cost them. Pooling wins in all five provinces
-# and in 15 of 15 seed-arms; the redistribution scenario below did not happen. Kept as the
-# definition of record -- the arms are what the paper's "every province" sentence rests on.
-PERCITY_ENDPOINT_CITIES = [c for c in CITIES if c != RIZE]
-
-
-def _percity_endpoints_configs() -> list:
-    """A `solo` arm for each of the other four provinces, at full fidelity. ~1.8 h.
-
-    Each is that province trained alone, scored on its own test windows, against the same
-    province's row in the existing all5 arms -- the identical contrast H1 uses for Rize. Both
-    outcomes are publishable and the negative one is the more interesting paper: if the four
-    lose what Rize gains, the finding is that the global model REDISTRIBUTES accuracy toward
-    the data-poor regime rather than improving everything, which is a sharper claim than
-    "pooling helps" and one the referee cannot get to first.
-    """
-    return [
-        ExperimentConfig(
-            experiment_id=f"abl_percity_{city.lower()}_s{seed}_full",
-            training_scope="per_city",
-            excluded_cities=[c for c in CITIES if c != city],
-            loss_function="mae",
-            seed=seed,
-            **ABLATION_FULL,
-        )
-        for city in PERCITY_ENDPOINT_CITIES
-        for seed in ABLATION_SEEDS
-    ]
-
-
-# The target_transform axis (raw vs clearness index) and its four groups
-# -- target_transform, target_kt_h1, target_kt_endpoints, target_kt_seeds -- were removed with
-# the 14-Sep-2026 export, which no longer carries CLRSKY_SFC_SW_DWN. Regressing kt needs a
-# clear-sky MAGNITUDE, not just the sun's position, and no substitute model reproduces it well
-# enough here to build a paper arm on (see MODEL_FAMILIES in config.py for the measurement).
-# ABLATION.md 6 and 7 are the findings those groups produced; they stand as results about the
-# superseded dataset and are not re-measurable without a re-export.
-
-
-def _sens_scaler_l1_configs() -> list:
-    """The control for the confound most likely to be producing H1's null result.
-
-    The `solo` arm trains on Rize alone with its own target scaler (per_city_scaler defaults to
-    True), so its loss is normalised to Rize's own variance. The pooled arms fit one scaler over
-    all five provinces -- and Rize is the LOW-variance province (sigma 231.5 against the pooled
-    ~280), so in scaled space its targets carry roughly a third less weight than Van's. Under any
-    mean-seeking loss the pooled model therefore under-weights exactly the province the curve is
-    scored on. The comparison is built against the pooled arm, which is the direction that
-    manufactures a null.
-
-    This arm is `solo` with per_city_scaler=False: Rize alone, but scaled by the pooled scaler.
-    If the solo advantage shrinks here, part of H1's null was a scaling artefact rather than an
-    absence of transfer. Three seeds, because a one-seed control cannot rule anything out. Same
-    L1 criterion and fidelity as the curve it controls, so it differs on one axis only.
-    """
-    arms = [a for a in RIZE_CURVE_ARMS if a[0] == "solo"]
-    configs = _rize_curve_configs(
-        ABLATION_B1, suffix="_globalscaler_l1", loss="mae", arms=arms,
-        seeds_override=ABLATION_SEEDS, include_stage1=False, per_city_scaler=False,
-    )
-    assert all(c.per_city_scaler is False for c in configs)
-    return configs
-
-
-def _device_parity_configs() -> list:
-    """Two byte-identical configs under two ids, to be run on two backends.
-
-    An audit raised an unverified claim that nn.LSTM's inter-layer dropout diverges between MPS
-    and CPU. Unverified is not the same as false, and the exposure is real: hidden_sizes=[64, 32]
-    builds nn.LSTM(num_layers=2, dropout=0.3), and that dropout is one of the MC-Dropout noise
-    sources at inference -- so the metrics most exposed would be the interval ones the paper is
-    about. Failure here does not crash, it returns different numbers.
-
-    Rather than trusting or dismissing the claim, measure it. Run `abl_parity_cpu_s42` with
-    MERVE_DEVICE=cpu and `abl_parity_mps_s42` with MERVE_DEVICE=mps; identical configs and
-    identical seeds mean any metric difference is the backend. The ids state the intent and the
-    ledger's `device` column records what actually happened, so running both on one device makes
-    the check visibly void instead of silently meaningless.
-
-    Rize alone at T=100: the cheapest arm that still exercises the two-layer LSTM and the full
-    MC-Dropout pass count.
-    """
-    arms = [a for a in RIZE_CURVE_ARMS if a[0] == "solo"]
-    configs = []
-    for tag in ("cpu", "mps"):
-        [config] = _rize_curve_configs(
-            ABLATION_B1, suffix=f"_PARITY_{tag}", loss="mae", arms=arms,
-            seeds_override=(42,), include_stage1=False,
-        )
-        config.experiment_id = f"abl_parity_{tag}_s42"
-        configs.append(config)
-    return configs
-
-
-def _rize_curve_smoke_configs() -> list:
-    """Two arms, smoke fidelity, only to prove the exclusion code paths before the real sweep."""
-    arms = [a for a in RIZE_CURVE_ARMS if a[0] in RIZE_SMOKE_ARMS]
-    configs = _rize_curve_configs(
-        {**ABLATION_FULL, **ABLATION_SMOKE}, suffix="_smoke", arms=arms, seeds_override=(42,)
-    )
-    # Stage 1 needs no smoke: the pooled five-province path is already exercised by the
-    # `smoke` group. Keep only the curve arms.
-    return [c for c in configs if c.experiment_id.startswith("abl_rize_")]
-
-
-
-# --- conformal interval layer -----------------------------------------------------------------
-
-# The two formulations the conformal layer has to serve, and it has to correct them in OPPOSITE
-# directions: `raw` comes out over-wide (daylight CP 0.977) and `kt` over-narrow (0.928) at an
-# identical MPIW/RMSE ratio. Built from the same dict as the arms they are matched against, so a
-# conformal row differs from its uncorrected twin in conformal_mode alone.
-CONFORMAL_BASE = {**ABLATION_FULL, "loss_function": "mae"}
-
-# `CONFORMAL_MODE` names eight finished ledger rows (six full arms + two smoke) and must not move:
-# changing it here would redescribe runs that were produced under `city_season`. The mode that
-# ABLATION.md 8.10 actually selected is the second constant, and it gets its own group and ids.
-CONFORMAL_MODE = "city_season"
-CONFORMAL_MODE_SELECTED = "city_season_horizon"
-
-
-def _conformal_configs() -> list:
-    """The conformal layer at full fidelity, both formulations, 3 seeds. 6 arms, ~5.8 h.
-
-    Measured, not guessed. Fitting `time = epochs * c_epoch + B*T * c_mc` on the six twin arms
-    gives, on the Mac's MPS backend, 10.22 s/epoch and 0.662 s/MC-pass (largest residual 9 s out
-    of 2337-3945 s). So the test MC-Dropout stage is ~8.8 min of a ~51 min arm, and the
-    validation split -- 32,315 windows against the test split's 44,155 -- adds 0.732x of it,
-    i.e. ~6.5 min, a **+13% wall-clock surcharge**. The raw arms average 2505 s and the kt arms
-    3628 s (kt trains longer: 284-334 total epochs against 176-207).
-
-    WHY city_season AND NOT THE (city x horizon) GRID ABLATION.md 6.5 PROPOSED. Measured over the
-    16 finished runs that have prediction dumps, via scripts/07_conformal_diagnostic.py, as the
-    mean worst per-province |CP - 0.95| under a calibration geometry that mimics the validation
-    split's missing April and May:
-
-        uncorrected  0.2052        per_city      0.0136
-        global       0.0314        city_horizon  0.0131
-        per_season   0.0282        city_season   0.0099
-
-    RETRACTED, and this docstring is left standing because it is what these six ledger rows were
-    produced under. "The horizon axis is null" was read off a table that scored one conditional,
-    worst per-province deviation, and the horizon axis does nothing on THAT criterion by
-    construction. Scored on the horizon conditional it is decisive. See ABLATION.md 8.9 (C-1
-    retracted, C-6) and 8.10, and `_conformal_selected_configs` below for the mode that replaces
-    it. The two remaining paragraphs stand as measured.
-
-    Three things followed AT THE TIME. The horizon axis is null -- adding it to per_city buys
-    0.0005 for 24x the cells [WRONG, see above]. The city axis
-    is what fixes conditional coverage (0.0314 -> 0.0136): a scalar reaches nominal coverage in
-    aggregate by over-covering four provinces and under-covering Rize, which is the aggregate
-    trap in its coverage form. And the season axis, which nobody proposed, adds another 27% on
-    top, because refitting k month by month swings it 1.7x-2.0x across the year -- cloud
-    variability is seasonal and the epistemic spread is not.
-
-    That diagnostic fits and scores inside the TEST period, so it selects the geometry rather
-    than reporting a result; each of these runs now saves calibration_predictions.npz so the same
-    comparison can be redone on the validation split, where the selection is honest. It is also
-    all at B=1, and fidelity changes what the interval is -- only the structure carries over,
-    not the k values.
-    """
-    configs = [
-        ExperimentConfig(
-            experiment_id=f"abl_conformal_raw_s{seed}_full",
-            conformal_mode=CONFORMAL_MODE,
-            seed=seed,
-            **CONFORMAL_BASE,
-        )
-        for seed in ABLATION_SEEDS
-    ]
-    # Each arm must differ from its already-measured uncorrected twin in conformal_mode alone,
-    # so the pair isolates the layer. abl_rize_all5_s*_full is that twin.
-    for cfg in configs:
-        seed = cfg.seed
-        twin_id = f"abl_rize_all5_s{seed}_full"
-        twin = ExperimentConfig(experiment_id=twin_id, seed=seed, **CONFORMAL_BASE)
-        differing = {
-            f.name for f in fields(ExperimentConfig)
-            if f.name != "experiment_id" and getattr(cfg, f.name) != getattr(twin, f.name)
-        }
-        assert differing == {"conformal_mode"}, differing
-    return configs
-
-def _conformal_selected_configs() -> list:
-    """The conformal layer under the grid ABLATION.md 8.10 selected. 6 arms, ~5.8 h.
-
-    New ids rather than a rerun of `conformal`: those six rows were produced under `city_season`
-    and are valid results, so this is a second geometry measured alongside them, not a correction
-    applied over them.
-
-    WHY city_season_horizon. scripts/08_conformal_mode_selection.py refit all nine modes on the
-    VALIDATION split of each of the six finished B=8 arms and scored them on test -- an honest
-    selection, unlike the diagnostic that chose `city_season` by fitting and scoring inside the
-    test period on one conditional. Means over the six arms, daylight, lower is better:
-
-        mode                  aggregate  worst city  worst step  step spread  cells  min cell
-        uncorrected              0.0244      0.0383      0.0448       0.0493      0         -
-        per_city                 0.0124      0.0210      0.0386       0.0558      5    75,293
-        per_season               0.0073      0.0356      0.0328       0.0541      4    33,325
-        city_season (ran)        0.0096      0.0208      0.0354       0.0538     20     6,660
-        city_horizon             0.0124      0.0213      0.0170       0.0111    120     3,133
-        city_season_horizon      0.0089      0.0198      0.0133       0.0093    480       276
-
-    It wins the aggregate and the horizon deviation on 6 of 6 arms against city_horizon, its
-    smallest cell holds 276 calibration elements (MIN_CELL_N is 200) and no cell falls back. The
-    three axes have three separate, measured jobs: city fixes the province conditional, horizon
-    fixes the horizon conditional (C-6, and the oracle column shows this is structural -- a shape
-    with no horizon axis cannot flatten it however well calibrated), and season reduces the
-    CALIBRATION TRANSFER ERROR, from 0.0115 to 0.0080, without fixing either conditional (C-8).
-
-    WHAT THIS RUN BUYS, AND WHAT IT DOES NOT. Not the headline coverage: every mode's oracle
-    aggregate deviation is <= 0.0011 while no mode's applied deviation drops below 0.0073, so the
-    whole gap from 0.9404 to nominal is transfer error and no geometry closes it (C-7). Predicted
-    aggregate CP is 0.9409 raw / 0.9413 kt, i.e. unchanged. What it buys is the horizon
-    conditional -- coverage spread across the 24 steps goes 0.0558 -> 0.0072 (raw) and
-    0.0517 -> 0.0115 (kt) -- plus the artifacts the script cannot produce: ledger rows,
-    results_summary.csv, conformal_effect.csv, the figures, and CRPS, which needs the pooled S
-    samples rather than their summary (threat T-8.6).
-
-    So the outcome is already measured and the run is artifact work, not discovery. Cost is the
-    same as `conformal`: 10.22 s/epoch and 0.662 s/MC-pass on the Mac's MPS backend, plus the
-    validation prediction pass at 0.732x the test MC stage, i.e. +13%.
-    """
-    configs = [
-        ExperimentConfig(
-            experiment_id=f"abl_conformal_csh_raw_s{seed}_full",
-            conformal_mode=CONFORMAL_MODE_SELECTED,
-            seed=seed,
-            **CONFORMAL_BASE,
-        )
-        for seed in ABLATION_SEEDS
-    ]
-    # Two matched pairs per arm, both asserted rather than trusted. Against the UNCORRECTED twin
-    # the pair isolates the layer; against the `city_season` twin it isolates the geometry, which
-    # is the contrast this group exists to add and the only one that is a clean single-axis
-    # comparison of two grids at B=8.
-    for cfg in configs:
-        seed = cfg.seed
-        for twin_id, mode in ((f"abl_rize_all5_s{seed}_full", "none"),
-                              (f"abl_conformal_raw_s{seed}_full", CONFORMAL_MODE)):
-            twin = ExperimentConfig(experiment_id=twin_id, seed=seed, conformal_mode=mode,
-                                    **CONFORMAL_BASE)
-            differing = {
-                f.name for f in fields(ExperimentConfig)
-                if f.name != "experiment_id" and getattr(cfg, f.name) != getattr(twin, f.name)
-            }
-            assert differing == {"conformal_mode"}, (twin_id, differing)
-    return configs
-
-
-def _conformal_selected_smoke_configs() -> list:
-    """Minutes, on CPU. The one thing 08 does NOT exercise before the 5.8 h run.
-
-    08 proved the three-axis FIT on the real validation split of all six arms (480 cells, smallest
-    276, no fallback), but it reads npz summaries -- it never touches experiment.py's own path:
-    _conformalize writing conformal_grid.csv / conformal_month_stability.csv / conformal_effect.csv
-    at 480 rows instead of 20, and _rescaled_summary feeding the metrics stage. A crash there
-    lands after the training, which is the expensive failure mode this repo keeps guarding against.
-    Interval metrics from B=1 x T=10 are meaningless and must never reach a table.
-    """
-    return [
-        ExperimentConfig(
-            experiment_id="smoke_conformal_csh_raw",
-            conformal_mode=CONFORMAL_MODE_SELECTED,
-            **{**CONFORMAL_BASE, **ABLATION_SMOKE},
-        )
-    ]
-
-
-
-
-def _conformal_grid_configs() -> list:
-    """SUPERSEDED, DO NOT RUN. The grid-geometry ablation at full fidelity: five modes, one seed.
-
-    scripts/08_conformal_mode_selection.py answered what this group was built to ask, on all six
-    B=8 arms rather than one, in seconds rather than four hours: it refits every mode on the
-    validation split and scores it on test, which is also the honest selection this group could
-    not perform (it fits inside the run it scores). ABLATION.md 8.10 has the result. Kept as a
-    definition because the ids are unused and the group documents what was considered.
-
-    5 arms, ~4.0 h. This is what turns "a scalar factor cannot work" from an argument into a
-    measured claim at the fidelity the paper reports, rather than at the B=1 fidelity of the
-    diagnostic that chose the default. `none` is not included: abl_rize_all5_s42_full IS that
-    arm, already measured, and rerunning it would only add a duplicate row.
-
-    Optional. If Mac time is short, run `conformal` alone -- the design conclusion is already
-    supported by 16 runs and the effect table inside each conformal run reports its own
-    before/after.
-    """
-    return [
-        ExperimentConfig(
-            experiment_id=f"abl_conformal_mode_{mode}_s42",
-            conformal_mode=mode,
-            seed=42,
-            **CONFORMAL_BASE,
-        )
-        for mode in ("global", "per_horizon", "per_city", "city_horizon", "per_season")
-    ]
-
-
-def _conformal_smoke_configs() -> list:
-    """Minutes, not hours: proves the calibration pass, the grid fit and the three CSVs before
-    any full-fidelity run. Interval metrics from B=1 x T=10 are meaningless and must never reach
-    a table -- what is being checked here is the code path."""
-    return [
-        ExperimentConfig(
-            experiment_id="smoke_conformal_raw",
-            conformal_mode=CONFORMAL_MODE,
-            **{**CONFORMAL_BASE, **ABLATION_SMOKE},
-        )
+        ExperimentConfig(experiment_id="smoke_global_b2", n_bootstrap=2, **SMOKE),
+        ExperimentConfig(experiment_id="smoke_deterministic_b2", n_bootstrap=2,
+                         inference_mode="deterministic", **{**SMOKE, "mc_dropout_passes": 1}),
+        ExperimentConfig(experiment_id="smoke_seed_ensemble_b2", n_bootstrap=2,
+                         bootstrap_resample=False, **SMOKE),
+        ExperimentConfig(experiment_id="smoke_per_city_b1", n_bootstrap=1,
+                         training_scope="per_city", **SMOKE),
+        ExperimentConfig(experiment_id="smoke_lb48_h32l1", n_bootstrap=1, lookback_hours=48,
+                         hidden_sizes=[32, 16], lstm_layers=1, **SMOKE),
     ]
 
 
 EXPERIMENT_GROUPS = {
     "smoke": _smoke_configs,
-    "main": _main_configs,
-    "ablation": _ablation_configs,
-    "rize_curve": _rize_curve_configs,
-    "rize_curve_b1": _rize_curve_b1_configs,
-    "rize_curve_l1": _rize_curve_l1_configs,
-    "rize_curve_full_l1": _rize_curve_full_l1_configs,
-    "rize_curve_full_seeds": _rize_curve_full_seeds_configs,
-    "arch_sweep": _arch_sweep_configs,
-    "arch_sweep_x": _arch_sweep_x_configs,
-    "arch_frontier": _arch_frontier_configs,
-    "percity_endpoints": _percity_endpoints_configs,
-    "sens_scaler_l1": _sens_scaler_l1_configs,
-    "device_parity": _device_parity_configs,
-    "rize_curve_smoke": _rize_curve_smoke_configs,
-    "conformal_smoke": _conformal_smoke_configs,
-    "conformal": _conformal_configs,
-    "conformal_grid": _conformal_grid_configs,
-    "conformal_csh_smoke": _conformal_selected_smoke_configs,
-    "conformal_csh": _conformal_selected_configs,
+    "tune_s1_lookback": _new_runs("s1", "tune_s1_"),
+    "tune_s2_arch": _new_runs("s2", "tune_s2_"),
+    "tune_s3_dropout": _new_runs("s3_dropout", "tune_s3_"),
+    "tune_s3_lr": _new_runs("s3_lr", "tune_s3_"),
+    "tune_s4_block": _new_runs("s4", "tune_s4_"),
+    "tune_s5_ensemble": _new_runs("s5", "tune_s5_"),
+    "final_reference": _new_runs("final", "final_"),
 }
 
 
 def build_experiment_grid(groups: list | None = None) -> list:
-    """All groups in declaration order, or just the named ones. Raises on a duplicate id."""
+    """The named groups in declaration order, or every group that is ready when none is named.
+
+    Naming a group whose prerequisites are undecided raises StageNotReady; with no names, such
+    groups are skipped (so `--list` shows what can run now). Raises on a duplicate id.
+    """
     names = list(EXPERIMENT_GROUPS) if groups is None else list(groups)
     unknown = [n for n in names if n not in EXPERIMENT_GROUPS]
     if unknown:
         raise ValueError(f"unknown group(s) {unknown}; available: {list(EXPERIMENT_GROUPS)}")
 
-    configs = [c for name in names for c in EXPERIMENT_GROUPS[name]()]
+    configs = []
+    for name in names:
+        try:
+            configs += EXPERIMENT_GROUPS[name]()
+        except StageNotReady:
+            if groups is not None:
+                raise
     ids = [c.experiment_id for c in configs]
     duplicates = sorted({i for i in ids if ids.count(i) > 1})
     if duplicates:
@@ -883,6 +272,11 @@ def build_experiment_grid(groups: list | None = None) -> list:
 
 if __name__ == "__main__":
     for group, builder in EXPERIMENT_GROUPS.items():
-        print(f"[{group}]")
-        for config in builder():
-            print(f"  {config.experiment_id}")
+        try:
+            ids = [c.experiment_id for c in builder()]
+        except StageNotReady as exc:
+            print(f"[{group}] not ready: {exc}")
+            continue
+        print(f"[{group}] {len(ids)} runs")
+        for i in ids:
+            print(f"  {i}")

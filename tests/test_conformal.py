@@ -371,15 +371,19 @@ def test_the_mode_is_a_ledger_column_so_two_such_runs_are_distinguishable(isolat
     assert modes == {"cf_ledger_none": "none", "cf_ledger_grid": "global"}
 
 
-def test_the_default_run_pays_nothing_for_the_layer(isolated_outputs, monkeypatch):
-    """conformal_mode='none' must not predict the validation split at all -- the calibration pass
-    is roughly a 13% wall-clock surcharge and every existing ledger row was priced without it."""
+@pytest.mark.parametrize("mode", ["none", "global"])
+def test_the_validation_split_is_predicted_once_and_reused_for_calibration(isolated_outputs,
+                                                                           monkeypatch, mode):
+    """Every run scores validation (the tuning criterion), and a conformal run fits its grid on
+    those same predictions rather than paying for a second validation pass."""
     from merve_solar import experiment as exp
     calls = []
-    real = exp.pooled_summary
-    monkeypatch.setattr(exp, "pooled_summary", lambda *a, **k: calls.append(1) or real(*a, **k))
-    run_experiment(_tiny_config("cf_free"), base_df=make_synthetic_base_df(900))
-    assert calls == []
+    real = exp.evaluate_split
+    monkeypatch.setattr(exp, "evaluate_split",
+                        lambda parts, split, *a, **k: calls.append(split) or real(parts, split, *a, **k))
+    run_experiment(_tiny_config(f"cf_once_{mode}", conformal_mode=mode),
+                   base_df=make_synthetic_base_df(900))
+    assert calls == ["val", "test"]
 
 
 def test_the_per_city_arm_assembles_its_calibration_predictions_into_the_pooled_layout(isolated_outputs):

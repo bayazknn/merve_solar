@@ -13,7 +13,7 @@ class SolarLSTM(nn.Module):
         self.city_embedding = nn.Embedding(n_cities, config.city_embedding_dim)
 
         lstm_hidden = config.hidden_sizes[0]
-        num_lstm_layers = len(config.hidden_sizes)
+        num_lstm_layers = config.n_lstm_layers
         self.lstm = nn.LSTM(
             input_size=num_numeric_features + config.city_embedding_dim,
             hidden_size=lstm_hidden,

@@ -118,6 +118,12 @@ MODEL_FAMILIES = ("lstm", "climatology", "persistence")
 # the finding, which is why this is a recorded axis rather than a silent default change.
 LOSS_FUNCTIONS = ("mse", "mae", "huber")
 
+# How a trained network is turned into a predictive sample. "mc_dropout" keeps dropout active
+# for `mc_dropout_passes` stochastic passes per network (the method). "deterministic" is
+# ordinary inference, dropout off, one pass per network: the ablation arm that tells how much
+# of the interval MC-Dropout contributes. Both are scored on the same pipeline and metrics.
+INFERENCE_MODES = ("mc_dropout", "deterministic")
+
 # NOTE: the `clearsky_index` target transform was removed with the 14-Sep-2026 export. It
 # regressed kt = ALLSKY / CLRSKY and multiplied the prediction back by the target hour's
 # clear-sky value, which needs a clear-sky MAGNITUDE the export no longer supplies (see
@@ -194,6 +200,10 @@ class ExperimentConfig:
 
     # architecture
     hidden_sizes: list = field(default_factory=lambda: [64, 32])
+    # Number of stacked LSTM layers. None keeps the historical coupling len(hidden_sizes), so
+    # every earlier row ([64, 32] -> 2 layers) is unchanged; an explicit value decouples LSTM
+    # depth from the head, which the architecture sweep needs. Use `n_lstm_layers` to read it.
+    lstm_layers: int | None = None
     dropout_rate: float = 0.3
     city_embedding_dim: int = 4
 
@@ -210,6 +220,12 @@ class ExperimentConfig:
     n_bootstrap: int = 8
     mc_dropout_passes: int = 100
     bootstrap_block_length: int = 168
+    # False trains the n_bootstrap networks on the full training set, differing only in their
+    # seed (a plain seed ensemble). It isolates what moving-block resampling adds over
+    # ensembling alone. Irrelevant at n_bootstrap=1, which never resamples.
+    bootstrap_resample: bool = True
+    # See INFERENCE_MODES. "deterministic" requires mc_dropout_passes=1.
+    inference_mode: str = "mc_dropout"
 
     seed: int = 42
 
@@ -273,8 +289,21 @@ class ExperimentConfig:
         from merve_solar.conformal import CONFORMAL_MODES  # local: conformal.py imports this module
         if self.conformal_mode not in CONFORMAL_MODES:
             raise ValueError(f"conformal_mode must be one of {CONFORMAL_MODES}, got {self.conformal_mode!r}")
-        if not 0.0 < self.dropout_rate < 1.0:
+        if self.inference_mode not in INFERENCE_MODES:
+            raise ValueError(f"inference_mode must be one of {INFERENCE_MODES}, got {self.inference_mode!r}")
+        if self.inference_mode == "deterministic":
+            # One pass per network: more passes with dropout off would be identical copies that
+            # inflate n_samples without adding information.
+            if self.mc_dropout_passes != 1:
+                raise ValueError("inference_mode='deterministic' requires mc_dropout_passes=1")
+            if not 0.0 <= self.dropout_rate < 1.0:
+                raise ValueError("dropout_rate must be in [0, 1)")
+        elif not 0.0 < self.dropout_rate < 1.0:
             raise ValueError("dropout_rate must be in (0, 1): it is the only source of MC-Dropout randomness")
+        if self.mc_dropout_passes < 1 or self.n_bootstrap < 1:
+            raise ValueError("n_bootstrap and mc_dropout_passes must both be >= 1")
+        if self.lstm_layers is not None and self.lstm_layers < 1:
+            raise ValueError(f"lstm_layers must be >= 1 or None, got {self.lstm_layers}")
 
         self.excluded_cities = list(self.excluded_cities)
         unknown = [c for c in self.excluded_cities if c not in CITY_TO_ID]
@@ -303,6 +332,10 @@ class ExperimentConfig:
         """
         excluded = set(self.excluded_cities)
         return [c for c in CITIES if c not in excluded]
+
+    @property
+    def n_lstm_layers(self) -> int:
+        return len(self.hidden_sizes) if self.lstm_layers is None else self.lstm_layers
 
     @property
     def excluded_cities_key(self) -> str:

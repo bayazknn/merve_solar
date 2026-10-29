@@ -1,0 +1,15 @@
+device=mps
+training_scope=global model_family=lstm
+loss_function=mse
+inference_mode=deterministic bootstrap_resample=True pooled draws per element=2
+active_cities=['Ankara', 'Antalya', 'Konya', 'Rize', 'Van'] excluded=[]
+train_end=2024-09-03 03:00:00 val_end=2025-06-11 09:00:00
+test daylight elements: 560448 of 1099080
+train: 226825 windows
+val: 33515 windows
+test: 45795 windows
+replica 0: best_val_loss=0.0687 best_epoch=1 last_val_loss=0.0687 epochs=2  WARNING: hit max_epochs
+replica 1: best_val_loss=0.0734 best_epoch=1 last_val_loss=0.0734 epochs=2  WARNING: hit max_epochs
+clamped 538632 test night elements to zero
+train_time_sec=46.9
+total_training_time_sec=48.7

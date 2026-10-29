@@ -7,13 +7,41 @@ sys.path.insert(0, str(ROOT / "configs"))
 
 import pytest
 
-from experiment_grid import ABLATION_FULL, EXPERIMENT_GROUPS, build_experiment_grid
+import experiment_grid as grid
+from experiment_grid import (
+    DECISIONS,
+    EXPERIMENT_GROUPS,
+    INCUMBENT,
+    StageNotReady,
+    TUNE_SEEDS,
+    block_grid,
+    build_experiment_grid,
+    stage_arms,
+)
+
+ALL_DECIDED = {"s1": 48, "s2": (128, 1), "s3_dropout": 0.2, "s3_lr": 5e-4, "s4": 192,
+               "s5": (12, 75)}
 
 
-def test_every_experiment_id_is_unique_across_groups():
-    """The ledger appends, so a duplicate id would silently produce two rows for one name."""
-    ids = [c.experiment_id for c in build_experiment_grid()]
-    assert len(ids) == len(set(ids))
+@pytest.fixture
+def decided(monkeypatch):
+    """Every stage decided, on values that differ from the incumbent, so reuse is visible."""
+    def _set(**overrides):
+        for key, value in {**ALL_DECIDED, **overrides}.items():
+            monkeypatch.setitem(DECISIONS, key, value)
+    return _set
+
+
+def _diff(a, b):
+    a, b = a.__dict__, b.__dict__
+    return {k for k in a if a[k] != b[k]}
+
+
+def test_the_committed_decisions_start_undecided_or_are_complete_prefixes():
+    """A later stage decided while an earlier one is not would build on a guess."""
+    order = ["s1", "s2", "s3_dropout", "s3_lr", "s4", "s5"]
+    decided = [DECISIONS[k] is not None for k in order]
+    assert decided == sorted(decided, reverse=True)
 
 
 def test_unknown_group_is_rejected():
@@ -21,219 +49,102 @@ def test_unknown_group_is_rejected():
         build_experiment_grid(["not_a_group"])
 
 
-def test_default_grid_is_every_group_in_declaration_order():
-    assert build_experiment_grid() == [c for g in EXPERIMENT_GROUPS.values() for c in g()]
+def test_listing_everything_skips_stages_that_are_not_ready(monkeypatch):
+    for key in DECISIONS:
+        monkeypatch.setitem(DECISIONS, key, None)
+    ids = [c.experiment_id for c in build_experiment_grid()]
+    assert ids and all(i.startswith(("smoke_", "tune_s1_")) for i in ids)
+    with pytest.raises(StageNotReady):
+        build_experiment_grid(["tune_s2_arch"])
 
 
-def test_the_smoke_config_is_not_in_the_default_sweep_groups():
-    """It used to be, so every sweep appended another duplicate row for the same id."""
-    assert [c.experiment_id for c in EXPERIMENT_GROUPS["smoke"]()] == [
-        "abl_scope_smoke_global", "abl_scope_smoke_percity"
-    ]
-    others = [c.experiment_id for g in ("main", "ablation") for c in EXPERIMENT_GROUPS[g]()]
-    assert not any(i.endswith("_smoke_global") or i.endswith("_smoke_percity") for i in others)
+def test_every_id_is_unique_once_everything_is_decided(decided):
+    decided()
+    ids = [c.experiment_id for c in build_experiment_grid()]
+    assert len(ids) == len(set(ids))
 
 
-@pytest.mark.parametrize("seed", [42, 43, 44])
-def test_each_ablation_pair_differs_only_in_training_scope(seed):
-    """The guarantee the whole comparison rests on, enforced by construction via ABLATION_FULL."""
-    configs = {c.experiment_id: c for c in EXPERIMENT_GROUPS["ablation"]()}
-    a = configs[f"abl_scope_full_global_s{seed}"].__dict__
-    b = configs[f"abl_scope_full_percity_s{seed}"].__dict__
-    differing = {k for k in a if a[k] != b[k]}
-    assert differing == {"experiment_id", "training_scope"}
+def test_stage_one_moves_only_the_lookback():
+    arms = stage_arms("s1")
+    assert set(arms) == {"lb24", "lb48", "lb72"}
+    reference = arms["lb24"][0]
+    assert reference.hidden_sizes == INCUMBENT["hidden_sizes"] and reference.n_lstm_layers == 2
+    assert reference.n_bootstrap == 1 and reference.mc_dropout_passes == 100
+    for label, configs in arms.items():
+        assert [c.seed for c in configs] == list(TUNE_SEEDS)
+        assert _diff(reference, configs[0]) <= {"experiment_id", "lookback_hours"}
 
 
-def test_sensitivity_runs_change_exactly_one_axis_from_the_percity_arm():
-    configs = {c.experiment_id: c for c in EXPERIMENT_GROUPS["ablation"]()}
-    reference = configs["abl_scope_full_percity_s42"].__dict__
-    for experiment_id, axis in [
-        ("abl_sens_percity_small_s42", "hidden_sizes"),
-        ("abl_sens_percity_globalscaler_s42", "per_city_scaler"),
-    ]:
-        candidate = configs[experiment_id].__dict__
-        differing = {k for k in reference if reference[k] != candidate[k]}
-        assert differing == {"experiment_id", axis}, f"{experiment_id} moved {differing}"
+def test_stage_two_is_the_full_width_by_depth_grid_and_reuses_the_stage_one_winner(decided):
+    decided(s1=48)
+    arms = stage_arms("s2")
+    assert len(arms) == 9
+    assert arms["h64l2"] == stage_arms("s1")["lb48"]
+    new = build_experiment_grid(["tune_s2_arch"])
+    assert len(new) == 8 * len(TUNE_SEEDS)
+    for c in new:
+        assert c.lookback_hours == 48
+        assert c.hidden_sizes[1] == c.hidden_sizes[0] // 2
+        assert _diff(arms["h64l2"][0], c) <= {"experiment_id", "seed", "hidden_sizes", "lstm_layers"}
 
 
-def test_ablation_gives_both_arms_the_same_generous_epoch_budget():
-    """A per-province model gets a fifth of the optimizer steps per epoch, so the default
-    patience would be five times tighter on it than on the global arm."""
-    assert ABLATION_FULL["max_epochs"] == 200
-    assert ABLATION_FULL["early_stop_patience"] == 15
+def test_stage_three_moves_one_axis_from_the_stage_two_winner(decided):
+    decided(s2=(128, 1))
+    winner = stage_arms("s2")["h128l1"]
+    dropout, lr = stage_arms("s3_dropout"), stage_arms("s3_lr")
+    assert dropout["do0.3"] == winner and lr["lr1e-3"] == winner
+    for arms, axis in ((dropout, "dropout_rate"), (lr, "learning_rate")):
+        for configs in arms.values():
+            assert _diff(winner[0], configs[0]) <= {"experiment_id", axis}
+    assert len(build_experiment_grid(["tune_s3_dropout"])) == 4 * len(TUNE_SEEDS)
+    assert len(build_experiment_grid(["tune_s3_lr"])) == 2 * len(TUNE_SEEDS)
 
 
-# --- The L1 re-run of the curve, and its two controls -------------------------------------
-
-def _by_id(group):
-    return {c.experiment_id: c for c in build_experiment_grid([group])}
-
-
-def test_stage_two_under_l1_actually_carries_l1():
-    """The entire reason this group exists.
-
-    The _b1 curve took its loss from the ExperimentConfig default, so stage 2 ran under MSE --
-    stage 1's loser -- while the ids said nothing about it. If this assertion ever fails the
-    re-run silently repeats the mistake it was created to fix.
-    """
-    configs = _by_id("rize_curve_l1")
-    assert configs, "the group must not be empty"
-    assert all(c.loss_function == "mae" for c in configs.values())
+@pytest.mark.parametrize("lookback", [24, 48, 72])
+def test_every_block_holds_a_window_span_plus_the_weather_memory(lookback):
+    blocks = block_grid(lookback)
+    assert min(blocks) == lookback + 24 + 72
+    assert list(blocks) == sorted(blocks)
+    if lookback == 24:
+        assert INCUMBENT["bootstrap_block_length"] in blocks
 
 
-def test_the_l1_curve_gives_every_arm_three_seeds():
-    """H2 rested on two single-seed arms in the _b1 curve; it is the study's positive result."""
-    configs = _by_id("rize_curve_l1")
-    for arm in ("solo", "plus_ankara", "plus_antalya", "minus_antalya", "all5"):
-        seeds = sorted(c.seed for i, c in configs.items() if i.startswith(f"abl_rize_{arm}_s"))
-        assert seeds == [42, 43, 44], f"{arm} has seeds {seeds}"
+def test_stage_four_runs_the_full_ensemble_and_moves_only_the_block(decided):
+    decided()
+    arms = stage_arms("s4")
+    assert set(arms) == {f"blk{b}" for b in block_grid(48)}
+    first = next(iter(arms.values()))[0]
+    assert (first.n_bootstrap, first.mc_dropout_passes) == (8, 100)
+    assert (first.lookback_hours, first.hidden_sizes, first.lstm_layers) == (48, [128, 64], 1)
+    assert (first.dropout_rate, first.learning_rate) == (0.2, 5e-4)
+    for configs in arms.values():
+        assert _diff(first, configs[0]) <= {"experiment_id", "bootstrap_block_length"}
 
 
-def test_the_l1_curve_does_not_repeat_stage_one():
-    """The criterion is already selected; re-running it would only add duplicate-looking rows."""
-    assert not [i for i in _by_id("rize_curve_l1") if i.startswith("abl_loss_")]
+def test_stage_five_is_one_sixteen_network_run_per_seed(decided):
+    decided()
+    (configs,) = stage_arms("s5").values()
+    assert [c.n_bootstrap for c in configs] == [16] * len(TUNE_SEEDS)
+    assert all(c.bootstrap_block_length == 192 for c in configs)
 
 
-def test_the_scaler_control_differs_from_its_arm_on_exactly_one_axis():
-    """A control that moved a second field would measure the pair, not the confound."""
-    control = _by_id("sens_scaler_l1")["abl_rize_solo_s42_globalscaler_l1"]
-    arm = _by_id("rize_curve_l1")["abl_rize_solo_s42_l1"]
-    differing = {
-        k for k in vars(arm)
-        if k != "experiment_id" and vars(arm)[k] != vars(control)[k]
-    }
-    assert differing == {"per_city_scaler"}, differing
-    assert control.per_city_scaler is False and arm.per_city_scaler is True
+def test_the_final_reference_reuses_stage_four_only_when_the_ensemble_is_unchanged(decided):
+    decided(s5=(8, 100))
+    final = stage_arms("final")["final"]
+    assert final[:3] == stage_arms("s4")["blk192"]
+    assert [c.seed for c in final] == [42, 43, 44, 45, 46]
+    assert [c.experiment_id for c in build_experiment_grid(["final_reference"])][0].startswith("final_")
+    assert len(build_experiment_grid(["final_reference"])) == 2
+
+    decided(s5=(12, 75))
+    final = build_experiment_grid(["final_reference"])
+    assert len(final) == 5 and all((c.n_bootstrap, c.mc_dropout_passes) == (12, 75) for c in final)
 
 
-def test_the_device_parity_pair_is_identical_apart_from_its_ids():
-    """Two ids, one config: any metric difference between the runs is the backend and nothing
-    else. Seeds included -- a differing seed would make the comparison meaningless."""
-    cpu, mps = (_by_id("device_parity")[f"abl_parity_{t}_s42"] for t in ("cpu", "mps"))
-    differing = {k for k in vars(cpu) if vars(cpu)[k] != vars(mps)[k]}
-    assert differing == {"experiment_id"}, differing
-
-
-def test_the_new_groups_do_not_collide_with_the_runs_already_in_the_ledger():
-    """Reusing an id appends a second row under it, which _append_ledger_row cannot detect."""
-    existing = {c.experiment_id for c in build_experiment_grid(
-        ["smoke", "main", "ablation", "rize_curve", "rize_curve_b1", "rize_curve_smoke"])}
-    new = {c.experiment_id for c in build_experiment_grid(
-        ["rize_curve_l1", "sens_scaler_l1", "device_parity"])}
-    assert not (existing & new)
-
-
-def test_the_full_fidelity_curve_is_the_declared_method_under_the_selected_criterion():
-    """This is the group the paper's interval table comes from, so both halves matter.
-
-    B=8 x T=100 is what the methodology describes (|P| = 800); every arm run so far is B=1 and
-    its interval metrics are MC-Dropout only. And the criterion must be the one stage 1 chose --
-    repeating the _b1 curve's mistake at eight times the cost would be the expensive version of
-    the same bug.
-    """
-    configs = build_experiment_grid(["rize_curve_full_l1"])
-    assert len(configs) == 15
-    for c in configs:
-        assert c.n_bootstrap == 8 and c.mc_dropout_passes == 100, c.experiment_id
-        assert c.loss_function == "mae", c.experiment_id
-
-
-def test_the_full_curve_differs_from_the_b1_curve_only_in_fidelity():
-    """Same study, more compute -- not a different study that happens to share a name."""
-    full = {c.experiment_id: c for c in build_experiment_grid(["rize_curve_full_l1"])}
-    b1 = {c.experiment_id: c for c in build_experiment_grid(["rize_curve_l1"])}
-    for arm in ("solo", "plus_ankara", "plus_antalya", "minus_antalya", "all5"):
-        a, b = full[f"abl_rize_{arm}_s42_full"], b1[f"abl_rize_{arm}_s42_l1"]
-        differing = {k for k in vars(a) if vars(a)[k] != vars(b)[k]}
-        assert differing == {"experiment_id", "n_bootstrap", "max_epochs"}, (arm, differing)
-
-
-def test_the_extra_seeds_pool_with_the_existing_full_fidelity_arms():
-    """They are extra observations of the SAME arm, not a new arm.
-
-    If any field other than the seed differed, pooling the two groups into one n=6 sample
-    would be comparing across a hidden axis change instead of measuring seed variation.
-    """
-    base = {c.experiment_id: c for c in build_experiment_grid(["rize_curve_full_l1"])}
-    extra = {c.experiment_id: c for c in build_experiment_grid(["rize_curve_full_seeds"])}
-    for arm in ("solo", "plus_ankara", "plus_antalya", "minus_antalya", "all5"):
-        a, b = base[f"abl_rize_{arm}_s42_full"], extra[f"abl_rize_{arm}_s45_full"]
-        differing = {k for k in vars(a) if vars(a)[k] != vars(b)[k]}
-        assert differing == {"experiment_id", "seed"}, (arm, differing)
-
-
-def test_the_architecture_sweep_moves_exactly_one_axis_per_config():
-    """A config that moved two fields could not attribute the difference to either."""
-    incumbent = {c.experiment_id: c for c in build_experiment_grid(["rize_curve_l1"])}[
-        "abl_rize_all5_s42_l1"
-    ]
-    for config in build_experiment_grid(["arch_sweep"]):
-        if config.seed != 42:
-            continue
-        differing = {
-            k for k in vars(config)
-            if k not in ("experiment_id",) and vars(config)[k] != vars(incumbent)[k]
-        }
-        assert len(differing) == 1, (config.experiment_id, differing)
-        assert differing < {"hidden_sizes", "lookback_hours", "dropout_rate"}
-
-
-def test_the_sweep_shares_the_incumbents_criterion_scope_and_fidelity():
-    """The incumbent is not re-run; these are compared against arms that already exist, so
-    everything except the swept axis has to match them."""
-    for config in build_experiment_grid(["arch_sweep"]):
-        assert config.loss_function == "mae"
-        assert config.training_scope == "global" and not config.excluded_cities
-        assert config.n_bootstrap == 1 and config.mc_dropout_passes == 100
-        assert config.early_stop_patience == 15, "lowering patience would break the baseline"
-
-
-def test_the_sweep_baseline_reruns_the_incumbent_exactly():
-    """It exists only to record a best_val_loss the _l1 rows predate.
-
-    If it differed from the incumbent in any field but the id, the whole sweep would be
-    measured against something that is not its baseline.
-    """
-    incumbent = {c.experiment_id: c for c in build_experiment_grid(["rize_curve_l1"])}[
-        "abl_rize_all5_s42_l1"
-    ]
-    base = {c.experiment_id: c for c in build_experiment_grid(["arch_sweep_x"])}[
-        "abl_arch_base_s42"
-    ]
-    differing = {k for k in vars(base) if vars(base)[k] != vars(incumbent)[k]}
-    assert differing == {"experiment_id"}, differing
-
-
-def test_the_extension_sits_in_the_same_table_as_the_first_sweep():
-    """One comparison across every architecture config, so all but the swept axis must match."""
-    first = build_experiment_grid(["arch_sweep"])[0]
-    for config in build_experiment_grid(["arch_sweep_x", "arch_frontier"]):
-        for field in ("loss_function", "n_bootstrap", "mc_dropout_passes",
-                      "early_stop_patience", "training_scope"):
-            assert getattr(config, field) == getattr(first, field), (config.experiment_id, field)
-
-
-def test_the_learning_rate_arms_isolate_the_capacity_confound():
-    """best_epoch falls with capacity (12 -> 10 -> 3) while lr_reduce_patience is 7, so the
-    winner never refined. Extending the ladder without settling this would measure how far a
-    model gets before overfitting at 1e-3, not capacity."""
-    x = {c.experiment_id: c for c in build_experiment_grid(["arch_sweep_x"])}
-    base, lr_only = x["abl_arch_base_s42"], x["abl_arch_lr3e4_s42"]
-    assert {k for k in vars(base) if vars(base)[k] != vars(lr_only)[k]} == {
-        "experiment_id", "learning_rate"}
-    # The interaction cell is deliberately two axes from the incumbent -- that IS the question.
-    both = x["abl_arch_h128x64_lr3e4_s42"]
-    assert {k for k in vars(base) if vars(base)[k] != vars(both)[k]} == {
-        "experiment_id", "learning_rate", "hidden_sizes"}
-
-
-def test_each_percity_endpoint_trains_one_province_alone():
-    """The same contrast H1 uses for Rize, for the four provinces it was never tested on."""
-    configs = build_experiment_grid(["percity_endpoints"])
-    assert len(configs) == 12
-    for config in configs:
-        assert config.training_scope == "per_city"
-        assert len(config.active_cities) == 1
-        assert config.active_cities[0].lower() in config.experiment_id
-        assert config.active_cities[0] != "Rize", "Rize already has abl_rize_solo_*_full"
-        assert config.n_bootstrap == 8 and config.loss_function == "mae"
+def test_the_smoke_group_covers_every_new_code_path():
+    smoke = {c.experiment_id: c for c in EXPERIMENT_GROUPS["smoke"]()}
+    assert any(c.inference_mode == "deterministic" for c in smoke.values())
+    assert any(not c.bootstrap_resample and c.n_bootstrap > 1 for c in smoke.values())
+    assert any(c.training_scope == "per_city" for c in smoke.values())
+    assert any(c.lstm_layers == 1 for c in smoke.values())
+    assert all(c.max_epochs <= 2 for c in smoke.values())
