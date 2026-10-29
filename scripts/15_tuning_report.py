@@ -3,8 +3,16 @@
     uv run python scripts/15_tuning_report.py --stage s1
     uv run python scripts/15_tuning_report.py --stage s5
 
-Writes outputs/tuning/<stage>_summary.csv and prints it with a suggested decision. Test
-metrics are deliberately never read: every tuning choice is made on the validation split.
+Writes, into outputs/tuning/, and prints:
+- <stage>_summary.csv: one row per arm, with a suggested decision;
+- <stage>_patience.csv: whether a shorter early-stopping patience would change any network;
+- <stage>_by_province.csv: daylight metrics per province (and the aggregates), seed-paired
+  against the incumbent, so a gain that comes from one province is visible;
+- <stage>_matched_origins.csv: every arm re-scored from daily_scores.csv on the validation
+  origins that all of the stage's runs share. Arms with a longer lookback lose the first
+  validation days (no window crosses the split), so their summary rows are scored on a slightly
+  different target set; this table removes that difference.
+Test metrics are deliberately never read: every tuning choice is made on the validation split.
 
 Decision rule (s1-s4): the arm with the best mean criterion replaces the incumbent only if its
 mean seed-paired improvement exceeds the standard deviation of those paired differences, i.e.
@@ -39,14 +47,106 @@ def _incumbent(stage: str) -> str:
     return {"s1": "lb24", "s2": "h64l2", "s3_dropout": "do0.3", "s3_lr": "lr1e-3"}[stage]
 
 
-def arm_table(stage: str) -> pd.DataFrame:
+def complete_arms(stage: str, allow_missing: bool = False) -> dict:
+    """The stage's arms, all of whose runs have a ledger row.
+
+    An arm with a missing run stops the report, unless `allow_missing` (a provisional report
+    while some runs are still training), which drops that arm and says so."""
+    ledger_ids = set(pd.read_csv(LEDGER_PATH)["experiment_id"])
+    arms, dropped = {}, []
+    for label, configs in stage_arms(stage).items():
+        missing = [c.experiment_id for c in configs if c.experiment_id not in ledger_ids]
+        if not missing:
+            arms[label] = configs
+        elif allow_missing:
+            dropped.append(label)
+        else:
+            raise SystemExit(f"{len(missing)} runs of {stage} have no ledger row yet, e.g. {missing[:3]}"
+                             " (--allow-missing gives a provisional report without those arms)")
+    if dropped:
+        print(f"PROVISIONAL: arms {dropped} have runs without a ledger row and are left out\n")
+    return arms
+
+
+def paired(values: pd.DataFrame, incumbent: str, metric: str) -> pd.DataFrame:
+    """Mean, seed sd and seed-paired difference from the incumbent of one metric per arm.
+
+    `values` has columns arm, seed and `metric` (plus any grouping columns, which are kept).
+    A negative difference means a lower value than the incumbent's on the same seed.
+    """
+    keys = [c for c in values.columns if c not in ("arm", "seed", metric)]
+    base = (values[values["arm"] == incumbent].set_index(keys + ["seed"])[metric]
+            .rename("_base"))
+    merged = values.join(base, on=keys + ["seed"])
+    merged["_diff"] = merged[metric] - merged["_base"]
+    return (merged.groupby(keys + ["arm"], sort=False)
+            .agg(**{f"{metric}_mean": (metric, "mean"), f"{metric}_sd": (metric, "std"),
+                    f"{metric}_diff_mean": ("_diff", "mean"), f"{metric}_diff_sd": ("_diff", "std")})
+            .reset_index())
+
+
+PROVINCE_METRICS = ("RMSE", "MAE", "CRPS", "CP", "PINW")
+
+
+def province_table(stage: str, arms: dict) -> pd.DataFrame:
+    """Daylight validation metrics per province, from each run's val_results_summary.csv."""
+    frames = []
+    for label, configs in arms.items():
+        for c in configs:
+            summary = pd.read_csv(c.experiment_dir / "metrics" / "val_results_summary.csv")
+            summary = summary[summary["subset"] == "daylight"]
+            frames.append(summary[["group", *PROVINCE_METRICS]].assign(arm=label, seed=c.seed))
+    values = pd.concat(frames, ignore_index=True)
+    incumbent = _incumbent(stage)
+    tables = [paired(values[["group", "arm", "seed", m]], incumbent, m) for m in PROVINCE_METRICS]
+    table = tables[0]
+    for t in tables[1:]:
+        table = table.merge(t, on=["group", "arm"])
+    return table
+
+
+def scores_from_daily(daily: pd.DataFrame) -> dict:
+    """Daylight metrics of one run from its per-(city, origin) sums in daily_scores.csv.
+
+    Over all of a split's origins this reproduces the run's summary row exactly, because the
+    summary is computed from the same sums (evaluation.py)."""
+    n = daily["n_daylight"].sum()
+    return {"RMSE": float(np.sqrt(daily["sum_sq_error"].sum() / n)),
+            "MAE": daily["sum_abs_error"].sum() / n, "bias": daily["sum_error"].sum() / n,
+            "CRPS": daily["sum_crps"].sum() / n, "CP": daily["n_covered"].sum() / n,
+            "MPIW": daily["sum_width"].sum() / n, "n_daylight": int(n)}
+
+
+MATCHED_METRICS = ("RMSE", "MAE", "CRPS", "CP")
+
+
+def matched_origin_table(stage: str, arms: dict) -> pd.DataFrame:
+    """Every arm re-scored on the validation (city, origin_date) pairs all runs of the stage share."""
+    daily = {}
+    for label, configs in arms.items():
+        for c in configs:
+            frame = pd.read_csv(c.experiment_dir / "metrics" / "daily_scores.csv")
+            daily[(label, c.seed)] = frame[frame["split"] == "val"].set_index(["city", "origin_date"])
+    common = None
+    for frame in daily.values():
+        common = frame.index if common is None else common.intersection(frame.index)
+    rows = []
+    for (label, seed), frame in daily.items():
+        rows.append({"arm": label, "seed": seed, "n_origins_own": len(frame),
+                     **scores_from_daily(frame.loc[common])})
+    values = pd.DataFrame(rows)
+    incumbent = _incumbent(stage)
+    table = values.groupby("arm", sort=False)[["n_origins_own"]].min().reset_index()
+    table.insert(1, "n_origins_common", len(common))
+    for m in MATCHED_METRICS:
+        table = table.merge(paired(values[["arm", "seed", m]], incumbent, m), on="arm")
+    return table.sort_values("RMSE_mean").reset_index(drop=True)
+
+
+def arm_table(stage: str, arms: dict) -> pd.DataFrame:
     ledger = pd.read_csv(LEDGER_PATH).set_index("experiment_id")
     criterion = STAGE_CRITERION[stage]
     incumbent = _incumbent(stage)
-    arms = stage_arms(stage)
-    missing = [c.experiment_id for cs in arms.values() for c in cs if c.experiment_id not in ledger.index]
-    if missing:
-        raise SystemExit(f"{len(missing)} runs of {stage} have no ledger row yet, e.g. {missing[:3]}")
 
     by_seed = {label: ledger.loc[[c.experiment_id for c in cs]].set_index("seed")
                for label, cs in arms.items()}
@@ -84,7 +184,7 @@ def _longest_wait(val_loss: pd.Series) -> int:
     return longest
 
 
-def patience_table(stage: str) -> pd.DataFrame:
+def patience_table(arms: dict) -> pd.DataFrame:
     """Would a shorter early-stopping patience have changed any network's kept weights?
 
     Read from every network's full training_history.csv. A probe p counts the networks that
@@ -92,7 +192,7 @@ def patience_table(stage: str) -> pd.DataFrame:
     would have changed. Zero everywhere is evidence the current patience is wider than needed.
     """
     rows = []
-    for label, configs in stage_arms(stage).items():
+    for label, configs in arms.items():
         waits, best_epochs, epochs = [], [], []
         for c in configs:
             history = pd.read_csv(c.experiment_dir / "metrics" / "training_history.csv")
@@ -150,23 +250,39 @@ def suggest_ensemble(table: pd.DataFrame) -> str:
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--stage", required=True, choices=list(STAGE_CRITERION))
-    stage = parser.parse_args().stage
+    parser.add_argument("--allow-missing", action="store_true",
+                        help="provisional report: leave out arms that still have runs to train")
+    args = parser.parse_args()
+    stage = args.stage
+    arms = complete_arms(stage, args.allow_missing)
     TUNING_DIR.mkdir(parents=True, exist_ok=True)
     if stage == "s5":
         table, note = ensemble_table(), None
         note = suggest_ensemble(table)
     else:
-        table = arm_table(stage)
+        table = arm_table(stage, arms)
         note = suggest(table, stage)
     path = TUNING_DIR / f"{stage}_summary.csv"
     table.to_csv(path, index=False)
     with pd.option_context("display.width", 200, "display.max_columns", 30):
         print(table.round(4).to_string(index=False))
-        patience = patience_table(stage)
+        patience = patience_table(arms)
         patience.to_csv(TUNING_DIR / f"{stage}_patience.csv", index=False)
         print("\nearly-stopping check (networks whose kept epoch a shorter patience would change):")
         print(patience.round(2).to_string(index=False))
-    print(f"\nsuggestion: {note}\nwrote {path}")
+        if stage != "s5":
+            provinces = province_table(stage, arms)
+            provinces.to_csv(TUNING_DIR / f"{stage}_by_province.csv", index=False)
+            print("\nper province, daylight val RMSE: paired difference from the incumbent (mean):")
+            print(provinces.pivot(index="group", columns="arm", values="RMSE_diff_mean")
+                  .round(2).to_string())
+            matched = matched_origin_table(stage, arms)
+            matched.to_csv(TUNING_DIR / f"{stage}_matched_origins.csv", index=False)
+            print(f"\nre-scored on the {matched['n_origins_common'].iloc[0]} validation origins "
+                  "all runs share:")
+            print(matched[["arm", "n_origins_own", "RMSE_mean", "RMSE_diff_mean", "RMSE_diff_sd",
+                           "CRPS_diff_mean", "CRPS_diff_sd"]].round(3).to_string(index=False))
+    print(f"\nsuggestion: {note}\nwrote {path} and the tables beside it")
 
 
 if __name__ == "__main__":

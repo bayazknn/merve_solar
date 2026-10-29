@@ -2,8 +2,9 @@
 
 Working document for the hyperparameter tuning that precedes the ablation programme. It
 records what is tuned, over which grid, in which order and why, and how runs move between the
-remote Mac (where they train) and the analysis machine. Results of each stage go in
-`<stage>_summary.csv` next to this file; decisions go in `configs/experiment_grid.py::DECISIONS`.
+remote Mac (where they train) and the analysis machine. **Results and their interpretation are
+in `TUNING_FINDINGS.md`**, backed by the `<stage>_*.csv` tables next to this file. Decisions go in
+`configs/experiment_grid.py::DECISIONS`.
 
 ## Status (update at the end of every session)
 
@@ -13,63 +14,11 @@ the grid edge, so a 3-run extension (256 × 1) must run on the remote Mac before
 | Stage | Group | State | Decision |
 |---|---|---|---|
 | Smoke | `smoke` | Done on the analysis Mac (MPS, 3.6 min), all outputs present | n/a |
-| S1 lookback | `tune_s1_lookback` | Done on the remote Mac (9 runs, MPS), report in `s1_summary.csv`, `s1_patience.csv` | **24 h** (incumbent kept) |
-| S2 architecture | `tune_s2_arch` | 24 grid runs done (MPS). Extension `h256l1` (3 runs) pending on the remote Mac | pending; 128 × 1 leads |
+| S1 lookback | `tune_s1_lookback` | Done (9 runs, MPS); findings final | **24 h** (incumbent kept) |
+| S2 architecture | `tune_s2_arch` | 24 grid runs done (MPS); extension `h256l1` (3 runs) pending on the remote Mac; findings provisional | pending; 128 × 1 leads by 7.9 W/m² |
 | S3 to S5, final | | Locked until the previous decision is in `DECISIONS` | |
 
-**S2 interim result (validation, daylight, 3 seeds, B=1; paired Δ vs the incumbent 64 × 2):**
-
-| Width × depth | val RMSE | Paired Δ RMSE (mean ± sd) | val CRPS | val CP | Mean best epoch |
-|---|---|---|---|---|---|
-| **128 × 1** | **92.57** | **−7.89 ± 0.13** | **49.55** | 0.809 | 5.7 |
-| 64 × 1 | 95.10 | −5.37 ± 1.04 | 51.50 | 0.875 | 13.7 |
-| 128 × 2 | 96.05 | −4.42 ± 1.02 | 51.57 | 0.836 | 3.0 |
-| 128 × 3 | 96.58 | −3.88 ± 0.35 | 51.84 | 0.849 | 1.7 |
-| 64 × 2 (incumbent) | 100.47 | 0 | 55.14 | 0.879 | 5.3 |
-| 64 × 3 | 101.54 | +1.07 ± 0.59 | 55.97 | 0.871 | 3.7 |
-| 32 × 1 | 105.19 | +4.73 ± 0.40 | 58.36 | 0.893 | 29.3 |
-| 32 × 2 | 112.45 | +11.98 ± 1.24 | 63.21 | 0.887 | 10.7 |
-| 32 × 3 | 114.92 | +14.45 ± 1.72 | 64.52 | 0.877 | 8.3 |
-
-- 128 × 1 passes the decision rule by a wide margin (gain 7.9, paired sd 0.13). It wins in every
-  province (−6.5 Rize to −9.3 Antalya), and CRPS agrees (−5.6).
-- **It won at the corner of the grid** (widest, shallowest), so the grid did not bracket the
-  optimum. `S2_EXTENSION` adds 256 × 1 (3 seeds). The decision is taken after it: 256 × 1 replaces
-  128 × 1 only under the same rule. Depth is not extended, since 1 layer is best at every width.
-- **Depth is confounded with dropout.** `nn.LSTM` applies dropout between stacked layers only
-  when there are 2 or more, so a 1-layer model has dropout only in the head. "Deeper is worse"
-  here means "deeper with 0.3 inter-layer dropout is worse". The paper must say this, not that
-  depth hurts. For S3 it means the dropout sweep at 1 layer tunes head dropout only.
-- **CP falls as the model gets better** (0.879 → 0.809). In a 1-layer network the MC-Dropout spread
-  comes only from the head. A sharper, more accurate network with a thin stochastic layer
-  under-covers at B=1. This is the job of the bootstrap (S4/S5) and the conformal layer, and it
-  is selected on CRPS there. Carry it forward: it bears directly on the paper's MC-Dropout claim.
-- **Patience:** small networks peak late (32 × 1 up to epoch 33, 64 × 1 at 13.7 on average), and
-  patience 5 would have changed 8 of the 27 S2 networks. Every 128-wide network would be unchanged.
-  Lowering the patience is therefore justified only for the chosen architecture, and only if
-  S3's lower learning rate does not push its best epoch later.
-
-**S1 result (validation, daylight, 3 seeds, B=1):**
-
-| Lookback | val RMSE | Paired Δ vs 24 h (mean ± sd) | val CRPS | val CP | Best epochs | Train min/network |
-|---|---|---|---|---|---|---|
-| 24 h | 100.47 | 0 | 55.14 | 0.879 | 10, 4, 2 | 4.1 |
-| 48 h | 101.41 | +0.94 ± 0.63 | 55.44 | 0.875 | 7, 4, 4 | 7.0 |
-| 72 h | 101.59 | +1.12 ± 0.12 | 55.47 | 0.883 | 4, 4, 6 | 9.3 |
-
-- Longer history makes the model slightly worse, not better. Every seed is worse at 48 h and at 72 h,
-  and CRPS agrees with RMSE. The decision rule is not even triggered, because neither challenger
-  has a positive gain. This confirms the training-dynamics expectation that more history adds
-  little.
-- Longer lookbacks lose the first 1 to 2 validation days (no window may cross the split). Re-scored
-  from `daily_scores.csv` on the 1,390 origins all arms share, the paired gaps are +0.86 ± 0.63
-  (48 h) and +0.97 ± 0.13 (72 h), so the conclusion does not depend on the target set.
-- Per province the gaps are mixed and within seed noise, except Van at 72 h (+2.3 ± 1.1). No
-  province shows a clear gain from longer history.
-- Best epoch: one network (24 h, seed 42) peaked at epoch 10. "Best epoch 0 to 5" is therefore
-  typical, not universal.
-- Patience: at patience 5 or 7, 0 of 9 networks would keep a different epoch. At patience 3, 1 of 9
-  would. Seven more patience checks come from S2 and S3 before the patience decision before S4.
+Findings for every stage, with per-province tables and robustness checks: `TUNING_FINDINGS.md`.
 
 **Machines:**
 - **Remote Mac:** the Mac mini, user `merveer`, clone at `merve_solar/`. All tuning runs train
@@ -91,8 +40,9 @@ they copy any WARNING lines from the check.
 2. Run `uv run python scripts/15_tuning_report.py --stage s2`. Apply the rule between 256 × 1
    and 128 × 1. If 256 × 1 also wins clearly, it is again at the grid edge: consider 512 × 1, but
    weigh it against the cost per network and the risk of a model too large for 5 provinces.
-3. Write `DECISIONS["s2"]`, commit it with `s2_summary.csv` and `s2_patience.csv`, then confirm
-   `tune_s3_dropout` and `tune_s3_lr` list (12 + 6 runs).
+3. Write `DECISIONS["s2"]`. Finalize the S2 section of `TUNING_FINDINGS.md`: add the 256 × 1 row,
+   remove "provisional", fill the Decisions table. Commit both with the four `s2_*.csv` tables,
+   then confirm `tune_s3_dropout` and `tune_s3_lr` list (12 + 6 runs).
 4. Give the user the S3 commands. Update this Status section.
 
 **Open observations to carry forward:**
@@ -310,7 +260,10 @@ On the analysis machine, after `git pull`:
 uv run python scripts/15_tuning_report.py --stage s1
 ```
 
-The stage's choice is then written into `DECISIONS`, with the report committed beside it. That
+It writes `<stage>_summary.csv`, `_patience.csv`, `_by_province.csv` and `_matched_origins.csv`.
+Add `--allow-missing` for a provisional report while some arms are still training. The stage's
+choice is then written into `DECISIONS`, its section into `TUNING_FINDINGS.md`, and both are
+committed with the tables. That
 unlocks the next group. S3 has two groups, `tune_s3_dropout` and `tune_s3_lr`, which can run in
 one sweep.
 
