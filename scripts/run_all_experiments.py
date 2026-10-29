@@ -3,6 +3,8 @@
     uv run python scripts/run_all_experiments.py --list
     uv run python scripts/run_all_experiments.py --group smoke --ensemble-curves
     uv run python scripts/run_all_experiments.py --group tune_s1_lookback --skip-existing --continue-on-error
+    uv run python scripts/run_all_experiments.py --group tune_s2_arch --shard 0/2 --skip-existing  # terminal 1
+    uv run python scripts/run_all_experiments.py --group tune_s2_arch --shard 1/2 --skip-existing  # terminal 2
 
 After a sweep, scripts/check_outputs.py --group <same groups> verifies that every run left all
 its files and its ledger row before anything is committed.
@@ -32,6 +34,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ensemble-curves", action="store_true",
                         help="after each global MC-Dropout run, write metrics/ensemble_curves.csv "
                              "(scripts/14_ensemble_curves.py); needed by tune_s5_ensemble")
+    parser.add_argument("--shard", metavar="I/N",
+                        help="run only every N-th selected config starting at I (0-based), e.g. "
+                             "0/2 and 1/2 in two terminals: disjoint halves of the same sweep")
     parser.add_argument("--list", action="store_true", help="print the selected ids and exit")
     parser.add_argument("--skip-existing", action="store_true",
                         help="skip configs that already have metrics/results_summary.csv, so an "
@@ -53,6 +58,16 @@ def select_configs(args) -> list:
         if missing:
             raise SystemExit(f"--only ids not in the selected group(s): {missing}")
         configs = [c for c in configs if c.experiment_id in wanted]
+    if args.shard:
+        try:
+            index, count = (int(x) for x in args.shard.split("/"))
+        except ValueError:
+            raise SystemExit(f"--shard must look like 0/2, got {args.shard!r}")
+        if not 0 <= index < count:
+            raise SystemExit(f"--shard index must be in [0, {count}), got {index}")
+        # Sharded on the full selection, BEFORE --skip-existing, so each process keeps the same
+        # half on a resume and two processes never pick the same config.
+        configs = configs[index::count]
     return configs
 
 

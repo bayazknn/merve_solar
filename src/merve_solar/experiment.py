@@ -9,7 +9,9 @@ the conformal grid on validation if asked) the TEST split. Both splits are score
 evaluation.evaluate_split with identical code, so the validation metrics in the ledger, which
 are the tuning criterion, describe the same object as the test metrics reported in the paper.
 """
+import fcntl
 import time
+from contextlib import contextmanager
 
 import numpy as np
 import pandas as pd
@@ -128,22 +130,40 @@ def assert_trainable_model_family(config) -> None:
         )
 
 
+@contextmanager
+def _ledger_lock():
+    """Exclusive lock around the ledger's read-modify-write.
+
+    Sweeps may run as several processes at once (run_all_experiments.py --shard). Without the
+    lock, two runs finishing together could each read the file, add their row and write it
+    back, and one row would be lost. flock on a side file works on macOS and Linux and is
+    released if the process dies.
+    """
+    LEDGER_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(LEDGER_PATH.with_name(LEDGER_PATH.name + ".lock"), "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
 def _append_ledger_row(row: dict) -> None:
     if tuple(row) != LEDGER_COLUMNS:
         raise ValueError(f"ledger row keys do not match LEDGER_COLUMNS: {set(row) ^ set(LEDGER_COLUMNS)}")
-    assert_ledger_schema_ok()
-    LEDGER_PATH.parent.mkdir(parents=True, exist_ok=True)
-    df_row = pd.DataFrame([row], columns=list(LEDGER_COLUMNS))
-    if LEDGER_PATH.exists():
-        # A rerun under the same id has just overwritten that id's output directory, so its old
-        # row no longer describes anything on disk: replace it rather than leave a duplicate.
-        # Filtered as text so every other row stays byte-identical.
-        prefix = f"{row['experiment_id']},"
-        lines = LEDGER_PATH.read_text().splitlines(keepends=True)
-        kept = lines[:1] + [line for line in lines[1:] if not line.startswith(prefix)]
-        if len(kept) != len(lines):
-            LEDGER_PATH.write_text("".join(kept))
-    df_row.to_csv(LEDGER_PATH, mode="a", header=not LEDGER_PATH.exists(), index=False)
+    with _ledger_lock():
+        assert_ledger_schema_ok()
+        df_row = pd.DataFrame([row], columns=list(LEDGER_COLUMNS))
+        if LEDGER_PATH.exists():
+            # A rerun under the same id has just overwritten that id's output directory, so its
+            # old row no longer describes anything on disk: replace it rather than leave a
+            # duplicate. Filtered as text so every other row stays byte-identical.
+            prefix = f"{row['experiment_id']},"
+            lines = LEDGER_PATH.read_text().splitlines(keepends=True)
+            kept = lines[:1] + [line for line in lines[1:] if not line.startswith(prefix)]
+            if len(kept) != len(lines):
+                LEDGER_PATH.write_text("".join(kept))
+        df_row.to_csv(LEDGER_PATH, mode="a", header=not LEDGER_PATH.exists(), index=False)
 
 
 def _best_val_loss(history: list[dict]) -> float:

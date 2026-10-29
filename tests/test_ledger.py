@@ -151,3 +151,22 @@ def test_the_optimizer_knobs_carry_their_configured_values(ledger_path):
     assert row["batch_size"] == 64
     assert row["bootstrap_block_length"] == 24
     assert row["lr_reduce_patience"] == 3
+
+
+def _append_many(args):
+    path, worker, n = args
+    import merve_solar.experiment as exp
+    exp.LEDGER_PATH = path
+    for i in range(n):
+        exp._append_ledger_row(_ledger_row(ExperimentConfig(experiment_id=f"w{worker}_{i}"),
+                                           _fake_subsets(), {}, 1.0))
+
+
+def test_concurrent_processes_never_lose_a_ledger_row(tmp_path):
+    """Sharded sweeps write the ledger from several processes; every row must survive."""
+    import multiprocessing as mp
+    path = tmp_path / "experiments_ledger.csv"
+    with mp.get_context("spawn").Pool(4) as pool:
+        pool.map(_append_many, [(path, w, 25) for w in range(4)])
+    written = pd.read_csv(path)
+    assert len(written) == 100 and written["experiment_id"].is_unique

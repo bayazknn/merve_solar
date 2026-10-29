@@ -213,6 +213,7 @@ uv run python scripts/15_tuning_report.py --stage s1               # validation-
 |---|---|
 | `--group NAME` | Repeatable; restrict to these groups. Default: every group. |
 | `--only ID [ID ...]` | Run exactly these `experiment_id`s (intersected with `--group` if both are given). Errors if an id is not in the selection. |
+| `--shard I/N` | Run every N-th selected config starting at I (0-based). Start `0/2` and `1/2` in two terminals to run disjoint halves of one sweep in parallel; ledger writes are locked, so concurrent runs never lose a row. |
 | `--list` | Print the selected ids and exit without running anything. Use this before every long sweep. |
 | `--skip-existing` | Skip configs that already have every required output (`experiment.REQUIRED_RUN_OUTPUTS`), so an interrupted sweep resumes instead of restarting. Keyed on the output files, not `config.json`, so a run that crashed mid-way is retried while a completed one is skipped. |
 | `--ensemble-curves` | After the runs, write `metrics/ensemble_curves.csv` for every global MC-Dropout run that lacks it (see `scripts/14_ensemble_curves.py`). Needed by `tune_s5_ensemble`. |

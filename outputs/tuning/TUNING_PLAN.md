@@ -154,6 +154,16 @@ git add outputs/ && git commit -m "Tuning S1: lookback runs" && git push
 ```
 
 - For S5, add `--ensemble-curves` to both the run and the check commands.
+- **Parallel runs.** Add `--shard 0/2` in one terminal and `--shard 1/2` in another, with the same
+  group and flags. The shards are disjoint, and ledger writes are locked.
+  - The networks are small, so one process leaves MPS mostly idle. Two or three shards should
+    finish a stage in close to half or a third of the time. Check this on the first stage
+    before relying on it.
+  - Shards share the GPU, so `training_time_sec` is inflated and stops being a clean cost
+    measure. The metrics are unaffected.
+  - Run `check_outputs.py` once, after every shard has finished, and commit once.
+  - Never start the same group twice without `--shard`: two processes would train the same
+    configs and overwrite each other's output folders.
 - `--skip-existing` makes an interrupted sweep resume where it stopped.
 - `check_outputs.py` must pass before committing. A missing file cannot be recovered from the
   analysis machine, because checkpoints and `test_predictions.npz` are gitignored.
