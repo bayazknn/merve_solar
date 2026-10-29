@@ -6,3 +6,4 @@ outputs/**/checkpoints/*.pt
 outputs/uq_calibration/cache/
 outputs/**/metrics/*.npz
 outputs/experiments_ledger.csv.lock
+.DS_Store
