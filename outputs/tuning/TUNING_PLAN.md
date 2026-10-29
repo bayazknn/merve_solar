@@ -5,6 +5,69 @@ records what is tuned, over which grid, in which order and why, and how runs mov
 remote Mac (where they train) and the analysis machine. Results of each stage go in
 `<stage>_summary.csv` next to this file; decisions go in `configs/experiment_grid.py::DECISIONS`.
 
+## Status (update at the end of every session)
+
+**As of 2026-10-29: S1 is running on the remote Mac. No stage is decided yet.**
+
+| Stage | Group | State | Decision |
+|---|---|---|---|
+| Smoke | `smoke` | Done on the analysis Mac (MPS, 3.6 min), all outputs present | n/a |
+| S1 lookback | `tune_s1_lookback` | Running on the remote Mac (9 runs, single process) | pending |
+| S2 to S5, final | | Locked until the previous decision is in `DECISIONS` | |
+
+**Machines:**
+- **Remote Mac:** the Mac mini, user `merveer`, clone at `merve_solar/`. All tuning runs train
+  here, on MPS.
+  - Its clone pulled over SSH, which GitHub rejected ("Permission denied (publickey)").
+  - Fix in progress: install `gh`, run `gh auth login` over HTTPS, set the remote to
+    `https://github.com/bayazknn/merve_solar.git`. The narrower alternative is a deploy key
+    with write access on the repository.
+  - If a pull or push fails there, this is the first thing to check.
+- **Analysis Mac:** this machine. Pull, report, decide, commit `DECISIONS`.
+
+**Remote commit convention.** After `check_outputs.py` passes, commit only the result paths
+(`git add outputs/experiments outputs/experiments_ledger.csv`), never all of `outputs/`, so
+`.DS_Store` files stay out. Messages read like `Tuning S1 (lookback): 9 runs on Mac mini,
+check_outputs passed`. They start with "partial" and name the failed id if a run failed, and
+they copy any WARNING lines from the check.
+
+**Next session, in order:**
+1. `git pull`. Confirm the remote commit message says the check passed, then confirm here:
+   ```bash
+   uv run python scripts/check_outputs.py --group tune_s1_lookback
+   ```
+   Every run should show `device` mps.
+2. Run the report:
+   ```bash
+   uv run python scripts/15_tuning_report.py --stage s1
+   ```
+   It writes `s1_summary.csv` and `s1_patience.csv`. Apply the decision rule from Principles.
+   Also look at:
+   - `mean_best_epoch` and the patience table: does the best epoch stay within 0 to 5 at
+     longer lookbacks?
+   - whether validation CRPS agrees with RMSE.
+3. Write the chosen lookback into `DECISIONS["s1"]` and commit it together with the report
+   CSVs, with a one-line rationale in the message. Then confirm S2 is unlocked:
+   ```bash
+   uv run python scripts/run_all_experiments.py --group tune_s2_arch --list
+   ```
+   It should list 24 runs.
+4. Give the user the S2 commands for the remote Mac. S2 is 24 runs, about 2 to 3 h, and is
+   the first stage worth sharding (`--shard 0/2`, `--shard 1/2` in two terminals). Use `;`
+   rather than `&&` before the check.
+5. Update this Status section.
+
+**Open observations to carry forward:**
+- In the 2-epoch smoke run, the average of the MC-Dropout passes was about 6 W/m² worse in
+  RMSE than the same networks with dropout off (106.1 vs 99.8 on test). The bias was also
+  more negative: −15.8 vs −14.4 W/m².
+  - The smoke models were barely trained, so this proves nothing yet.
+  - The S5 curves measure exactly this contrast on identical, fully trained weights. If it
+    holds, it matters for the paper's MC-Dropout claim.
+- Patience stays at 10 through S3. The decision to lower it before S4 comes from the
+  `<stage>_patience.csv` files (see Early stopping).
+- The benchmark methodology is still undeclared (CLAUDE.md). Nothing in tuning depends on it.
+
 ## Principles
 
 1. **Tune, freeze, then ablate.** Ablations are run on the frozen configuration. An ablation
