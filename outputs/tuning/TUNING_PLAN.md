@@ -102,6 +102,34 @@ k = 5.
 - Because the grid is defined relative to the chosen lookback, S4 runs after S1 and never on
   a lookback the model does not use.
 
+## Early stopping
+
+Early stopping is on in every run (`early_stop_patience=10`, `max_epochs=100`): training stops
+after 10 epochs without a new best validation loss, and the best epoch's weights are kept.
+
+The evidence says 10 is already wide enough:
+- In the 40-epoch diagnostic run without early stopping, the best epoch was 5. It was never
+  beaten in the following 34 epochs, through three learning-rate halvings. The longest wait
+  before any new best was 3 epochs.
+- The reference run's networks stopped after 11 to 16 epochs, with best epochs 0 to 5.
+- No network has reached the 100-epoch cap.
+
+The cost is that about 10 of every 11 to 16 epochs only confirm a stop that has already
+happened. A patience of 5 would cut roughly a third of the training time.
+
+**The patience is not shortened during S1 to S3**, for two reasons:
+- The arms most likely to peak later are exactly the ones being tested: a lower learning rate,
+  a wider network, a longer lookback. A tight patience could truncate them and bias the
+  comparison against them.
+- Patience is a training setting, so changing it mid-stage would mix two settings in one
+  comparison.
+
+Instead, every stage report measures it. `15_tuning_report.py` reads each network's full
+validation-loss history and writes `<stage>_patience.csv`: for patience 3, 5 and 7, how many
+networks would have kept a different epoch. If S1 to S3 (about 50 networks) show zero at
+patience 5 or 7, the patience is lowered before S4. S4 and S5 are the expensive stages (about
+10 h of the total), and the frozen configuration and every ablation would use the lower value.
+
 ## Interactions and how the order handles them
 
 | Interaction | Handling |

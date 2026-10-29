@@ -67,6 +67,47 @@ def arm_table(stage: str) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values(f"{criterion}_mean").reset_index(drop=True)
 
 
+PATIENCE_PROBES = (3, 5, 7)
+
+
+def _longest_wait(val_loss: pd.Series) -> int:
+    """Most consecutive non-improving epochs that were followed by a new best (0 if none).
+
+    Early stopping with patience p would have missed that later best iff this is >= p, which is
+    exactly how train_model counts (improvement = below the running minimum by 1e-6)."""
+    best, wait, longest = float("inf"), 0, 0
+    for loss in val_loss:
+        if loss < best - 1e-6:
+            longest, best, wait = max(longest, wait), loss, 0
+        else:
+            wait += 1
+    return longest
+
+
+def patience_table(stage: str) -> pd.DataFrame:
+    """Would a shorter early-stopping patience have changed any network's kept weights?
+
+    Read from every network's full training_history.csv. A probe p counts the networks that
+    found a new best only after p or more epochs without one, i.e. whose kept epoch patience p
+    would have changed. Zero everywhere is evidence the current patience is wider than needed.
+    """
+    rows = []
+    for label, configs in stage_arms(stage).items():
+        waits, best_epochs, epochs = [], [], []
+        for c in configs:
+            history = pd.read_csv(c.experiment_dir / "metrics" / "training_history.csv")
+            for _, net in history.groupby(["city", "replica"]):
+                waits.append(_longest_wait(net.sort_values("epoch")["val_loss"]))
+                best_epochs.append(int(net.loc[net["val_loss"].idxmin(), "epoch"]))
+                epochs.append(len(net))
+        row = {"arm": label, "networks": len(waits), "longest_wait_max": max(waits),
+               "best_epoch_max": max(best_epochs), "epochs_mean": float(np.mean(epochs))}
+        for probe in PATIENCE_PROBES:
+            row[f"changed_by_patience_{probe}"] = int(sum(w >= probe for w in waits))
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def suggest(table: pd.DataFrame, stage: str) -> str:
     best = table.iloc[0]
     if best["incumbent"]:
@@ -121,6 +162,10 @@ def main():
     table.to_csv(path, index=False)
     with pd.option_context("display.width", 200, "display.max_columns", 30):
         print(table.round(4).to_string(index=False))
+        patience = patience_table(stage)
+        patience.to_csv(TUNING_DIR / f"{stage}_patience.csv", index=False)
+        print("\nearly-stopping check (networks whose kept epoch a shorter patience would change):")
+        print(patience.round(2).to_string(index=False))
     print(f"\nsuggestion: {note}\nwrote {path}")
 
 
