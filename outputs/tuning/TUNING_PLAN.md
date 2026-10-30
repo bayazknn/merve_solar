@@ -57,13 +57,24 @@ they copy any WARNING lines from the check.
    - **Not by test, not by in-sample validation.** `08_conformal_mode_selection.py` scores on
      the test split and must not be used to choose. Post-correction validation CP is fitted by
      construction.
-   - **Proposed check (validation only):** reload the first 6 networks of each S5 run (seeds 42
-     to 44, on the Mac mini), predict validation at T=100, then fit each candidate on some
-     months and score it on the others: alternating months for the geometry, and
-     leave-one-season-out (fit on two seasons, score on the third) for the summer-transfer risk.
-     Score aggregate |CP − 0.95|, worst province and worst horizon step. Also refit k month by
-     month to measure how seasonal it is. About 15 to 35 min of inference; the fitting takes
-     seconds. Needs a new script.
+   - **The check (validation only): `scripts/16_conformal_check.py`.** It reloads the first 6
+     networks of each S5 run (seeds 42 to 44), predicts validation at T=100 and never touches
+     test. Each mode (global, per_city, per_horizon, city_horizon) is fitted on some months and
+     scored on the others: alternating months for the geometry, and leave-one-season-out for
+     the seasonal-transfer risk. It reports aggregate |CP − 0.95|, worst province, worst horizon
+     step, the CP spread across steps, MPIW, PINW and the rescaled CRPS. It also refits k month
+     by month (overall and per province) to show how seasonal it is. The `in_sample` rows are
+     there only to show how optimistic a fitted coverage is.
+   - **On the Mac mini** (estimated 10 to 20 min in all, about 1 GB of memory per run; the
+     smoke run took 4 s):
+     ```bash
+     git pull && uv sync --dev
+     uv run python scripts/16_conformal_check.py
+     git add outputs/experiments outputs/tuning/conformal_check_*.csv && git commit -m "Conformal check on the S5 runs (B=6, T=100), validation only" && git push
+     ```
+   - **Then here:** pull, read `outputs/tuning/conformal_check_scores.csv` (and the groups,
+     folds and month_k tables), decide the mode with the user, and write a conformal section in
+     `TUNING_FINDINGS.md`.
 2. Set `conformal_mode` on the final configs in `configs/experiment_grid.py` (the ids stay
    `final_s42` to `final_s46`; the mode is a ledger column), check `final_reference --list`,
    run the grid tests, commit and push.
