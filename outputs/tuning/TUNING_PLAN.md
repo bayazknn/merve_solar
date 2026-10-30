@@ -8,10 +8,11 @@ in `TUNING_FINDINGS.md`**, backed by the `<stage>_*.csv` tables next to this fil
 
 ## Status (update at the end of every session)
 
-**As of 2026-10-30 (after the S5 pull): tuning is complete. The frozen configuration is lookback
-24 h, 256 × 1, dropout 0.2, learning rate 5e-4, patience 5, block 168 h, B = 6, T = 100
-and conformal mode `city_horizon` (`TUNING_FINDINGS.md`, Frozen configuration and Conformal mode).
-`final_reference` (5 new runs, seeds 42 to 46) is ready to run on the remote Mac.**
+**As of 2026-10-30 (after the final-reference pull): tuning is complete and the reference row
+exists.** The frozen configuration is lookback 24 h, 256 × 1, dropout 0.2, learning rate 5e-4,
+patience 5, block 168 h, B = 6, T = 100 and conformal mode `city_horizon`. `final_reference`
+(seeds 42 to 46) gives test daylight CP 0.953 ± 0.001, CRPS 43.47 ± 0.10 and RMSE
+85.92 ± 0.09 W/m² (`TUNING_FINDINGS.md`, Final reference). The ablation programme is next.
 
 | Stage | Group | State | Decision |
 |---|---|---|---|
@@ -24,7 +25,7 @@ and conformal mode `city_horizon` (`TUNING_FINDINGS.md`, Frozen configuration an
 | S4 block length | `tune_s4_block` | Done (12 runs at B=8, MPS, 2 shards); findings final | **168 h** (incumbent kept; all blocks within 0.15 W/m² CRPS) |
 | S5 ensemble size, MC passes | `tune_s5_ensemble` | Done (3 runs at B=16, curves, MPS, 3 shards); findings final | **B = 6, T = 100** (B by the rule; T raised from the rule's 50 for stable interval endpoints) |
 | Conformal mode | (`16_conformal_check.py` on the S5 runs) | Check done (3 seeds, validation only, MPS); findings final | **city_horizon** (`FINAL_CONFORMAL_MODE`); smoke run of the path passed |
-| Final | `final_reference` | Ready: 5 runs at B=6, T=100, city_horizon, seeds 42 to 46 | pending (runs on the remote Mac) |
+| Final | `final_reference` | Done (5 runs at B=6, T=100, city_horizon, seeds 42 to 46, MPS, 3 shards); report `scripts/17_final_reference_report.py` | reference row: test daylight CP 0.953, CRPS 43.47 |
 
 Findings for every stage, with per-province tables and robustness checks: `TUNING_FINDINGS.md`.
 
@@ -42,31 +43,23 @@ Findings for every stage, with per-province tables and robustness checks: `TUNIN
 check_outputs passed`. They start with "partial" and name the failed id if a run failed, and
 they copy any WARNING lines from the check.
 
-**Next session, in order** (after the final reference finishes on the remote Mac):
-1. `git pull`, then check the group. Every run should be mps, and only the gitignored npz files
-   should be reported missing:
-   ```bash
-   uv run python scripts/check_outputs.py --group final_reference
-   ```
-2. Report the five-seed mean ± sd of the validation and test rows (daylight). This is the first
-   time a test metric of the frozen configuration is read; nothing is selected on it. Report
-   test CP and CRPS after the conformal correction, beside the uncorrected values in each run's
-   `conformal_effect.csv`.
-3. Start the ablation programme on the frozen configuration (After tuning). Every ablation arm
-   inherits `conformal_mode="city_horizon"` unless the arm is the conformal ablation itself.
+**Next session, in order:**
+1. Design the ablation programme on the frozen configuration (After tuning) as named groups in
+   `configs/experiment_grid.py`, 3 seeds per arm at B=6, T=100. Every arm inherits
+   `conformal_mode="city_horizon"` unless it is the conformal ablation itself. Interval metrics
+   are compared only between arms that keep B=6.
+2. Smoke-check any new code path (a new `inference_mode`, scope or feature set) before the sweep.
+3. The paired tests run on the remote Mac, where `test_predictions.npz` exists.
 
-**Final-reference commands for the remote Mac** (5 runs × 6 networks; about 2.5 to 3 h
-single-process, about 1.5 h with three shards):
+**Final reference, as run** (for reproduction; 5 runs × 6 networks, 31 to 43 min per run with
+three shards sharing the GPU):
 ```bash
-git pull && uv sync --dev
-uv run python scripts/run_all_experiments.py --group final_reference --list
 uv run python scripts/run_all_experiments.py --group final_reference --skip-existing --continue-on-error --shard 0/3
 uv run python scripts/run_all_experiments.py --group final_reference --skip-existing --continue-on-error --shard 1/3
 uv run python scripts/run_all_experiments.py --group final_reference --skip-existing --continue-on-error --shard 2/3
 uv run python scripts/check_outputs.py --group final_reference
-git add outputs/experiments outputs/experiments_ledger.csv && git commit -m "Final reference: 5 runs on Mac mini, check_outputs passed" && git push
+uv run python scripts/17_final_reference_report.py
 ```
-The three shard commands run in separate terminals; the check and commit run once all finish.
 
 **Open observations to carry forward:**
 - **Resolved by S5:** the smoke run's 6 W/m² RMSE gap between MC-averaged and dropout-off
@@ -76,6 +69,10 @@ The three shard commands run in separate terminals; the check and commit run onc
   ablation that narrows the network must restore 10: S2 shows 5 is not safe for 32- or 64-wide
   networks.
 - The benchmark methodology is still undeclared (CLAUDE.md). Nothing in tuning depends on it.
+- **From the final reference:** Konya under-covers (test CP 0.941) and Van over-covers (0.962)
+  after correction, a 0.012 worst-province gap against 0.006 predicted on validation. Raw
+  ensemble spread is flat across horizon steps; all of the interval's horizon growth comes from
+  the conformal factor. Both are paper statements, not re-tuning triggers.
 
 ## Principles
 
@@ -311,7 +308,7 @@ one sweep.
 ## After tuning
 
 1. `final_reference`: the frozen configuration at seeds 42 to 46. This is the paper's
-   reference row.
+   reference row. **Done 2026-10-30.**
 2. Ablation programme on the frozen configuration, 3 seeds per arm, paired tests from
    `daily_scores.csv`:
    - **Uncertainty layer:** plain LSTM / one network / seed ensemble (`bootstrap_resample=False`) /

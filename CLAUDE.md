@@ -203,15 +203,16 @@ the ledger as descriptive references only.
 
 ## Open work
 
-- **Tuning programme in progress** (`outputs/tuning/TUNING_PLAN.md`): sequential stages S1
-  lookback → S2 width × depth → S3 dropout, learning rate → S4 block length → S5 ensemble size
-  and MC passes, then a frozen five-seed reference. Each stage's choice is recorded in
-  `configs/experiment_grid.py::DECISIONS` after its report; runs happen on the remote Mac, the
-  analysis here after a pull. The ablation programme follows on the frozen configuration.
+- **Tuning complete** (`outputs/tuning/TUNING_PLAN.md`, `TUNING_FINDINGS.md`): stages S1 to S5
+  and the conformal mode are recorded in `configs/experiment_grid.py::DECISIONS` /
+  `FINAL_CONFORMAL_MODE`. **`final_s42`..`final_s46` (group `final_reference`) are the paper's
+  reference row** (summary: `scripts/17_final_reference_report.py` → `outputs/final_reference/`).
+  Runs happen on the remote Mac, the analysis here after a pull. The ablation programme
+  follows on the frozen configuration.
 
 - Declare the benchmark methodology (pending, from the user).
-- `config_005_default_full` is the reference run (corrected penalty, seed 42, MPS); scripts 09
-  and 12 and the numbers in `METHODOLOGY.md` come from it. `config_000_smoke` and
+- `config_005_default_full` was the pre-tuning reference run; scripts 09 and 12 and the numbers
+  in `METHODOLOGY.md` still come from it and must be regenerated on the final reference. `config_000_smoke` and
   `config_002_default_full` are pre-fix rows. Every network stops early (best epoch 0–5); this
   is genuine overfitting after a plateau, not a bug (`outputs/diagnostics/training_dynamics/`),
   so epoch selection is noisy at the ~4 W/m² level and arm comparisons need several seeds.

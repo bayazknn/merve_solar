@@ -12,7 +12,8 @@ decision rule) and the session status. This file holds the results.
 - Every number comes from a CSV in this directory, written by
   `scripts/15_tuning_report.py --stage <stage>`. The source file is named under each table.
 - All numbers are from the **validation** split, **daylight** subset (`solar_elevation > 0`),
-  in W/m². No test metric is read for any decision.
+  in W/m². No test metric is read for any decision. The one exception is the Final reference
+  section, written after every decision was frozen; its test numbers select nothing.
 - "Δ" is the seed-paired difference from the stage's incumbent: arm minus incumbent on the same
   seed, mean ± sd over the 3 seeds (42, 43, 44). A negative Δ means a lower value than the
   incumbent's (better for RMSE and CRPS).
@@ -721,6 +722,94 @@ conditional error (raw CP from 0.945 to 0.73 across steps). Those comments shoul
   Antalya).
 - The season tables show that aggregate coverage hides a spring/summer imbalance that no grid
   fitted on this validation split can remove. Seasonal coverage is outside the paper's scope.
+
+## Final reference (done 2026-10-30)
+
+The frozen configuration with its `city_horizon` conformal layer, trained afresh at five seeds
+(`final_s42` to `final_s46`, MPS, three shards; 31 to 43 min per run including scoring). **This is the first
+section that reads test metrics. It selects nothing:** every setting was frozen on validation
+before these runs existed. Every network stopped early (mean best epoch 1.7, none hit the
+epoch cap). Source: `outputs/final_reference/final_{seeds,by_city,by_horizon}.csv`, written by
+`scripts/17_final_reference_report.py`. Test daylight is 560,448 elements per run.
+
+**Headline (test, daylight, mean ± sd over 5 seeds):**
+
+| Metric | Test, corrected | Test, uncorrected | Validation, uncorrected |
+|---|---|---|---|
+| RMSE (W/m²) | 85.92 ± 0.09 | same | 88.33 ± 0.21 |
+| MAE (W/m²) | 58.16 ± 0.47 | same | 61.37 ± 0.47 |
+| R² | 0.906 ± 0.000 | same | 0.878 ± 0.001 |
+| CP (target 0.95) | **0.953 ± 0.001** | 0.819 ± 0.004 | 0.795 ± 0.006 |
+| MPIW (W/m²) | 339.5 ± 1.2 | 192.0 ± 0.7 | n/a |
+| PINW | 0.329 ± 0.001 | n/a | 0.173 ± 0.001 |
+| CRPS (W/m²) | 43.47 ± 0.10 | not written by the run | 46.07 ± 0.30 |
+
+RMSE, MAE and R² are unchanged by the correction by construction. The validation column is
+uncorrected because validation is the calibration set: its corrected coverage would be 0.95 by
+construction. Uncorrected test CRPS is not among the run outputs; the out-of-sample analogue
+is the cross-fitted validation estimate in the Conformal mode section (46.12 → 44.32).
+
+**Per province (test, daylight, corrected unless marked):**
+
+| Province | RMSE | R² | CP raw | k (mean) | CP | MPIW | CRPS |
+|---|---|---|---|---|---|---|---|
+| Ankara | 85.3 | 0.909 | 0.818 | 1.83 | 0.956 | 349.7 | 43.51 |
+| Antalya | 73.2 | 0.934 | 0.879 | 1.51 | 0.954 | 298.1 | 37.09 |
+| Konya | 83.3 | 0.916 | 0.818 | 1.66 | **0.941** | 325.9 | 43.24 |
+| Rize | 106.2 | 0.822 | 0.721 | 2.17 | 0.949 | 385.2 | 53.01 |
+| Van | 77.7 | 0.923 | 0.859 | 1.71 | **0.962** | 338.4 | 40.46 |
+
+Seed sd of province CP is 0.001 to 0.003 and of province CRPS 0.12 to 0.32.
+
+**Per horizon step (test, daylight, selected steps):**
+
+| Step | RMSE | CRPS | CP raw | k | MPIW raw | CP | MPIW |
+|---|---|---|---|---|---|---|---|
+| 1 | 42.3 | 22.95 | 0.955 | 1.01 | 188.6 | 0.957 | 189.8 |
+| 6 | 79.6 | 40.87 | 0.847 | 1.70 | 193.6 | 0.955 | 328.3 |
+| 12 | 90.3 | 46.12 | 0.808 | 1.83 | 195.9 | 0.951 | 355.9 |
+| 18 | 94.0 | 47.93 | 0.783 | 1.91 | 191.4 | 0.950 | 364.6 |
+| 24 | 97.8 | 50.04 | 0.768 | 2.15 | 186.4 | 0.954 | 397.0 |
+
+All 24 steps: corrected CP between 0.950 and 0.957.
+
+**What the final reference shows:**
+- **The conformal layer transfers to the test year.** Aggregate CP is 0.953, and every horizon
+  step is within 0.007 of nominal, against uncorrected coverage that falls from 0.955 at
+  step 1 to 0.77 at step 24. The cross-fitted validation check predicted this: a worst-step
+  gap of 0.004 there, 0.007 here.
+- **Province coverage is slightly less even than predicted.** Konya under-covers (0.941) and
+  Van over-covers (0.962). That is a worst-province gap of 0.012, against 0.006 in the
+  cross-fitted check. The gap is systematic, not seed noise (sd 0.003), and still small. The
+  likely cause is a calibration year whose cloud regime differs from the test year's in
+  those two provinces. It is a statement for the paper's limitations, not a reason to re-tune.
+- **The raw ensemble spread does not grow with lead time** (raw MPIW about 186 to 196 W/m² at
+  every step) while the error grows 2.3-fold (RMSE 42 → 98 W/m²). The bootstrap × MC-Dropout
+  spread is a measure of model (epistemic) uncertainty and is nearly horizon-blind. The
+  horizon growth of the intervals comes entirely from the conformal factor (k 1.01 → 2.15).
+  This is the strongest argument in the results for the conformal layer.
+- **Seed-to-seed variation is negligible at B=6.** Test RMSE sd 0.09 and CRPS sd 0.10 W/m²,
+  against the ~4 W/m² epoch-selection noise of a single network. Five seeds are more than
+  enough for the reference row. Ablation arms at 3 seeds can resolve differences of a few
+  tenths of a W/m² in CRPS, provided each arm keeps B=6.
+- **The validation estimate reproduces.** Uncorrected validation CRPS 46.07 ± 0.30 matches
+  the S5 cell at 6 × 100 (46.12 ± 0.24, seeds 42 to 44). The fresh runs behave like the
+  tuning runs that chose them.
+- **Test is somewhat easier than validation** (RMSE 85.9 vs 88.3, R² 0.906 vs 0.878). The test
+  year holds two summers (mostly clear) and validation holds none. The same imbalance is why
+  uncorrected test CP (0.82) is above uncorrected validation CP (0.80). Do not read the
+  difference as generalisation.
+- **Rize remains the hardest province on every metric** (R² 0.82, CRPS 53.0, k 2.17), as in
+  every tuning stage. It is the main candidate for the per-province and transfer ablations.
+
+**Reading the metrics.**
+- CP 0.953 means 95.3% of daylight test hours fell inside their 95% interval. That is the
+  target, so the intervals are honest on aggregate.
+- PINW 0.33 means the average interval spans a third of the observed irradiance range. It is
+  wide because the model's 24 h errors are large, and the conformal layer widens intervals
+  until they are honest; it does not make the forecast sharper.
+- CRPS 43.5 W/m² sits below MAE 58.2 W/m². The gap is what the predictive distribution adds
+  over the point forecast. For a forecast with no spread, CRPS equals MAE.
 
 ## Frozen configuration
 
