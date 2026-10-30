@@ -10,9 +10,9 @@ in `TUNING_FINDINGS.md`**, backed by the `<stage>_*.csv` tables next to this fil
 
 **As of 2026-10-30 (after the S5 pull): tuning is complete. The frozen configuration is lookback
 24 h, 256 × 1, dropout 0.2, learning rate 5e-4, patience 5, block 168 h, B = 6, T = 100
-(`TUNING_FINDINGS.md`, Frozen configuration). `final_reference` is unlocked (5 new runs), but one
-setting is open: the conformal mode, which is `"none"` in every tuning run and in the final
-configs as they stand. Decide it before running the final reference.**
+(`TUNING_FINDINGS.md`, Frozen configuration). The validation-only conformal check is done and
+recommends `city_horizon` (`TUNING_FINDINGS.md`, Conformal mode). Once the user confirms it, it is
+set on the final configs and `final_reference` (5 new runs) can run.**
 
 | Stage | Group | State | Decision |
 |---|---|---|---|
@@ -24,7 +24,7 @@ configs as they stand. Decide it before running the final reference.**
 | Patience | | Decided from S1 to S3 patience tables | **5** from S4 on (`FROZEN_PATIENCE`) |
 | S4 block length | `tune_s4_block` | Done (12 runs at B=8, MPS, 2 shards); findings final | **168 h** (incumbent kept; all blocks within 0.15 W/m² CRPS) |
 | S5 ensemble size, MC passes | `tune_s5_ensemble` | Done (3 runs at B=16, curves, MPS, 3 shards); findings final | **B = 6, T = 100** (B by the rule; T raised from the rule's 50 for stable interval endpoints) |
-| Conformal mode | | Open: needed for the headline row | pending (the user's call) |
+| Conformal mode | (`16_conformal_check.py` on the S5 runs) | Check done (3 seeds, validation only, MPS); findings provisional | **city_horizon** recommended; awaiting the user's confirmation |
 | Final | `final_reference` | Unlocked: 5 runs at B=6, T=100, seeds 42 to 46 | wait for the conformal decision |
 
 Findings for every stage, with per-province tables and robustness checks: `TUNING_FINDINGS.md`.
@@ -44,37 +44,14 @@ check_outputs passed`. They start with "partial" and name the failed id if a run
 they copy any WARNING lines from the check.
 
 **Next session, in order:**
-1. **Decide the conformal mode for the frozen configuration** (being decided with the user).
-   Raw daylight CP is 0.79 at the chosen cell, so the paper's headline row needs the conformal
-   layer. Agreed so far:
-   - **The city axis is required**: the cross-province claim needs coverage per province.
-   - **No season axis**: validation (2024-09-03 → 2025-06-11) has no July or August and only
-     11 days of June. A summer cell would be fitted on those 11 days and applied to two test
-     summers.
-   - **Candidates: `per_city` (5 factors) and `city_horizon` (120 factors).** The question is
-     whether coverage varies with the lead time enough to need a factor per step, at the price of
-     about 130 effective observations per cell.
-   - **Not by test, not by in-sample validation.** `08_conformal_mode_selection.py` scores on
-     the test split and must not be used to choose. Post-correction validation CP is fitted by
-     construction.
-   - **The check (validation only): `scripts/16_conformal_check.py`.** It reloads the first 6
-     networks of each S5 run (seeds 42 to 44), predicts validation at T=100 and never touches
-     test. Each mode (global, per_city, per_horizon, city_horizon) is fitted on some months and
-     scored on the others: alternating months for the geometry, and leave-one-season-out for
-     the seasonal-transfer risk. It reports aggregate |CP − 0.95|, worst province, worst horizon
-     step, the CP spread across steps, MPIW, PINW and the rescaled CRPS. It also refits k month
-     by month (overall and per province) to show how seasonal it is. The `in_sample` rows are
-     there only to show how optimistic a fitted coverage is.
-   - **On the Mac mini** (estimated 10 to 20 min in all, about 1 GB of memory per run; the
-     smoke run took 4 s):
-     ```bash
-     git pull && uv sync --dev
-     uv run python scripts/16_conformal_check.py
-     git add outputs/experiments outputs/tuning/conformal_check_*.csv && git commit -m "Conformal check on the S5 runs (B=6, T=100), validation only" && git push
-     ```
-   - **Then here:** pull, read `outputs/tuning/conformal_check_scores.csv` (and the groups,
-     folds and month_k tables), decide the mode with the user, and write a conformal section in
-     `TUNING_FINDINGS.md`.
+1. **Confirm the conformal mode** with the user. The check (validation only, cross-fitted, S5
+   networks at B=6, T=100) recommends `city_horizon`: it is best on worst-province coverage,
+   worst-step coverage, interval width and CRPS, on every seed (`TUNING_FINDINGS.md`, Conformal
+   mode). How it was decided:
+   - The city axis was required from the start (cross-province claim).
+   - No season axis: validation has 11 summer days.
+   - `08_conformal_mode_selection.py` scores on test and was not used.
+   - The check is `scripts/16_conformal_check.py`; its tables are `outputs/tuning/conformal_check_*.csv`.
 2. Set `conformal_mode` on the final configs in `configs/experiment_grid.py` (the ids stay
    `final_s42` to `final_s46`; the mode is a ledger column), check `final_reference --list`,
    run the grid tests, commit and push.
@@ -90,6 +67,11 @@ they copy any WARNING lines from the check.
    programme (After tuning).
 
 **Open observations to carry forward:**
+- **Seasonal calibration (future work, not tuning).** k is strongly seasonal (about 2.2 in
+  spring, about 1.0 in early June), and the validation split has no full summer, so no grid fitted
+  on it can calibrate per season. Expect test coverage near 0.99 in summer and below 0.95 in
+  spring; report test CP per season. The clean fix is out-of-bag (jackknife+-after-bootstrap)
+  calibration over the training period, a separate piece of work.
 - **Resolved by S5:** the smoke run's 6 W/m² RMSE gap between MC-averaged and dropout-off
   predictions does not hold on trained weights (+0.05 W/m²). MC-Dropout supplies most of the
   spread: dropout-off CP is 0.28 at B=6, against 0.79 with MC-Dropout.

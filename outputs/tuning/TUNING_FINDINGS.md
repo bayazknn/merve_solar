@@ -114,6 +114,7 @@ is wider. Compare CP and CRPS only within a stage, or across stages of the same 
 | S3 | learning rate | 1e-3 | **5e-4** | −0.99 ± 0.96 | final (marginal pass, accepted as written) |
 | — | early-stopping patience, S4 on | 10 | **5** | n/a (no network changes) | final |
 | S4 | bootstrap block length | 168 h | **168 h** | 0 (incumbent kept; criterion val CRPS) | final |
+| Conformal | recalibration grid | none | **city_horizon** (recommended, awaiting confirmation) | CRPS −1.81 W/m² vs uncorrected, cross-fitted | provisional |
 | S5 | ensemble size B × MC passes T | 8 × 100 | **6 × 100** | +0.24 ± 0.20 val CRPS vs the best cell (16 × 150); B cost-driven, T amended | final |
 
 ## S1: lookback (final, decided 2026-10-29)
@@ -590,6 +591,136 @@ Source: `s5_patience.csv`.
   95% interval, against one in twenty. That remaining gap is what the conformal layer has to
   close.
 
+## Conformal mode (validation-only check, 2026-10-30; provisional)
+
+**Recommendation: `city_horizon`**, one factor k per province × lead-time step (120 factors).
+On held-out validation months it is the best of the four candidates on every criterion: it
+corrects coverage per province **and** per step, gives the narrowest intervals of the corrected
+modes, and the best CRPS on every seed. Awaiting the user's confirmation before it is set on the
+final reference.
+
+**How it was measured.** `scripts/16_conformal_check.py` reloaded the first 6 networks of each S5
+run (seeds 42 to 44) and predicted the validation split at T=100, which is exactly the frozen
+ensemble. Test windows were never predicted. Each mode was fitted on some validation months and
+scored on the others, so every number below is out-of-sample:
+- **Alternating months**: fit on odd months, score on even, and the reverse. Both halves contain
+  every season, so this measures whether a grid's shape is right.
+- **Leave one season out**: fit on three seasons, score on the fourth. This imitates what the test
+  year demands (factors applied to a season they were not fitted on), so it measures the
+  seasonal-transfer error.
+
+All numbers are daylight, mean over the 3 seeds; seed sds are in the source files and are small
+(CP sd ≤ 0.003).
+
+**Alternating months** (the geometry check):
+
+| Mode | Factors | CP | Worst province, \|CP − 0.95\| | Worst step, \|CP − 0.95\| | CP spread across steps | MPIW (W/m²) | CRPS |
+|---|---|---|---|---|---|---|---|
+| none (uncorrected) | — | 0.794 | 0.256 (Rize) | 0.222 | 0.217 | 180 | 46.12 |
+| global | 1 | 0.948 | 0.043 (Rize) | 0.042 | 0.076 | 332 | 44.89 |
+| per_horizon | 24 | 0.948 | 0.041 (Rize) | 0.004 | 0.004 | 326 | 44.52 |
+| per_city | 5 | 0.948 | 0.007 | 0.041 | 0.076 | 323 | 44.64 |
+| **city_horizon** | 120 | **0.948** | **0.006** | **0.004** | **0.004** | **318** | **44.32** |
+
+**Leave one season out** (the seasonal-transfer check):
+
+| Mode | CP | Worst province | Worst step | CRPS |
+|---|---|---|---|---|
+| global | 0.944 | 0.048 | 0.041 | 45.02 |
+| per_horizon | 0.944 | 0.047 | 0.011 | 44.66 |
+| per_city | 0.941 | 0.016 | 0.044 | 44.80 |
+| **city_horizon** | **0.942** | **0.015** | **0.012** | **44.47** |
+
+Sources: `conformal_check_scores.csv`, `conformal_check_groups.csv`.
+
+**What the two axes fix.**
+- **The lead time is the largest miscalibration, and only the horizon axis sees it.** Raw
+  coverage falls steadily from 0.945 at step 1 to 0.73 at step 24: the model's spread does not
+  grow as fast as its error does along the day. A per-province factor is an average over steps,
+  so it over-covers the early steps and under-covers the late ones:
+
+| Step | Raw CP | per_city CP | per_city MPIW | city_horizon CP | city_horizon MPIW |
+|---|---|---|---|---|---|
+| 1 | 0.945 | 0.991 | 315 | 0.950 | 180 |
+| 6 | 0.830 | 0.957 | 327 | 0.947 | 307 |
+| 12 | 0.782 | 0.946 | 331 | 0.948 | 338 |
+| 18 | 0.751 | 0.939 | 322 | 0.949 | 341 |
+| 24 | 0.733 | 0.916 | 310 | 0.948 | 368 |
+
+  (alternating months; MPIW in W/m²). city_horizon gives the next hours a narrow interval and
+  the following day a wide one, which is what an honest forecast should do.
+- **The province axis fixes the cross-site differences.** Without it Rize, the cloudiest site,
+  stays at 0.907 and Antalya over-covers at 0.969 (global). With city_horizon every province is
+  between 0.944 and 0.951, with intervals of 279 W/m² (Antalya) to 369 W/m² (Rize).
+- **The two axes do not substitute for each other.** per_city fixes provinces and leaves the step
+  error at 0.041; per_horizon does the reverse. Only the crossed grid fixes both.
+- **The finer grid does not overfit.** With 120 factors, each fitted on about 1,460 to 1,750
+  daylight elements per fold, city_horizon's out-of-sample errors are as small as the 5- or
+  24-factor grids' on the axis those grids target. Its CRPS beats per_city on every seed (−0.31,
+  −0.36, −0.29 W/m²) and per_horizon on every seed (−0.23, −0.20, −0.20).
+
+**The correction nearly doubles the interval.** The fitted factor is about 1.86 overall (cells
+from 0.9 to 2.9; `conformal_check_folds.csv`), so the 95% interval grows from about 180 to about
+318 W/m² on average. This is the size of the aleatoric term the pooled sample lacks.
+
+**Conformal recalibration improves CRPS, not only coverage.** CRPS falls from 46.12 to 44.32
+(−1.81 W/m², −3.9%) with city_horizon, on every seed. So the uncorrected distribution was too
+narrow as a whole, not just in its tails. (In the 2-epoch smoke run the correction made CRPS
+worse; on trained networks it does not.)
+
+**Seasonal transfer is the remaining calibration error, and the grid cannot fix it.**
+
+| Season (validation) | Daylight elements | Raw CP | city_horizon CP, alternating months | city_horizon CP, season held out |
+|---|---|---|---|---|
+| DJF | 108,287 | 0.797 | 0.962 | 0.961 |
+| MAM | 145,204 | 0.734 | 0.923 | 0.901 |
+| JJA (1 to 11 June only) | 14,718 | 0.954 | 0.994 | 0.994 |
+| SON | 117,826 | 0.844 | 0.961 | 0.967 |
+
+The factor k refitted month by month (all provinces pooled, and per province):
+
+| | Jan | Feb | Mar | Apr | May | Jun (1–11) | Sep | Oct | Nov | Dec |
+|---|---|---|---|---|---|---|---|---|---|---|
+| All | 1.64 | 1.84 | 2.21 | 2.15 | 2.03 | 0.97 | 1.66 | 1.42 | 1.86 | 1.70 |
+| Ankara | 1.64 | 1.82 | 2.20 | 2.28 | 2.04 | 0.86 | 1.84 | 1.01 | 1.88 | 1.66 |
+| Antalya | 1.31 | 1.65 | 2.12 | 1.61 | 1.82 | 0.60 | 1.08 | 0.86 | 1.70 | 1.84 |
+| Konya | 1.72 | 1.84 | 2.33 | 1.52 | 1.72 | 0.73 | 1.31 | 1.07 | 1.74 | 1.91 |
+| Rize | 2.12 | 2.26 | 2.41 | 2.38 | 2.34 | 1.47 | 2.29 | 2.34 | 2.16 | 1.86 |
+| Van | 1.12 | 1.64 | 1.87 | 2.56 | 1.94 | 1.05 | 1.54 | 1.61 | 1.43 | 1.17 |
+
+Source: `conformal_check_month_k.csv`.
+
+- **k is strongly seasonal**: about 2.2 in spring, about 1.0 in early June. Spring's convective
+  cloudiness makes errors large relative to the model's spread; early summer is mostly clear and
+  the raw spread is already about right (raw CP 0.954).
+- So even after correction, spring is under-covered (0.92, or 0.90 when spring is held out) and
+  early June over-covered (0.99). Rize is the exception: k stays near 2.1 to 2.4 all year.
+- **Consequence for the test year.** The test year contains two full summers' worth of June to
+  August that the calibration set never saw, apart from 11 days. If summer behaves like early
+  June, summer intervals will be too wide (coverage near 0.99, wider than needed) and spring
+  ones slightly too narrow. The aggregate test CP may still land near 0.95 while the seasonal
+  conditional coverage does not. The paper should report test coverage per season and state
+  this as a limitation.
+- **Why the season axis is still not the fix.** A season factor needs every season in the
+  calibration set; validation has 11 summer days. The clean fix is a calibration set that spans a
+  full year inside the training period, for example out-of-bag (jackknife+-after-bootstrap)
+  calibration, which the bootstrap already makes possible. That is separate work, logged in
+  `TUNING_PLAN.md`.
+
+**This revises an earlier claim.** The `conformal.py` module comments, written on the retired
+dataset, say the horizon axis is null. On the current data and model it is the single largest
+conditional error (raw CP from 0.945 to 0.73 across steps). Those comments should not be cited.
+
+**Reading the metrics.**
+- Read the first table across: every corrected mode brings the aggregate CP to 0.948, so
+  aggregate coverage cannot choose between them. The choice is made by the conditional
+  columns (worst province, worst step) and by CRPS, which also rewards narrower honest intervals.
+- MPIW is the interval width in W/m². city_horizon is the narrowest corrected mode because it
+  spends width where the errors are (late steps, Rize) and saves it where they are not (step 1,
+  Antalya).
+- The season tables are the honest caveat: aggregate coverage hides a spring/summer imbalance
+  that no grid fitted on this validation split can remove.
+
 ## Frozen configuration
 
 | Setting | Value | Stage |
@@ -602,7 +733,7 @@ Source: `s5_patience.csv`.
 | Bootstrap block length | 168 h | S4 |
 | Ensemble size B | 6 | S5 |
 | MC-Dropout passes T | 100 | S5 (rule pick 50, amended) |
-| Conformal mode | not yet decided | see `TUNING_PLAN.md` |
+| Conformal mode | `city_horizon` (recommended, awaiting confirmation) | conformal check |
 
 ## Carried forward
 
