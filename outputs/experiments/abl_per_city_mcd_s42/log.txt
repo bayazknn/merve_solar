@@ -1,0 +1,56 @@
+device=mps
+training_scope=per_city model_family=lstm
+loss_function=mse
+inference_mode=mc_dropout bootstrap_resample=True pooled draws per element=600
+active_cities=['Ankara', 'Antalya', 'Konya', 'Rize', 'Van'] excluded=[]
+train_end=2024-09-03 03:00:00 val_end=2025-06-11 09:00:00
+test daylight elements: 560448 of 1099080
+Ankara/train: 45365 windows
+Ankara/val: 6703 windows
+Ankara/test: 9159 windows
+Ankara replica 0: best_val_loss=0.0557 best_epoch=1 last_val_loss=0.0623 epochs=7
+Ankara replica 1: best_val_loss=0.0543 best_epoch=4 last_val_loss=0.0732 epochs=10
+Ankara replica 2: best_val_loss=0.0577 best_epoch=1 last_val_loss=0.0615 epochs=7
+Ankara replica 3: best_val_loss=0.0577 best_epoch=2 last_val_loss=0.0741 epochs=8
+Ankara replica 4: best_val_loss=0.0567 best_epoch=3 last_val_loss=0.0692 epochs=9
+Ankara replica 5: best_val_loss=0.0566 best_epoch=2 last_val_loss=0.0836 epochs=8
+Antalya/train: 45365 windows
+Antalya/val: 6703 windows
+Antalya/test: 9159 windows
+Antalya replica 0: best_val_loss=0.0416 best_epoch=6 last_val_loss=0.0450 epochs=12
+Antalya replica 1: best_val_loss=0.0390 best_epoch=8 last_val_loss=0.0501 epochs=14
+Antalya replica 2: best_val_loss=0.0394 best_epoch=3 last_val_loss=0.0416 epochs=9
+Antalya replica 3: best_val_loss=0.0391 best_epoch=12 last_val_loss=0.0424 epochs=18
+Antalya replica 4: best_val_loss=0.0409 best_epoch=4 last_val_loss=0.0449 epochs=10
+Antalya replica 5: best_val_loss=0.0402 best_epoch=6 last_val_loss=0.0448 epochs=12
+Konya/train: 45365 windows
+Konya/val: 6703 windows
+Konya/test: 9159 windows
+Konya replica 0: best_val_loss=0.0464 best_epoch=4 last_val_loss=0.0523 epochs=10
+Konya replica 1: best_val_loss=0.0459 best_epoch=6 last_val_loss=0.0552 epochs=12
+Konya replica 2: best_val_loss=0.0476 best_epoch=2 last_val_loss=0.0533 epochs=8
+Konya replica 3: best_val_loss=0.0466 best_epoch=3 last_val_loss=0.0525 epochs=9
+Konya replica 4: best_val_loss=0.0461 best_epoch=4 last_val_loss=0.0529 epochs=10
+Konya replica 5: best_val_loss=0.0473 best_epoch=7 last_val_loss=0.0554 epochs=13
+Rize/train: 45365 windows
+Rize/val: 6703 windows
+Rize/test: 9159 windows
+Rize replica 0: best_val_loss=0.0955 best_epoch=2 last_val_loss=0.1120 epochs=8
+Rize replica 1: best_val_loss=0.0934 best_epoch=2 last_val_loss=0.1149 epochs=8
+Rize replica 2: best_val_loss=0.0971 best_epoch=1 last_val_loss=0.1149 epochs=7
+Rize replica 3: best_val_loss=0.0969 best_epoch=2 last_val_loss=0.1160 epochs=8
+Rize replica 4: best_val_loss=0.0967 best_epoch=1 last_val_loss=0.1081 epochs=7
+Rize replica 5: best_val_loss=0.0940 best_epoch=1 last_val_loss=0.0986 epochs=7
+Van/train: 45365 windows
+Van/val: 6703 windows
+Van/test: 9159 windows
+Van replica 0: best_val_loss=0.0488 best_epoch=2 last_val_loss=0.0535 epochs=8
+Van replica 1: best_val_loss=0.0473 best_epoch=5 last_val_loss=0.0507 epochs=11
+Van replica 2: best_val_loss=0.0472 best_epoch=3 last_val_loss=0.0557 epochs=9
+Van replica 3: best_val_loss=0.0481 best_epoch=3 last_val_loss=0.0537 epochs=9
+Van replica 4: best_val_loss=0.0478 best_epoch=7 last_val_loss=0.0521 epochs=13
+Van replica 5: best_val_loss=0.0475 best_epoch=7 last_val_loss=0.0517 epochs=13
+conformal_mode=city_horizon alpha=0.050000000000000044 pooled_k=1.8639 (n=386035) daylight k in [1.0459, 2.7821] mean 1.7828; 0 calibration elements dropped for a degenerate half-width; calibration pass: the validation predictions scored above
+clamped 538632 test night elements to zero
+train_time_sec=1304.2
+total_training_time_sec=2703.5
