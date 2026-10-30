@@ -5,8 +5,10 @@ decision rule) and the session status. This file holds the results.
 
 **How to read this file:**
 - A stage section is written once, when its decision is recorded in
-  `configs/experiment_grid.py::DECISIONS`. After that it is not edited. A section marked
-  **provisional** is still waiting for runs.
+  `configs/experiment_grid.py::DECISIONS`. After that its numbers and decision are not edited. A
+  section marked **provisional** is still waiting for runs. The **Reading the metrics** notes at
+  the end of each section were added on 2026-10-30: they explain the tables and change no number
+  or decision.
 - Every number comes from a CSV in this directory, written by
   `scripts/15_tuning_report.py --stage <stage>`. The source file is named under each table.
 - All numbers are from the **validation** split, **daylight** subset (`solar_elevation > 0`),
@@ -19,6 +21,88 @@ decision rule) and the session status. This file holds the results.
 - S1 to S3 train one network without resampling (B=1, T=100 MC-Dropout passes). Their CP and
   CRPS describe one network's MC-Dropout spread, not the final ensemble's. S4 on trains the
   B=8 moving-block bootstrap ensemble and is judged on val CRPS.
+
+## The metrics
+
+Every table reports the same handful of metrics. Two of them score the **point forecast** (the
+mean of all the samples), three score the **predictive distribution** (all the samples together,
+which is what the uncertainty layer produces).
+
+**What is being scored.** For every daylight hour the model produces not one forecast but a
+cloud of samples: B networks × T MC-Dropout passes (for example 6 × 50 = 300 samples). Their
+mean is the point forecast. Their 2.5th and 97.5th percentiles are the lower and upper ends of
+the 95% prediction interval. Night hours are left out of every number here.
+
+| Metric | What it measures | Unit | Better | Typical value here (MC-Dropout rows) |
+|---|---|---|---|---|
+| **RMSE** | Typical size of the point-forecast error; large errors (cloud ramps) weigh more | W/m² | lower | 88 to 115 |
+| **MAE** | Average size of the point-forecast error; every error weighs the same | W/m² | lower | 61 to 94 |
+| **CRPS** | Quality of the whole predictive distribution: accuracy and spread together | W/m² | lower | 46 to 65 |
+| **CP** | Share of observations that fall inside the 95% interval | fraction | close to **0.95** | 0.57 to 0.89 |
+| **PINW** | Average width of the 95% interval, divided by the range of the observations | fraction | lower, *but only if CP holds* | 0.10 to 0.40 |
+
+**CRPS (Continuous Ranked Probability Score)** is the main criterion for anything about
+uncertainty. It asks how far the forecast distribution is from the observed value, on average:
+
+> CRPS = E|X − y| − ½ E|X − X′|, where X and X′ are two samples from the forecast and y is the
+> observation.
+
+- It is in W/m², like MAE, and for a forecast with no spread at all it **equals the MAE**. So
+  MAE − CRPS is what the spread adds. At the frozen configuration MAE is about 61 and CRPS about
+  46: the distribution is worth about 15 W/m² over its own mean.
+- It punishes **both** failure modes. A distribution that is too narrow misses the observation
+  (the first term grows); one that is too wide pays for its own spread (only half of it is given
+  back by the second term). The best CRPS comes from a distribution that is as narrow as it can
+  be while still honest about its errors.
+- It is a *proper* score: no forecaster can improve it by reporting something other than what it
+  actually believes. That is why it can referee between a sharper and a wider forecast, which CP
+  and PINW cannot do on their own.
+
+**CP (Coverage Probability)** is the share of daylight observations inside the 95% interval.
+- The target is 0.95. **Below 0.95 means the intervals are too narrow** (the model is
+  overconfident); above means too wide.
+- Everywhere in these tables CP is below 0.95. That is expected: the samples only describe the
+  uncertainty of the *model* (which networks, which dropout masks), not the irreducible
+  hour-to-hour variability of clouds around even a perfect mean. The conformal layer is meant to
+  correct this after tuning (`TUNING_PLAN.md`), so during tuning CP is reported but not
+  optimised.
+- CP alone is easy to game: an absurdly wide interval covers everything. Always read it next to
+  PINW and CRPS.
+
+**PINW (Prediction Interval Normalised Width)** is the average interval width (MPIW, in W/m²)
+divided by the range of the observed values (max − min) in the same subset.
+- On the validation daylight subset that range is about 1,040 W/m², so **PINW × 1,040 ≈ the
+  average interval width in W/m²**. PINW 0.17 is an interval about 180 W/m² wide; PINW 0.32 is
+  about 335 W/m².
+- Narrower is better only at the same coverage. A narrower interval with lower CP is not an
+  improvement in itself; CRPS decides whether the trade was worth it.
+
+**How the three fit together.** Read a row in this order:
+1. **CRPS**: is the forecast distribution better overall?
+2. **CP**: are the intervals too narrow or too wide, and by how much?
+3. **PINW**: how wide are they?
+4. **RMSE / MAE**: is the centre of the distribution more accurate?
+
+Typical patterns in the tables below:
+
+| Pattern | Meaning |
+|---|---|
+| RMSE ↓, CRPS ↓, CP ≈ same | A genuinely better model. |
+| RMSE ↓, CRPS ↓, CP ↓, PINW ↓ | More accurate, and sharper than it has earned; the conformal layer will widen it back. |
+| RMSE ≈, CRPS ↑, CP ↓↓ | The spread collapsed: the intervals became overconfident. |
+| RMSE ↑, CRPS ↑, CP ↑, PINW ↑ | Coverage bought by blurring the forecast. |
+
+**Other columns.**
+- **Δ** and **± sd**: the change against the stage's incumbent on the same seed, averaged over 3
+  seeds, and how much that change varied between seeds. A Δ smaller than its sd is noise.
+- **Mean best epoch**: the training epoch (counted from 0) whose weights were kept, by
+  validation loss.
+- **Train min/network**: wall-clock training time per network on the Mac mini (MPS).
+- **B** and **T**: number of bootstrap networks and of MC-Dropout passes per network.
+
+**Fidelity matters for comparisons.** S1 to S3 used one network (B=1), so their CP, PINW and
+CRPS describe one network's dropout spread. S4 and S5 used ensembles (B=6 to 16), whose spread
+is wider. Compare CP and CRPS only within a stage, or across stages of the same B.
 
 ## Decisions so far
 
@@ -71,6 +155,12 @@ Source: `s1_by_province.csv`.
 **Early stopping.** With patience 5 or 7, none of the 9 networks would have kept a different
 epoch. With patience 3, one would (24 h, seed 42, whose best epoch was 10). Source:
 `s1_patience.csv`.
+
+**Reading the metrics.** Every lookback lands within about 1 W/m² of the others: RMSE differs by
+at most 1.1 (about 1%) and CRPS by 0.3. CP stays between 0.875 and 0.883, so the intervals behave
+the same at every lookback. Nothing moves enough to matter, and the decision is "no evidence to
+change", not "24 h is clearly best". This stage used one network (B=1), so CP 0.88 describes one
+network's dropout spread only.
 
 ## S2: LSTM width × depth (final, decided 2026-10-30)
 
@@ -164,6 +254,18 @@ and PINW narrows from 0.321 to 0.184. Rize falls to 0.67.
 networks peak late (32 × 1: best epoch up to 33; 64 × 1: 13.7 on average). Across S2, patience 5
 would have changed 8 of 30 networks, all of them 32- or 64-wide. Source: `s2_patience.csv`.
 
+**Reading the metrics.** This is the stage where the metrics pull in different directions.
+- **Accuracy:** RMSE falls by 9.5 W/m² (about 10%) and CRPS by 7.3 from 64 × 2 to 256 × 1: a
+  genuinely better model.
+- **Intervals:** at the same time PINW falls from 0.321 to 0.184, so the interval shrinks from
+  about 335 to about 190 W/m² wide (−43%), while the error shrinks by only about 10%. The
+  intervals have narrowed much faster than the errors, which is why CP falls from 0.88 to 0.78:
+  the wider model is more confident than its accuracy justifies.
+- **Verdict:** CRPS still improves, so the net trade is good. The lost coverage is a calibration
+  problem for the ensemble and the conformal layer, not a reason to keep the smaller model.
+- Small, deep networks (32 × 2, 32 × 3) show the opposite: high CP (0.88 to 0.89) with wide intervals
+  (PINW 0.40) and the worst RMSE and CRPS. They are covered by being blurred, not by being right.
+
 ## S3: dropout rate (final, decided 2026-10-30)
 
 **Decision: dropout 0.2.** It beats the 0.3 incumbent by 1.33 ± 0.36 W/m² on every seed (−1.68,
@@ -215,6 +317,16 @@ dropout would cure. The paper can state it with these numbers.
 at 1 layer, so in the final model the bootstrap ensemble (S4, S5) and the conformal layer carry
 even more of the calibration. How much of the final spread is dropout's is measured in S5.
 
+**Reading the metrics.** Dropout 0.1 is the textbook case of why CRPS is the referee.
+- **0.1 against 0.2:** RMSE is essentially the same (89.84 against 89.63), but CRPS is 2 W/m²
+  worse, because the interval collapses to about 105 W/m² wide (PINW 0.102) and covers only 57% of
+  the observations. On RMSE alone 0.1 looks as good as 0.2; as a forecast distribution it is
+  clearly worse.
+- **0.4 and 0.5:** the opposite failure. Intervals widen (PINW 0.22 to 0.26) and CP rises to
+  0.82 to 0.85, but RMSE and CRPS both get worse. Coverage is bought by blurring the forecast.
+- **0.2:** best RMSE, and CRPS no worse than the incumbent's. Its intervals are sharper (about
+  150 W/m²) and cover 71%, so it relies even more on the later calibration.
+
 ## S3: learning rate (final, decided 2026-10-30)
 
 **Decision: 5e-4, by the decision rule as written.** It passes by 0.03 W/m², and the evidence
@@ -262,6 +374,11 @@ paper:
   one axis at a time, not jointly.
 - The learning rate is the least supported tuning choice so far. A learning-rate arm (1e-3 on
   the frozen configuration) is a candidate for the ablation programme if a reviewer asks.
+
+**Reading the metrics.** The learning rate leaves the distribution untouched: CP (0.774 to 0.777)
+and PINW (0.181 to 0.184) are identical across the three arms, and CRPS differs by at most 0.2,
+inside the noise. Only RMSE moves, by 1 W/m², and that difference is carried by one seed and one
+province. All of these arms are B=1, at dropout 0.3.
 
 ## Early-stopping patience (decided 2026-10-30)
 
@@ -360,6 +477,13 @@ training-dynamics findings; the ensemble averages over it, which is consistent w
 seed sd at B=8: val CRPS sd averages 0.15 over the S4 arms, against 0.40 over the seven 256 × 1
 arms at B=1 (S2, S3).
 
+**Reading the metrics.** Block length changes nothing measurable. CRPS differs by at most
+0.15 W/m² (0.3%), RMSE by 0.2, and CP (0.796 to 0.800) and PINW (0.173 to 0.175) agree to two
+decimals: the intervals are about 180 W/m² wide in every arm. These are the first ensemble (B=8)
+numbers, so they are not comparable with the B=1 rows of S1 to S3. The comparison table above
+shows what the ensemble adds: CP rises from 0.71 to 0.80 and CRPS improves by about 1.6 W/m²,
+while the interval widens only from about 150 to about 180 W/m².
+
 ## S5: ensemble size and MC passes (final, decided 2026-10-30)
 
 **Decision: B = 6 networks, T = 50 MC-Dropout passes.** It is the cheapest cell whose mean val
@@ -442,6 +566,20 @@ Source: `s5_patience.csv`.
 
 **Cost.** With three runs sharing the GPU, a network took 7.2 to 7.5 min (about 1.9 h per
 16-network run), the curves included in the process time.
+
+**Reading the metrics.**
+- **Along B and T** every metric moves by very little: CRPS by 0.5 W/m² over the whole grid, CP
+  from 0.78 to 0.81, PINW from 0.168 to 0.177 (about 175 to 185 W/m²). Adding networks or passes
+  mostly makes the forecast distribution a little smoother, not different.
+- **MC-Dropout against dropout-off** is where the numbers move. With dropout switched off, the 6
+  networks still agree closely with each other: their interval is only about 60 W/m² wide
+  (PINW 0.054) and covers 28% of observations. Switching MC-Dropout on widens it to about
+  180 W/m², raises CP to 0.79 and improves CRPS by 6.5 W/m² (about 12%), while the point forecast
+  (RMSE) changes by 0.06 W/m². In plain terms: almost all of the forecast's uncertainty comes from
+  MC-Dropout, and it costs nothing in accuracy.
+- **What is still missing:** at CP 0.79, about one daylight observation in five falls outside a
+  95% interval, against one in twenty. That remaining gap is what the conformal layer has to
+  close.
 
 ## Frozen configuration
 
