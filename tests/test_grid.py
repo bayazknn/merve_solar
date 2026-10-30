@@ -130,17 +130,17 @@ def test_stage_five_is_one_sixteen_network_run_per_seed(decided):
     assert all(c.bootstrap_block_length == 192 for c in configs)
 
 
-def test_the_final_reference_reuses_stage_four_only_when_the_ensemble_is_unchanged(decided):
-    decided(s5=(8, 100))
-    final = stage_arms("final")["final"]
-    assert final[:3] == stage_arms("s4")["blk192"]
-    assert [c.seed for c in final] == [42, 43, 44, 45, 46]
-    assert [c.experiment_id for c in build_experiment_grid(["final_reference"])][0].startswith("final_")
-    assert len(build_experiment_grid(["final_reference"])) == 2
-
-    decided(s5=(12, 75))
-    final = build_experiment_grid(["final_reference"])
-    assert len(final) == 5 and all((c.n_bootstrap, c.mc_dropout_passes) == (12, 75) for c in final)
+def test_the_final_reference_is_five_new_conformal_runs_of_the_frozen_configuration(decided):
+    # Even at the stage-4 fidelity nothing is reused: no tuning run carries the conformal layer.
+    for s5 in ((8, 100), (12, 75)):
+        decided(s5=s5)
+        final = build_experiment_grid(["final_reference"])
+        assert [c.seed for c in final] == [42, 43, 44, 45, 46]
+        assert all(c.experiment_id.startswith("final_") for c in final)
+        assert all((c.n_bootstrap, c.mc_dropout_passes) == s5 for c in final)
+        assert all(c.conformal_mode == grid.FINAL_CONFORMAL_MODE for c in final)
+        assert all(c.bootstrap_block_length == 192 for c in final)
+        assert all(c.early_stop_patience == grid.FROZEN_PATIENCE for c in final)
 
 
 def test_the_smoke_group_covers_every_new_code_path():
@@ -148,5 +148,6 @@ def test_the_smoke_group_covers_every_new_code_path():
     assert any(c.inference_mode == "deterministic" for c in smoke.values())
     assert any(not c.bootstrap_resample and c.n_bootstrap > 1 for c in smoke.values())
     assert any(c.training_scope == "per_city" for c in smoke.values())
+    assert any(c.conformal_mode == grid.FINAL_CONFORMAL_MODE for c in smoke.values())
     assert any(c.lstm_layers == 1 for c in smoke.values())
     assert all(c.max_epochs <= 2 for c in smoke.values())

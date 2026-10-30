@@ -41,6 +41,10 @@ FULL_FIDELITY = dict(n_bootstrap=8, mc_dropout_passes=100)
 # (18 of them) would have kept a different epoch at patience 5; the longest wait for a new best
 # was 4 epochs. Decided after S3 from <stage>_patience.csv (TUNING_FINDINGS.md).
 FROZEN_PATIENCE = 5
+# Conformal recalibration of the final reference. Chosen by a validation-only cross-fit on the S5
+# networks (scripts/16_conformal_check.py): best worst-province and worst-step coverage, narrowest
+# corrected interval and best CRPS on every seed (TUNING_FINDINGS.md, Conformal mode).
+FINAL_CONFORMAL_MODE = "city_horizon"
 
 STAGE_CRITERION = {
     "s1": "val_RMSE_daylight", "s2": "val_RMSE_daylight", "s3_dropout": "val_RMSE_daylight",
@@ -188,19 +192,13 @@ def _s5() -> dict:
 
 
 def _final() -> dict:
-    """The frozen configuration at five seeds: the reference row of the paper.
-
-    When the decided ensemble is the stage-4 fidelity (B=8, T=100) the stage-4 winner already
-    holds seeds 42-44 of exactly this config, so only the remaining seeds are new runs.
-    """
+    """The frozen configuration at five seeds, with its conformal layer: the reference row of the
+    paper. Always new runs: no tuning run carries the conformal correction, so none is reused."""
     _need("s5")
     tag, base = _s4_winner()
     b, t = DECISIONS["s5"]
-    if (b, t) == (FULL_FIDELITY["n_bootstrap"], FULL_FIDELITY["mc_dropout_passes"]):
-        reused = _s4()[f"blk{DECISIONS['s4']}"]
-        new = _arm("final", seeds=FINAL_SEEDS[len(reused):], **base, **FULL_FIDELITY)
-        return {"final": reused + new}
-    return {"final": _arm("final", seeds=FINAL_SEEDS, **base, n_bootstrap=b, mc_dropout_passes=t)}
+    return {"final": _arm("final", seeds=FINAL_SEEDS, **base, n_bootstrap=b, mc_dropout_passes=t,
+                          conformal_mode=FINAL_CONFORMAL_MODE)}
 
 
 STAGES = {"s1": _s1, "s2": _s2, "s3_dropout": _s3_dropout, "s3_lr": _s3_lr, "s4": _s4,
@@ -237,6 +235,8 @@ def _smoke_configs() -> list:
                          training_scope="per_city", **SMOKE),
         ExperimentConfig(experiment_id="smoke_lb48_h32l1", n_bootstrap=1, lookback_hours=48,
                          hidden_sizes=[32, 16], lstm_layers=1, **SMOKE),
+        ExperimentConfig(experiment_id="smoke_conformal_city_horizon_b2", n_bootstrap=2,
+                         conformal_mode=FINAL_CONFORMAL_MODE, **SMOKE),
     ]
 
 

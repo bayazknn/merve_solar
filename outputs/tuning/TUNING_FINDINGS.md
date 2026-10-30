@@ -114,7 +114,7 @@ is wider. Compare CP and CRPS only within a stage, or across stages of the same 
 | S3 | learning rate | 1e-3 | **5e-4** | −0.99 ± 0.96 | final (marginal pass, accepted as written) |
 | — | early-stopping patience, S4 on | 10 | **5** | n/a (no network changes) | final |
 | S4 | bootstrap block length | 168 h | **168 h** | 0 (incumbent kept; criterion val CRPS) | final |
-| Conformal | recalibration grid | none | **city_horizon** (recommended, awaiting confirmation) | CRPS −1.81 W/m² vs uncorrected, cross-fitted | provisional |
+| Conformal | recalibration grid | none | **city_horizon** | CRPS −1.81 W/m² vs uncorrected, cross-fitted | final |
 | S5 | ensemble size B × MC passes T | 8 × 100 | **6 × 100** | +0.24 ± 0.20 val CRPS vs the best cell (16 × 150); B cost-driven, T amended | final |
 
 ## S1: lookback (final, decided 2026-10-29)
@@ -591,13 +591,13 @@ Source: `s5_patience.csv`.
   95% interval, against one in twenty. That remaining gap is what the conformal layer has to
   close.
 
-## Conformal mode (validation-only check, 2026-10-30; provisional)
+## Conformal mode (final, decided 2026-10-30)
 
-**Recommendation: `city_horizon`**, one factor k per province × lead-time step (120 factors).
-On held-out validation months it is the best of the four candidates on every criterion: it
-corrects coverage per province **and** per step, gives the narrowest intervals of the corrected
-modes, and the best CRPS on every seed. Awaiting the user's confirmation before it is set on the
-final reference.
+**Decision: `city_horizon`**, one factor k per province × lead-time step (120 factors), set on
+the final reference (`FINAL_CONFORMAL_MODE`). On held-out validation months it is the best of the
+four candidates on every criterion: it corrects coverage per province **and** per step, gives the
+narrowest intervals of the corrected modes, and the best CRPS on every seed. The code path was
+checked end to end by the smoke run `smoke_conformal_city_horizon_b2` (120 cells, none fell back).
 
 **How it was measured.** `scripts/16_conformal_check.py` reloaded the first 6 networks of each S5
 run (seeds 42 to 44) and predicted the validation split at T=100, which is exactly the frozen
@@ -699,13 +699,14 @@ Source: `conformal_check_month_k.csv`.
   August that the calibration set never saw, apart from 11 days. If summer behaves like early
   June, summer intervals will be too wide (coverage near 0.99, wider than needed) and spring
   ones slightly too narrow. The aggregate test CP may still land near 0.95 while the seasonal
-  conditional coverage does not. The paper should report test coverage per season and state
-  this as a limitation.
+  conditional coverage does not.
+- **Scope decision (user, 2026-10-30): the paper does not analyse or argue seasonal coverage.**
+  The measurements above are kept as the record of what the check found; nothing downstream
+  acts on them.
 - **Why the season axis is still not the fix.** A season factor needs every season in the
   calibration set; validation has 11 summer days. The clean fix is a calibration set that spans a
   full year inside the training period, for example out-of-bag (jackknife+-after-bootstrap)
-  calibration, which the bootstrap already makes possible. That is separate work, logged in
-  `TUNING_PLAN.md`.
+  calibration, which the bootstrap already makes possible. It is out of the paper's scope.
 
 **This revises an earlier claim.** The `conformal.py` module comments, written on the retired
 dataset, say the horizon axis is null. On the current data and model it is the single largest
@@ -718,8 +719,8 @@ conditional error (raw CP from 0.945 to 0.73 across steps). Those comments shoul
 - MPIW is the interval width in W/m². city_horizon is the narrowest corrected mode because it
   spends width where the errors are (late steps, Rize) and saves it where they are not (step 1,
   Antalya).
-- The season tables are the honest caveat: aggregate coverage hides a spring/summer imbalance
-  that no grid fitted on this validation split can remove.
+- The season tables show that aggregate coverage hides a spring/summer imbalance that no grid
+  fitted on this validation split can remove. Seasonal coverage is outside the paper's scope.
 
 ## Frozen configuration
 
@@ -733,7 +734,7 @@ conditional error (raw CP from 0.945 to 0.73 across steps). Those comments shoul
 | Bootstrap block length | 168 h | S4 |
 | Ensemble size B | 6 | S5 |
 | MC-Dropout passes T | 100 | S5 (rule pick 50, amended) |
-| Conformal mode | `city_horizon` (recommended, awaiting confirmation) | conformal check |
+| Conformal mode | `city_horizon` | conformal check |
 
 ## Carried forward
 

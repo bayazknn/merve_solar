@@ -10,9 +10,8 @@ in `TUNING_FINDINGS.md`**, backed by the `<stage>_*.csv` tables next to this fil
 
 **As of 2026-10-30 (after the S5 pull): tuning is complete. The frozen configuration is lookback
 24 h, 256 × 1, dropout 0.2, learning rate 5e-4, patience 5, block 168 h, B = 6, T = 100
-(`TUNING_FINDINGS.md`, Frozen configuration). The validation-only conformal check is done and
-recommends `city_horizon` (`TUNING_FINDINGS.md`, Conformal mode). Once the user confirms it, it is
-set on the final configs and `final_reference` (5 new runs) can run.**
+and conformal mode `city_horizon` (`TUNING_FINDINGS.md`, Frozen configuration and Conformal mode).
+`final_reference` (5 new runs, seeds 42 to 46) is ready to run on the remote Mac.**
 
 | Stage | Group | State | Decision |
 |---|---|---|---|
@@ -24,8 +23,8 @@ set on the final configs and `final_reference` (5 new runs) can run.**
 | Patience | | Decided from S1 to S3 patience tables | **5** from S4 on (`FROZEN_PATIENCE`) |
 | S4 block length | `tune_s4_block` | Done (12 runs at B=8, MPS, 2 shards); findings final | **168 h** (incumbent kept; all blocks within 0.15 W/m² CRPS) |
 | S5 ensemble size, MC passes | `tune_s5_ensemble` | Done (3 runs at B=16, curves, MPS, 3 shards); findings final | **B = 6, T = 100** (B by the rule; T raised from the rule's 50 for stable interval endpoints) |
-| Conformal mode | (`16_conformal_check.py` on the S5 runs) | Check done (3 seeds, validation only, MPS); findings provisional | **city_horizon** recommended; awaiting the user's confirmation |
-| Final | `final_reference` | Unlocked: 5 runs at B=6, T=100, seeds 42 to 46 | wait for the conformal decision |
+| Conformal mode | (`16_conformal_check.py` on the S5 runs) | Check done (3 seeds, validation only, MPS); findings final | **city_horizon** (`FINAL_CONFORMAL_MODE`); smoke run of the path passed |
+| Final | `final_reference` | Ready: 5 runs at B=6, T=100, city_horizon, seeds 42 to 46 | pending (runs on the remote Mac) |
 
 Findings for every stage, with per-province tables and robustness checks: `TUNING_FINDINGS.md`.
 
@@ -43,35 +42,33 @@ Findings for every stage, with per-province tables and robustness checks: `TUNIN
 check_outputs passed`. They start with "partial" and name the failed id if a run failed, and
 they copy any WARNING lines from the check.
 
-**Next session, in order:**
-1. **Confirm the conformal mode** with the user. The check (validation only, cross-fitted, S5
-   networks at B=6, T=100) recommends `city_horizon`: it is best on worst-province coverage,
-   worst-step coverage, interval width and CRPS, on every seed (`TUNING_FINDINGS.md`, Conformal
-   mode). How it was decided:
-   - The city axis was required from the start (cross-province claim).
-   - No season axis: validation has 11 summer days.
-   - `08_conformal_mode_selection.py` scores on test and was not used.
-   - The check is `scripts/16_conformal_check.py`; its tables are `outputs/tuning/conformal_check_*.csv`.
-2. Set `conformal_mode` on the final configs in `configs/experiment_grid.py` (the ids stay
-   `final_s42` to `final_s46`; the mode is a ledger column), check `final_reference --list`,
-   run the grid tests, commit and push.
-3. Give the user the final-reference commands: 5 runs × 6 networks, about 2.5 to 3 h
-   single-process, or about 1.5 h with three shards:
+**Next session, in order** (after the final reference finishes on the remote Mac):
+1. `git pull`, then check the group. Every run should be mps, and only the gitignored npz files
+   should be reported missing:
    ```bash
-   uv run python scripts/run_all_experiments.py --group final_reference --skip-existing --continue-on-error --shard 0/3
+   uv run python scripts/check_outputs.py --group final_reference
    ```
-   (and `--shard 1/3`, `--shard 2/3` in two more terminals), then
-   `check_outputs.py --group final_reference` and the usual result-path commit.
-4. After the pull: report the five-seed mean ± sd of the validation and test rows. This is the
-   first time a test metric of the frozen configuration is read. Then start the ablation
-   programme (After tuning).
+2. Report the five-seed mean ± sd of the validation and test rows (daylight). This is the first
+   time a test metric of the frozen configuration is read; nothing is selected on it. Report
+   test CP and CRPS after the conformal correction, beside the uncorrected values in each run's
+   `conformal_effect.csv`.
+3. Start the ablation programme on the frozen configuration (After tuning). Every ablation arm
+   inherits `conformal_mode="city_horizon"` unless the arm is the conformal ablation itself.
+
+**Final-reference commands for the remote Mac** (5 runs × 6 networks; about 2.5 to 3 h
+single-process, about 1.5 h with three shards):
+```bash
+git pull && uv sync --dev
+uv run python scripts/run_all_experiments.py --group final_reference --list
+uv run python scripts/run_all_experiments.py --group final_reference --skip-existing --continue-on-error --shard 0/3
+uv run python scripts/run_all_experiments.py --group final_reference --skip-existing --continue-on-error --shard 1/3
+uv run python scripts/run_all_experiments.py --group final_reference --skip-existing --continue-on-error --shard 2/3
+uv run python scripts/check_outputs.py --group final_reference
+git add outputs/experiments outputs/experiments_ledger.csv && git commit -m "Final reference: 5 runs on Mac mini, check_outputs passed" && git push
+```
+The three shard commands run in separate terminals; the check and commit run once all finish.
 
 **Open observations to carry forward:**
-- **Seasonal calibration (future work, not tuning).** k is strongly seasonal (about 2.2 in
-  spring, about 1.0 in early June), and the validation split has no full summer, so no grid fitted
-  on it can calibrate per season. Expect test coverage near 0.99 in summer and below 0.95 in
-  spring; report test CP per season. The clean fix is out-of-bag (jackknife+-after-bootstrap)
-  calibration over the training period, a separate piece of work.
 - **Resolved by S5:** the smoke run's 6 W/m² RMSE gap between MC-averaged and dropout-off
   predictions does not hold on trained weights (+0.05 W/m²). MC-Dropout supplies most of the
   spread: dropout-off CP is 0.28 at B=6, against 0.79 with MC-Dropout.
