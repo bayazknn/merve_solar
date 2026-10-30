@@ -201,8 +201,81 @@ def _final() -> dict:
                           conformal_mode=FINAL_CONFORMAL_MODE)}
 
 
+# --- ablations: one change from the frozen configuration per arm (outputs/ablation/ABLATION_PLAN.md)
+
+ABLATION_SEEDS = TUNE_SEEDS
+# Provinces left out one at a time in the optional leave-one-province-out group. Rize is left
+# out in abl_transfer already, since it is the one province the EDA marks as its own regime.
+LOPO_CITIES = ("Ankara", "Antalya", "Konya", "Van")
+
+
+def _frozen() -> dict:
+    """Every field of the final reference except its id and seed."""
+    _need("s5")
+    _, base = _s4_winner()
+    b, t = DECISIONS["s5"]
+    return dict(base, n_bootstrap=b, mc_dropout_passes=t, conformal_mode=FINAL_CONFORMAL_MODE)
+
+
+def _reference() -> list:
+    """The final reference at the ablation seeds: the 'full' arm every ablation is paired with."""
+    (final,) = _final().values()
+    return [c for c in final if c.seed in ABLATION_SEEDS]
+
+
+def _ablation(tag: str, **changes) -> list:
+    return _arm(f"abl_{tag}", seeds=ABLATION_SEEDS, **{**_frozen(), **changes})
+
+
+def _abl_uncertainty() -> dict:
+    """What each part of the uncertainty layer adds. Draws per element are matched (600) where an
+    arm keeps MC-Dropout, so a difference is not a Monte Carlo effect."""
+    _need("s5")
+    b, t = DECISIONS["s5"]
+    deterministic = dict(inference_mode="deterministic", mc_dropout_passes=1)
+    return {
+        "full": _reference(),
+        # One network, dropout off at prediction: a plain point forecast. Its one-draw interval
+        # has zero width, so the conformal layer has nothing to rescale.
+        "plain_lstm": _ablation("plain_lstm", n_bootstrap=1, conformal_mode="none", **deterministic),
+        "single_mc_dropout": _ablation("single_mcd", n_bootstrap=1, mc_dropout_passes=b * t),
+        # Uncorrected, and compared with no_conformal: rescaling a 6-value sample spreads it
+        # into 6 far-apart points (smoke: k ~ 73 at 2 networks), so a corrected CRPS would
+        # measure that artifact rather than what MC-Dropout adds.
+        "bootstrap_only": _ablation("bootstrap_only", conformal_mode="none", **deterministic),
+        "seed_ensemble": _ablation("seed_ensemble", bootstrap_resample=False),
+        "no_conformal": _ablation("no_conformal", conformal_mode="none"),
+    }
+
+
+def _abl_transfer() -> dict:
+    """Does pooling the five provinces in one model help each of them?"""
+    return {
+        "full": _reference(),
+        "per_province": _ablation("per_province", training_scope="per_city"),
+        "no_city_embedding": _ablation("no_city_embedding", city_embedding_dim=0),
+        "without_rize": _ablation("without_rize", excluded_cities=["Rize"]),
+    }
+
+
+def _abl_transfer_lopo() -> dict:
+    return {"full": _reference(),
+            **{f"without_{c.lower()}": _ablation(f"without_{c.lower()}", excluded_cities=[c])
+               for c in LOPO_CITIES}}
+
+
+def _abl_training() -> dict:
+    return {
+        "full": _reference(),
+        "daylight_only_loss": _ablation("daylight_loss", loss_daylight_only=True),
+        "no_nonneg_penalty": _ablation("no_nonneg_penalty", nonneg_penalty_weight=0.0),
+    }
+
+
 STAGES = {"s1": _s1, "s2": _s2, "s3_dropout": _s3_dropout, "s3_lr": _s3_lr, "s4": _s4,
-          "s5": _s5, "final": _final}
+          "s5": _s5, "final": _final, "abl_uncertainty": _abl_uncertainty,
+          "abl_transfer": _abl_transfer, "abl_transfer_lopo": _abl_transfer_lopo,
+          "abl_training": _abl_training}
 
 
 def stage_arms(stage: str) -> dict:
@@ -237,6 +310,12 @@ def _smoke_configs() -> list:
                          hidden_sizes=[32, 16], lstm_layers=1, **SMOKE),
         ExperimentConfig(experiment_id="smoke_conformal_city_horizon_b2", n_bootstrap=2,
                          conformal_mode=FINAL_CONFORMAL_MODE, **SMOKE),
+        # Paths the ablations add: the conformal layer on per-province models, and a model
+        # with no city embedding.
+        ExperimentConfig(experiment_id="smoke_per_city_conformal_b2", n_bootstrap=2,
+                         training_scope="per_city", conformal_mode=FINAL_CONFORMAL_MODE, **SMOKE),
+        ExperimentConfig(experiment_id="smoke_no_city_embedding_b1", n_bootstrap=1,
+                         city_embedding_dim=0, **SMOKE),
     ]
 
 
@@ -249,6 +328,11 @@ EXPERIMENT_GROUPS = {
     "tune_s4_block": _new_runs("s4", "tune_s4_"),
     "tune_s5_ensemble": _new_runs("s5", "tune_s5_"),
     "final_reference": _new_runs("final", "final_"),
+    "abl_uncertainty": _new_runs("abl_uncertainty", "abl_"),
+    "abl_transfer": _new_runs("abl_transfer", "abl_"),
+    "abl_training": _new_runs("abl_training", "abl_"),
+    # Optional, after abl_transfer: four more runs of three seeds each.
+    "abl_transfer_lopo": _new_runs("abl_transfer_lopo", "abl_"),
 }
 
 

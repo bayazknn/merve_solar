@@ -207,8 +207,11 @@ the ledger as descriptive references only.
   and the conformal mode are recorded in `configs/experiment_grid.py::DECISIONS` /
   `FINAL_CONFORMAL_MODE`. **`final_s42`..`final_s46` (group `final_reference`) are the paper's
   reference row** (summary: `scripts/17_final_reference_report.py` → `outputs/final_reference/`).
-  Runs happen on the remote Mac, the analysis here after a pull. The ablation programme
-  follows on the frozen configuration.
+  Runs happen on the remote Mac, the analysis here after a pull.
+- **Ablation programme drafted** (`outputs/ablation/ABLATION_PLAN.md`, plain English for
+  non-specialist readers): groups `abl_uncertainty`, `abl_transfer`, `abl_training`, optional
+  `abl_transfer_lopo`, 3 seeds each, paired with `final_s42`..`final_s44`. Feature-set arms
+  need a per-run feature-set field first.
 
 - Declare the benchmark methodology (pending, from the user).
 - `config_005_default_full` was the pre-tuning reference run; scripts 09 and 12 and the numbers
@@ -216,7 +219,6 @@ the ledger as descriptive references only.
   `config_002_default_full` are pre-fix rows. Every network stops early (best epoch 0–5); this
   is genuine overfitting after a plateau, not a bug (`outputs/diagnostics/training_dynamics/`),
   so epoch selection is noisy at the ~4 W/m² level and arm comparisons need several seeds.
-- Decide whether to run an ablation programme on the current dataset.
 - Comparison models (SVM, GRU, Prophet or RF/MLP) through the shared pipeline.
 - Feature-set candidates: `log1p(PRECTOTCORR)` plus a rain indicator, and dropping `T2MDEW`
   (reproducible from `T2M` and `RH2M` at r = 0.999).

@@ -151,3 +151,53 @@ def test_the_smoke_group_covers_every_new_code_path():
     assert any(c.conformal_mode == grid.FINAL_CONFORMAL_MODE for c in smoke.values())
     assert any(c.lstm_layers == 1 for c in smoke.values())
     assert all(c.max_epochs <= 2 for c in smoke.values())
+
+
+ABLATION_CHANGES = {
+    "abl_uncertainty": {
+        "plain_lstm": {"n_bootstrap", "inference_mode", "mc_dropout_passes", "conformal_mode"},
+        "single_mc_dropout": {"n_bootstrap", "mc_dropout_passes"},
+        "bootstrap_only": {"inference_mode", "mc_dropout_passes", "conformal_mode"},
+        "seed_ensemble": {"bootstrap_resample"},
+        "no_conformal": {"conformal_mode"},
+    },
+    "abl_transfer": {
+        "per_province": {"training_scope"},
+        "no_city_embedding": {"city_embedding_dim"},
+        "without_rize": {"excluded_cities"},
+    },
+    "abl_training": {
+        "daylight_only_loss": {"loss_daylight_only"},
+        "no_nonneg_penalty": {"nonneg_penalty_weight"},
+    },
+    "abl_transfer_lopo": {f"without_{c.lower()}": {"excluded_cities"} for c in grid.LOPO_CITIES},
+}
+
+
+@pytest.mark.parametrize("stage", list(ABLATION_CHANGES))
+def test_every_ablation_arm_changes_only_its_own_axis_from_the_reference(decided, stage):
+    decided()
+    arms = stage_arms(stage)
+    reference = arms.pop("full")
+    assert [c.experiment_id for c in reference] == [f"final_s{s}" for s in grid.ABLATION_SEEDS]
+    assert set(arms) == set(ABLATION_CHANGES[stage])
+    for label, configs in arms.items():
+        assert [c.seed for c in configs] == list(grid.ABLATION_SEEDS)
+        for ref, arm in zip(reference, configs):
+            assert arm.experiment_id.startswith("abl_")
+            assert _diff(ref, arm) == {"experiment_id"} | ABLATION_CHANGES[stage][label], label
+
+
+def test_ablation_groups_train_only_new_runs_and_match_draws(decided):
+    decided(s5=(6, 100))
+    for group in ("abl_uncertainty", "abl_transfer", "abl_training", "abl_transfer_lopo"):
+        assert all(c.experiment_id.startswith("abl_") for c in build_experiment_grid([group]))
+    arms = stage_arms("abl_uncertainty")
+    (single,) = {c.n_bootstrap * c.mc_dropout_passes for c in arms["single_mc_dropout"]}
+    assert single == 600
+
+
+def test_the_smoke_group_covers_the_ablation_code_paths():
+    smoke = EXPERIMENT_GROUPS["smoke"]()
+    assert any(c.training_scope == "per_city" and c.conformal_mode != "none" for c in smoke)
+    assert any(c.city_embedding_dim == 0 for c in smoke)

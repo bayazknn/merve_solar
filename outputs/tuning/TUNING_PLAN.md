@@ -43,13 +43,10 @@ Findings for every stage, with per-province tables and robustness checks: `TUNIN
 check_outputs passed`. They start with "partial" and name the failed id if a run failed, and
 they copy any WARNING lines from the check.
 
-**Next session, in order:**
-1. Design the ablation programme on the frozen configuration (After tuning) as named groups in
-   `configs/experiment_grid.py`, 3 seeds per arm at B=6, T=100. Every arm inherits
-   `conformal_mode="city_horizon"` unless it is the conformal ablation itself. Interval metrics
-   are compared only between arms that keep B=6.
-2. Smoke-check any new code path (a new `inference_mode`, scope or feature set) before the sweep.
-3. The paired tests run on the remote Mac, where `test_predictions.npz` exists.
+**Next session, in order:** the ablation programme is drafted in
+`outputs/ablation/ABLATION_PLAN.md` (groups `abl_uncertainty`, `abl_transfer`, `abl_training`
+and the optional `abl_transfer_lopo` in `configs/experiment_grid.py`). Run it on the remote Mac
+from the commands in that document's Section 7, then pull and analyse.
 
 **Final reference, as run** (for reproduction; 5 runs × 6 networks, 31 to 43 min per run with
 three shards sharing the GPU):
