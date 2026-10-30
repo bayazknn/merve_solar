@@ -273,9 +273,9 @@ The model maps the window and the site identity to all 24 values at once
 <p class="eq">ŷ<sub>s,t</sub> = f<sub>θ</sub>(X<sub>s,t</sub>, s) ∈ ℝ<sup>24</sup>.<span class="eqn">(1)</span></p>
 
 Each horizon step *h* = 1, …, 24 is therefore a separate output of the same network rather
-than the result of feeding earlier predictions back as inputs. Only observed quantities enter
-the window; no numerical weather prediction or other forecast of the meteorological variables
-is used, so the inputs are all available at the time the forecast is issued.
+than the result of feeding earlier predictions back as inputs. The window ends at the forecast
+origin, so it holds only present and past conditions; no numerical weather prediction or other
+forecast of the meteorological variables is used.
 
 A single model is trained on all five sites jointly. Site identity enters only through a
 learned embedding (Section 6), so information can be shared across climates while the
@@ -283,46 +283,96 @@ network can still represent site-specific behaviour.
 
 ## 4. Input variables and feature engineering
 
-**Input set.** Each hour of a site's record is described by thirteen input features
-(Table 3): the lagged target, six meteorological variables, and six features derived from
-circular quantities. The meteorological variables are air temperature (T2M), relative humidity
-(RH2M), dew/frost point (T2MDEW), surface pressure (PS), wind speed (WS2M) and bias-corrected
-precipitation (PRECTOTCORR), all at 2 m. They enter the model in their native units, with no
-further transformation. Only observed quantities are used, so every input is available when
-the forecast is issued.
+**Input set.** Each hour of a site's record is described by thirteen numeric features, in
+three groups (Table 3):
 
-**Autoregressive component.** All-sky surface shortwave irradiance (ALLSKY_SFC_SW_DWN) is both
-the forecast target and an input. Its values over the 24-hour input window give the network the
-recent cloudiness and the current state of the diurnal cycle. This makes the model
-autoregressive in irradiance. Because all 24 horizon steps are predicted at once (Section 3),
-earlier forecasts are never fed back as inputs.
+- **the target itself**, all-sky irradiance (ALLSKY_SFC_SW_DWN), as a lagged input;
+- **six meteorological variables**: air temperature (T2M), relative humidity (RH2M), dew/frost
+  point (T2MDEW), surface pressure (PS), wind speed (WS2M) and bias-corrected precipitation
+  (PRECTOTCORR), all at 2 m;
+- **six encoded features**, the sine and cosine of three circular quantities: wind direction,
+  hour of day and day of year.
 
-**Circular encoding of wind direction.** Wind direction is an angle, so a linear
-representation would put 359° and 1° at opposite ends of the scale. Wind direction θ is
-therefore replaced by the pair (sin θ, cos θ). This maps each direction to a point on the unit
-circle and removes the 0°/360° discontinuity.
+The meteorological variables describe the state of the atmosphere that governs cloud cover.
+Temperature, humidity and dew point together indicate how close the near-surface air is to
+saturation; surface pressure tracks the passage of high- and low-pressure systems, which bring
+clear and cloudy spells respectively; precipitation marks rain events, during which the sky is
+usually overcast; and wind speed and direction indicate where the air mass is coming from.
+Apart from the standardisation applied to every feature (see *Standardisation* below), these
+variables are used as provided: no logarithm, ratio or derived index is computed from them.
 
-**Cyclical time encoding.** The diurnal and annual cycles are encoded in the same way. The hour
-of day *h* becomes (sin 2π*h*/24, cos 2π*h*/24), and the day of year *d* becomes
-(sin 2π*d*/365.25, cos 2π*d*/365.25). With this encoding 23:00 and 00:00, and 31 December and
-1 January, are neighbours in feature space. The year length of 365.25 days absorbs leap years.
-Timestamps are in each site's local solar time, so a given value of the hour encoding matches
-approximately the same solar hour angle at every site.
+**What "available at issue time" means here.** Every input belongs to the 24-hour window that
+ends at the forecast origin, so the model sees only present and past conditions. No numerical
+weather prediction or other forecast of future weather is used: the network has to infer
+tomorrow's irradiance from today's state of the atmosphere. All variables come from NASA
+POWER, which derives them from satellite retrievals and meteorological reanalysis rather than
+from ground stations. In operational use these products are published with a delay of a few
+days; the experiments treat them as available at the forecast origin, so the reported skill is
+the skill attainable when current conditions are known.
 
-**Solar geometry as a mask, not a predictor.** Two geometric quantities are computed from each
-site's coordinates and the timestamp alone: the apparent solar elevation at the midpoint of
-each hour, and the top-of-atmosphere irradiance on a horizontal surface. Neither is a model
-input. They define the night-time constraint on the forecasts (Section 9) and the daylight
-evaluation subset (Section 10.1). Excluding them keeps the input set free of information the
-cyclical time encodings already carry, and keeps the definition of the evaluation subset
-separate from what the model learns.
+**Autoregressive component.** Irradiance is both the quantity being forecast and an input. Its
+past 24 hourly values tell the network two things: how cloudy the last day was (the height and
+smoothness of the most recent daily curve, compared with what the season allows), and where
+the site currently is in the daily cycle (rising, falling, or night). Because weather tends to
+persist from one day to the next, the most recent day is an informative starting point for the
+next. Using the past of the target as an input makes the model autoregressive in irradiance.
+It does not, however, feed forecasts back as inputs: all 24 horizon steps are produced at once
+(Section 3), so the input window always contains data only, never earlier predictions.
 
-**Site identity.** All five sites are modelled by one network. Site identity is not a
-hand-crafted feature: each site gets a learned four-dimensional embedding vector, which is
-appended to the feature vector at every hour of the window, giving seventeen inputs per hour
-(Section 6). This lets the network share structure across climate zones while still
-representing site-specific behaviour. All thirteen features, the target included, are
-standardised using statistics from the training period only (Section 5).
+**Circular encoding of wind direction.** Wind direction is an angle, and an angle is a poor
+input when given as a single number. On the scale 0–360°, directions of 359° and 1° differ by
+358 units, although they are only 2° apart; a network would treat them as nearly opposite
+winds. Wind direction θ is therefore replaced by the pair (sin θ, cos θ), which places each
+direction on a circle of radius one. On that circle 359° ≈ (−0.02, 1.00) and 1° ≈ (0.02, 1.00)
+are neighbours, as they should be. Both components are needed: the sine alone cannot tell 30°
+from 150°, and the cosine alone cannot tell 30° from 330°; together they identify every
+direction uniquely.
+
+**Cyclical time encoding.** Time of day and time of year are circular in the same way, and are
+encoded the same way. The hour of day *h* (0–23) becomes (sin 2π*h*/24, cos 2π*h*/24), and the
+day of year *d* becomes (sin 2π*d*/365.25, cos 2π*d*/365.25). With this encoding 23:00 lies next
+to 00:00, and 31 December next to 1 January, rather than at the opposite end of the scale. A
+year length of 365.25 days, the average including leap years, keeps a given calendar date at
+almost the same point on the circle from one year to the next.
+
+The hours are expressed in each site's local solar time rather than in clock time. The five
+sites span about 12.7° of longitude, so on a shared clock the sun would reach its highest point
+about 50 minutes later at the easternmost site (Van) than at the westernmost (Antalya). In
+local solar time, 12:00 is close to solar noon everywhere, so the same value of the hour
+encoding corresponds to roughly the same position of the sun at all five sites, and the
+network can learn one daily cycle shared by all of them.
+
+**Solar geometry as a mask, not a predictor.** Two further quantities are computed from each
+site's coordinates and the timestamp alone, with no measured data: the apparent solar
+elevation (the sun's angle above the horizon) at the midpoint of each hour, and the
+top-of-atmosphere irradiance on a horizontal surface (the irradiance that would arrive without
+an atmosphere). Neither is a model input. They have two jobs only, both outside the network:
+
+1. after prediction, any forecast for an hour in which the sun is below the horizon is set to
+   zero (Section 9);
+2. in evaluation, they define the daylight subset on which the headline metrics are computed
+   (Section 10.1).
+
+They are left out of the inputs for two reasons. First, they would add nothing new: both are
+fixed functions of site, hour and day of year, which the network already receives through the
+site embedding and the cyclical time encodings. Second, keeping them out separates the physical
+constraints, which are imposed exactly and identically on every model, from what the network
+has to learn from data.
+
+**Site identity.** One network is trained on all five sites together. To tell it which site a
+window comes from, each site is assigned a vector of four numbers, its *embedding*. The five
+vectors start at random values and are learned during training, together with the network's
+other weights, so the network itself decides how the sites differ, rather than being given a
+hand-made description such as latitude or climate class. The site's embedding is appended to
+the feature vector at every hour of the window, so each hour enters the network as
+13 + 4 = 17 numbers (Section 6). Sites whose weather behaves similarly can end up with similar
+embeddings and share what the network learns, while the embedding still lets it represent
+behaviour specific to one site.
+
+**Standardisation.** Before entering the network, each of the thirteen numeric features, the
+target included, is rescaled to zero mean and unit variance. The means and standard deviations
+are computed from the training period only (Section 5), so nothing about the validation or test
+periods leaks into the inputs. The embeddings are learned and are not standardised.
 
 **Table 3.** Model inputs.
 
