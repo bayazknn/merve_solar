@@ -213,7 +213,10 @@ are **not** benchmarks; the naive baseline rows stay in the ledger as descriptiv
   non-specialist readers): one group `abl_scope_dropout`, a 2 x 3 table of training scope
   (global / per province) x predictive layer (MC-Dropout / normal dropout / plain LSTM
   benchmark). 12 new runs: ensemble arms at seeds 42-43 (global MC-Dropout reuses
-  `final_s42`, `final_s43`), plain LSTM at 42-44. Further arms are listed there as candidates.
+  `final_s42`, `final_s43`), plain LSTM at 42-44. Plus group `abl_daylight_loss` (2 runs,
+  `loss_daylight_only=True`, global MC-Dropout, seeds 42-43; `scripts/run_abl_daylight_loss.sh`),
+  kept separate so the running shards were not reshuffled. Further arms are listed there as
+  candidates.
 
 - `config_005_default_full` was the pre-tuning reference run; scripts 09 and 12 and the numbers
   in `METHODOLOGY.md` still come from it and must be regenerated on the final reference. `config_000_smoke` and

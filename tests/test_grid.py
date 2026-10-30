@@ -193,3 +193,22 @@ def test_the_smoke_group_covers_the_ablation_code_paths():
     assert any(c.training_scope == "per_city" and c.inference_mode == "deterministic"
                and c.conformal_mode != "none" for c in smoke)
     assert any(c.city_embedding_dim == 0 for c in smoke)
+
+
+def test_the_daylight_loss_arm_changes_only_the_loss_mask(decided):
+    decided()
+    arms = stage_arms("abl_daylight_loss")
+    reference = arms.pop("global_mc_dropout")
+    assert [c.experiment_id for c in reference] == [f"final_s{s}" for s in grid.ABLATION_SEEDS]
+    (configs,) = arms.values()
+    assert [c.seed for c in configs] == list(grid.ABLATION_SEEDS)
+    for ref, arm in zip(reference, configs):
+        assert _diff(ref, arm) == {"experiment_id", "loss_daylight_only"}
+        assert arm.loss_daylight_only
+
+
+def test_adding_the_daylight_loss_group_leaves_the_running_shards_unchanged(decided):
+    decided(s5=(6, 100))
+    scope = [c.experiment_id for c in build_experiment_grid(["abl_scope_dropout"])]
+    assert len(scope) == 12 and not any("daylight" in i for i in scope)
+    assert len(build_experiment_grid(["abl_daylight_loss"])) == 2

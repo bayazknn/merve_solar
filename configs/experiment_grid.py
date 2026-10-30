@@ -246,8 +246,18 @@ def _abl_scope_dropout() -> dict:
     return arms
 
 
+def _abl_daylight_loss() -> dict:
+    """Training on daylight hours only (loss and early-stopping loss masked to daylight steps),
+    against the final method. A separate group from abl_scope_dropout so adding it never
+    reshuffles that group's shards. Global scope, MC-Dropout: the one cell that is the method."""
+    (final,) = _final().values()
+    return {"global_mc_dropout": [c for c in final if c.seed in ABLATION_SEEDS],
+            "global_daylight_loss": _ablation("global_daylight_loss", loss_daylight_only=True)}
+
+
 STAGES = {"s1": _s1, "s2": _s2, "s3_dropout": _s3_dropout, "s3_lr": _s3_lr, "s4": _s4,
-          "s5": _s5, "final": _final, "abl_scope_dropout": _abl_scope_dropout}
+          "s5": _s5, "final": _final, "abl_scope_dropout": _abl_scope_dropout,
+          "abl_daylight_loss": _abl_daylight_loss}
 
 
 def stage_arms(stage: str) -> dict:
@@ -304,6 +314,7 @@ EXPERIMENT_GROUPS = {
     "tune_s5_ensemble": _new_runs("s5", "tune_s5_"),
     "final_reference": _new_runs("final", "final_"),
     "abl_scope_dropout": _new_runs("abl_scope_dropout", "abl_"),
+    "abl_daylight_loss": _new_runs("abl_daylight_loss", "abl_"),
 }
 
 

@@ -4,6 +4,16 @@ This document explains the ablation experiments: what they are, why we run them,
 them, and how to read the results. It is written for a reader who does not know the project.
 Results are added in the last section once the runs finish.
 
+**Status (2026-10-30).** Two run groups, both in `configs/experiment_grid.py`:
+
+| Group | Runs | What it tests | State |
+|---|---|---|---|
+| `abl_scope_dropout` | 12 | All provinces vs one model per province × MC-Dropout / normal dropout / plain LSTM benchmark (Sections 5.1 to 5.3) | Running on the remote Mac, 3 shards |
+| `abl_daylight_loss` | 2 | Training on daylight hours only (Section 5.4) | Started next to the shards, `scripts/run_abl_daylight_loss.sh` |
+
+Next step: once all four processes finish, run the checks and commit once (Section 6), then
+pull here and fill Section 7.
+
 ## 1. The project in one paragraph
 
 We forecast solar irradiance, the power of sunlight reaching the ground (in W/m²), for every hour
@@ -61,7 +71,7 @@ input: 24 hours x (13 weather variables + 4-number province code) = 24 x 17
 | Learning rate | 0.0005 (Adam optimiser) | Stage 3 |
 | Batch size | 128 | Fixed |
 | Training stop | Stop after 5 epochs without improvement on validation; at most 100 epochs. The learning rate halves after 7 epochs without improvement. | Fixed, patience from stage 3 |
-| Loss | Mean squared error, plus a small penalty (weight 0.1) for predicting below 0 W/m² | Fixed |
+| Loss | Mean squared error over **all** forecast hours, night included, plus a small penalty (weight 0.1) for predicting below 0 W/m² | Fixed, never tuned; tested in Section 5.4 |
 | Resampling block | 168 hours (one week) | Stage 4 (block length barely matters) |
 | Ensemble size × dropout passes | 6 networks × 100 passes | Stage 5 |
 | Conformal correction | Separate factor per province and per hour ahead (5 × 24 = 120 factors) | Validation-only check |
@@ -239,22 +249,60 @@ Why these seed counts:
 The earlier draft had 30 runs (42 with the optional group). This design has 12, and the full
 method's runs are reused.
 
-### 5.4 Candidates for later discussion
+### 5.4 Added arm: training on daylight hours only (`abl_daylight_loss`)
+
+**Question:** should the network learn from night hours at all?
+
+In the final method the training loss counts all 24 forecast hours. At night the true value is
+always exactly 0 W/m², and after prediction every night hour is set to 0 anyway. So night hours
+may be wasted training effort: about half the error terms are hours the method gets right by
+construction. This setting was never tuned or tested; every earlier run trained on all hours.
+
+| Arm | What changes | Seeds | New runs |
+|---|---|---|---|
+| `global_mc_dropout` (reference) | Nothing (the final method) | 42, 43 | 0 (final runs reused) |
+| `global_daylight_loss` | The training loss counts only daylight forecast hours. The validation loss used for early stopping does the same. | 42, 43 | 2 |
+
+Everything else is the final method: one model for all provinces, 6 networks, MC-Dropout,
+correction. It is a separate run group, so adding it did not change the shards of
+`abl_scope_dropout` that were already running.
+
+What happens to night hours in this arm: the network gets no accuracy signal for them. The
+penalty for predicting below 0 W/m² still covers every hour, so night outputs cannot go
+negative, and the night clamp still sets them to 0 after prediction. Night hours therefore
+cannot affect any metric. Only daylight accuracy can change.
+
+**How to read the results** (daylight metrics, against the reference, seed by seed):
+- **Better RMSE, MAE and CRPS:** night hours were diluting the training signal. The paper should
+  then train on daylight only, or at least report this.
+- **Worse:** the night hours teach the network something useful, probably the shape of the day
+  around sunrise and sunset. Look at the first and last daylight hours of each day, where this
+  would show first.
+- **No real difference** (Section 4 rule): the choice does not matter, and the paper can say so
+  with numbers instead of an argument.
+- Also check the training records for the best epoch and training time. With half the error
+  terms removed, the network may stop at a different epoch.
+- CP should stay near 0.95 because of the correction. A change in width shows whether the raw
+  spread moved.
+
+### 5.5 Candidates for later discussion
 
 These were in the earlier draft and are left out to save time. Each can be added later without
 changing the runs above:
 - 6 networks trained on the same data instead of resampled data (does the resampling matter?)
 - the shared model without the province code
 - the shared model without Rize, or without each other province in turn
-- training only on daylight hours
 - no penalty for negative forecasts
 - input-feature changes (these need a code change first)
 
 ## 6. Running it
 
 The runs train on the remote Mac (Apple GPU, "MPS"). Rough estimate: about 2 hours with three runs
-in parallel. Each new code path passed a short trial run first: per-province models with the
-correction, and with dropout off.
+in parallel, plus about 1 hour for the 2 daylight-only runs in a fourth process. Each new code
+path passed a short trial run first: per-province models with the correction and with dropout
+off, and the daylight-only loss.
+
+**`abl_scope_dropout`**, three terminals:
 
 ```bash
 git pull && uv sync --dev
@@ -262,15 +310,31 @@ uv run python scripts/run_all_experiments.py --group abl_scope_dropout --list
 uv run python scripts/run_all_experiments.py --group abl_scope_dropout --skip-existing --continue-on-error --shard 0/3
 uv run python scripts/run_all_experiments.py --group abl_scope_dropout --skip-existing --continue-on-error --shard 1/3
 uv run python scripts/run_all_experiments.py --group abl_scope_dropout --skip-existing --continue-on-error --shard 2/3
-uv run python scripts/check_outputs.py --group abl_scope_dropout
-git add outputs/experiments outputs/experiments_ledger.csv && git commit -m "Ablation abl_scope_dropout: 12 runs on Mac mini, check_outputs passed" && git push
 ```
 
-Run each shard command in its own terminal. Run the check and the commit once all three finish.
+**`abl_daylight_loss`**, a fourth terminal, at the same time:
+
+```bash
+git pull
+bash scripts/run_abl_daylight_loss.sh
+```
+
+`git pull` is safe while the shards run: the commit that added this group does not touch the
+ledger, and the running processes have already loaded their run lists. The script runs the two
+runs and then checks them. It does not commit.
+
+**After all four processes have finished**, check both groups and commit once:
+
+```bash
+uv run python scripts/check_outputs.py --group abl_scope_dropout
+uv run python scripts/check_outputs.py --group abl_daylight_loss
+git add outputs/experiments outputs/experiments_ledger.csv && git commit -m "Ablation abl_scope_dropout (12 runs) and abl_daylight_loss (2 runs) on Mac mini, check_outputs passed" && git push
+```
 
 ## 7. Results
 
 *To be filled in after the runs.* The plan is the table in Section 5.1, filled with daylight test
 metrics (mean ± sd over seeds), then per-province tables for question A, raw and corrected
-numbers for question B, and the method against the benchmark for question C. Each table is
+numbers for question B, the method against the benchmark for question C, and the
+daylight-only arm against the reference (Section 5.4). Each table is
 followed by a short reading in the terms of Section 4.
