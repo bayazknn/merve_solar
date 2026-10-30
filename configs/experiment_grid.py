@@ -37,6 +37,10 @@ INCUMBENT = dict(
 # accuracy; the uncertainty stages (S4-S5) run the full ensemble and are judged on CRPS.
 SCREEN_FIDELITY = dict(n_bootstrap=1, mc_dropout_passes=100)
 FULL_FIDELITY = dict(n_bootstrap=8, mc_dropout_passes=100)
+# Early-stopping patience from S4 on (S1-S3 keep the default 10). No 256-wide network in S2-S3
+# (18 of them) would have kept a different epoch at patience 5; the longest wait for a new best
+# was 4 epochs. Decided after S3 from <stage>_patience.csv (TUNING_FINDINGS.md).
+FROZEN_PATIENCE = 5
 
 STAGE_CRITERION = {
     "s1": "val_RMSE_daylight", "s2": "val_RMSE_daylight", "s3_dropout": "val_RMSE_daylight",
@@ -47,8 +51,8 @@ STAGE_CRITERION = {
 DECISIONS = {
     "s1": 24,            # lookback_hours; incumbent kept: 48 h and 72 h both worse on val RMSE (+0.9, +1.1 W/m^2)
     "s2": (256, 1),      # (lstm_hidden, lstm_layers); -9.51 W/m^2 vs 64x2, -1.61 +/- 0.59 vs 128x1; width search stopped here on cost (TUNING_FINDINGS.md)
-    "s3_dropout": None,  # dropout_rate
-    "s3_lr": None,       # learning_rate
+    "s3_dropout": 0.2,   # dropout_rate; -1.33 +/- 0.36 W/m^2 vs 0.3, CRPS unchanged (-0.08); 0.1 is as accurate but CRPS +2.0
+    "s3_lr": None,       # learning_rate; 5e-4 passes the rule only marginally (-0.99 +/- 0.96), awaiting the user's call (TUNING_FINDINGS.md)
     "s4": None,          # bootstrap_block_length
     "s5": None,          # (n_bootstrap, mc_dropout_passes)
 }
@@ -162,7 +166,7 @@ def _s3_winner() -> tuple[str, dict]:
     tag, base = _s2_winner()
     d, lr = DECISIONS["s3_dropout"], DECISIONS["s3_lr"]
     return (f"{tag}_do{int(round(d * 10)):02d}_lr{_lr_tag(lr)}",
-            dict(base, dropout_rate=d, learning_rate=lr))
+            dict(base, dropout_rate=d, learning_rate=lr, early_stop_patience=FROZEN_PATIENCE))
 
 
 def _s4() -> dict:

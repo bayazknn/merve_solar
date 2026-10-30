@@ -25,6 +25,9 @@ decision rule) and the session status. This file holds the results.
 |---|---|---|---|---|---|
 | S1 | lookback | 24 h | **24 h** | 0 (incumbent kept) | final |
 | S2 | LSTM width × depth | 64 × 2 | **256 × 1** | −9.51 ± 0.71 | final (width compute-bounded) |
+| S3 | dropout rate | 0.3 | **0.2** | −1.33 ± 0.36 | final |
+| S3 | learning rate | 1e-3 | 5e-4 passes the rule marginally | −0.99 ± 0.96 | **provisional** (see below) |
+| — | early-stopping patience, S4 on | 10 | **5** | n/a (no network changes) | final |
 
 ## S1: lookback (final, decided 2026-10-29)
 
@@ -158,14 +161,132 @@ and PINW narrows from 0.321 to 0.184. Rize falls to 0.67.
 networks peak late (32 × 1: best epoch up to 33; 64 × 1: 13.7 on average). Across S2, patience 5
 would have changed 8 of 30 networks, all of them 32- or 64-wide. Source: `s2_patience.csv`.
 
+## S3: dropout rate (final, decided 2026-10-30)
+
+**Decision: dropout 0.2.** It beats the 0.3 incumbent by 1.33 ± 0.36 W/m² on every seed (−1.68,
+−1.33, −0.97), which passes the decision rule. All arms are 256 × 1 at learning rate 1e-3; the 0.3
+arm is the S2 winner, reused. At 1 layer the rate applies to the head only (see S2).
+
+| Dropout | val RMSE | Δ RMSE | val MAE | val CRPS | Δ CRPS | val CP | val PINW | Mean best epoch | Train min/network |
+|---|---|---|---|---|---|---|---|---|---|
+| 0.1 | 89.84 | −1.12 ± 0.37 | **61.04** | 49.85 | +1.98 ± 1.06 | 0.565 | 0.102 | 1.3 | 6.0 |
+| **0.2** | **89.63** | **−1.33 ± 0.36** | 61.54 | **47.80** | −0.08 ± 0.68 | 0.710 | 0.146 | 2.3 | 6.5 |
+| 0.3 (incumbent) | 90.96 | 0 | 63.49 | 47.88 | 0 | 0.777 | 0.184 | 3.7 | 7.6 |
+| 0.4 | 91.61 | +0.65 ± 0.89 | 64.94 | 48.23 | +0.36 ± 0.21 | 0.822 | 0.218 | 7.7 | 7.7 |
+| 0.5 | 92.74 | +1.78 ± 1.61 | 67.64 | 49.64 | +1.76 ± 0.09 | 0.846 | 0.255 | 8.0 | 8.0 |
+
+Sources: `s3_dropout_summary.csv`, `s3_dropout_matched_origins.csv` (Δ CRPS). All arms share the
+lookback, so all are scored on the same 1,400 origins.
+
+**Per province** (Δ RMSE vs 0.3):
+
+| Province | 0.1 | 0.2 | 0.4 | 0.5 |
+|---|---|---|---|---|
+| Ankara | −1.93 ± 1.25 | −1.80 ± 1.56 | +0.45 ± 1.98 | +2.12 ± 2.83 |
+| Antalya | −0.94 ± 0.39 | −0.80 ± 0.52 | +1.06 ± 0.50 | +2.73 ± 0.07 |
+| Konya | −0.64 ± 0.12 | −1.49 ± 0.91 | +1.47 ± 1.93 | +2.16 ± 0.84 |
+| Rize | −1.55 ± 0.95 | −1.50 ± 0.66 | −0.42 ± 1.07 | +0.06 ± 4.31 |
+| Van | −0.44 ± 0.86 | −1.00 ± 0.46 | +0.90 ± 1.77 | +2.16 ± 1.69 |
+
+Source: `s3_dropout_by_province.csv`.
+
+- **The gain is broad.** 0.2 is better than 0.3 in every province, by 0.8 to 1.8 W/m².
+- **The optimum is inside the grid.** 0.1 and 0.2 are tied on RMSE (0.2 − 0.1 = −0.21 ± 0.56,
+  seed-paired), so the grid does not need extending downwards.
+- **0.2 costs nothing in CRPS; 0.1 does.** At 0.2, CRPS is unchanged (−0.08 ± 0.68). At 0.1 it is
+  2.0 W/m² worse, because the MC-Dropout spread collapses (CP 0.57, PINW 0.10). Between the two
+  RMSE-tied arms, the proper score separates them, and it agrees with the RMSE ranking. The concern
+  in `TUNING_PLAN.md` (Interactions) that a B=1 CRPS choice would favour too much dropout does not
+  bite here: CRPS is flat from 0.2 to 0.4.
+- **Rize is the exception at high dropout.** It is the only province where 0.4 and 0.5 do not
+  lose RMSE, and its CRPS improves there (−1.34 and −0.92). The cloudiest site benefits from a
+  wider spread; elsewhere the extra spread is paid for in accuracy.
+
+**Regularisation delays the optimum but does not improve it.** The mean best epoch rises with
+dropout (1.3 → 2.3 → 3.7 → 7.7 → 8.0), while val RMSE gets steadily worse above 0.2. This is the
+prediction of the training-dynamics diagnosis: the early peak is not overfitting that more
+dropout would cure. The paper can state it with these numbers.
+
+**Coverage keeps falling.** At B=1, val CP drops from 0.777 to 0.710 and PINW from 0.184 to
+0.146. Rize falls to 0.59. A lower dropout rate shrinks the only source of MC-Dropout randomness
+at 1 layer, so in the final model the bootstrap ensemble (S4, S5) and the conformal layer carry
+even more of the calibration. How much of the final spread is dropout's is measured in S5.
+
+## S3: learning rate (provisional)
+
+**Status: 5e-4 passes the decision rule by 0.03 W/m², and the evidence behind it is weak. Not yet
+recorded in `DECISIONS`.** All arms are 256 × 1 at dropout 0.3; the 1e-3 arm is the S2 winner,
+reused.
+
+| Learning rate | val RMSE | Δ RMSE | val MAE | val CRPS | Δ CRPS | val CP | val PINW | Mean best epoch | Train min/network |
+|---|---|---|---|---|---|---|---|---|---|
+| **5e-4** | **89.97** | −0.99 ± 0.96 | 63.87 | 47.93 | +0.05 ± 0.17 | 0.775 | 0.181 | 4.0 | 7.0 |
+| 1e-3 (incumbent) | 90.96 | 0 | **63.49** | **47.88** | 0 | 0.777 | 0.184 | 3.7 | 7.6 |
+| 2e-3 | 90.91 | −0.05 ± 0.34 | 63.77 | 48.09 | +0.21 ± 0.33 | 0.774 | 0.181 | 3.7 | 6.7 |
+
+Sources: `s3_lr_summary.csv`, `s3_lr_matched_origins.csv` (Δ CRPS).
+
+**Per province** (Δ RMSE vs 1e-3):
+
+| Province | 5e-4 | 2e-3 |
+|---|---|---|
+| Ankara | −1.44 ± 2.12 | +0.05 ± 1.05 |
+| Antalya | +0.00 ± 0.40 | +0.18 ± 0.58 |
+| Konya | −0.38 ± 0.99 | −0.21 ± 0.97 |
+| Rize | −2.44 ± 1.61 | −0.54 ± 0.97 |
+| Van | −0.41 ± 0.31 | +0.36 ± 0.50 |
+| All but Rize | −0.57 ± 0.78 | +0.10 ± 0.72 |
+
+Source: `s3_lr_by_province.csv`.
+
+Why the marginal pass is not convincing:
+- **One seed carries it.** The paired gains are −2.06, −0.17 and −0.75 W/m². The largest comes
+  from seed 42, which is the incumbent's worst seed (91.75, against 90.32 and 90.81).
+- **One province carries it.** Without Rize the gain is −0.57 ± 0.78, which fails the rule.
+- **No gain as a distribution.** Val MAE is slightly worse (+0.39) and CRPS is unchanged
+  (+0.05 ± 0.17).
+- **It was measured at dropout 0.3, not at the chosen 0.2.** The two axes were moved one at a
+  time, and the plan relied on S4 to check the combination. S4 cannot do that: every S4 arm
+  carries both values, so there is no arm to compare against.
+- 5e-4 does not peak later (mean best epoch 4.0, max 5), so the hoped-for finer early-stopping
+  resolution did not materialise either.
+
+**Recommendation: settle it with one combined arm before S4.** Train dropout 0.2 with learning
+rate 5e-4 at the S3 fidelity (B=1, patience 10, seeds 42 to 44; 3 runs, about 20 min on MPS) and
+compare it, seed-paired, with the existing dropout-0.2 arm at 1e-3 under the same decision rule.
+This tests the configuration that would actually be frozen, and costs about 3% of S4. If the
+user prefers to apply the rule as written, 5e-4 is recorded and S4 runs on (0.2, 5e-4).
+
+## Early-stopping patience (decided 2026-10-30)
+
+**Decision: patience 5 from S4 on**, for the frozen 256 × 1 architecture. S1 to S3 keep 10.
+
+| Stage | Networks | Changed at patience 3 | Changed at 5 | Changed at 7 |
+|---|---|---|---|---|
+| S1 (64 × 2, three lookbacks) | 9 | 1 | 0 | 0 |
+| S2, 32 and 64 wide (64 × 2 reused from S1) | 18 | 10 | 8 | 5 |
+| S2, 128 and 256 wide | 12 | 0 | 0 | 0 |
+| S3 (all 256 × 1) | 15 new | 3 (dropout 0.4, 0.5; lr 2e-3) | 0 | 0 |
+| **256 × 1 in S2 and S3** | **18** | **3** | **0** | **0** |
+
+Sources: `s1_patience.csv`, `s2_patience.csv`, `s3_dropout_patience.csv`, `s3_lr_patience.csv`.
+
+- At the chosen width no network, at any dropout rate or learning rate tried, would have kept a
+  different epoch at patience 5. The longest wait for a new best was 4 epochs (lr 2e-3); in the
+  arms that can still be chosen (dropout 0.2, lr 5e-4 or 1e-3) it was 1.
+- The rule in `TUNING_PLAN.md` asked for zero changes "at patience 5 or 7"; for 256-wide networks
+  that holds. For narrow networks it does not, so the lower patience is tied to this architecture
+  and an ablation that changes width must restore 10.
+- Effect: a dropout-0.2 network trained 13.3 epochs on average at patience 10. At patience 5 that
+  is about 8, so S4 and later stages cost roughly 40% less.
+- What it gives up: S4 onward train bootstrap replicas, whose validation curves have not been
+  observed. A later stage can still detect a too-short patience only down to 3 (its report
+  re-evaluates the history it has), not whether 10 would have found a later epoch.
+
 ## Carried forward
 
-- **Patience** (decided before S4): a patience of 5 is not safe in general (S2), only for wide
-  networks. At 256 × 1 no network has changed yet. It may be lowered for the frozen architecture
-  only if the S3 arms (especially the lower learning rate, which may peak later) also show no
-  change at patience 5.
-- **Cost.** At 256 × 1 a network takes about 7.6 min on MPS, twice the 128 × 1 time on which the
-  remaining-stage estimates in `TUNING_PLAN.md` were based.
+- **Patience** is 5 from S4 on (above). Ablations that change the architecture's width restore 10.
+- **Cost.** At 256 × 1 a network takes about 6.5 min on MPS at dropout 0.2, at patience 10.
 - **MC-Dropout spread at 1 layer** (S2) and the smoke-run gap between MC-averaged and
   dropout-off predictions (`TUNING_PLAN.md`) are both measured on fully trained weights by the
   S5 ensemble curves.

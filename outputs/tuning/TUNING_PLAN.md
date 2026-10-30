@@ -8,15 +8,19 @@ in `TUNING_FINDINGS.md`**, backed by the `<stage>_*.csv` tables next to this fil
 
 ## Status (update at the end of every session)
 
-**As of 2026-10-30: S1 (lookback 24 h) and S2 (256 × 1) are decided. S3 is unlocked and ready
-to run on the remote Mac.**
+**As of 2026-10-30 (after the S3 pull): S1 (lookback 24 h), S2 (256 × 1) and the S3 dropout rate
+(0.2) are decided, and patience is 5 from S4 on. The S3 learning rate is open: 5e-4 passes the
+decision rule only marginally, and the recommendation is a 3-run confirmation arm before S4
+(`TUNING_FINDINGS.md`, S3 learning rate). S4 stays locked until `DECISIONS["s3_lr"]` is set.**
 
 | Stage | Group | State | Decision |
 |---|---|---|---|
 | Smoke | `smoke` | Done on the analysis Mac (MPS, 3.6 min), all outputs present | n/a |
 | S1 lookback | `tune_s1_lookback` | Done (9 runs, MPS); findings final | **24 h** (incumbent kept) |
 | S2 architecture | `tune_s2_arch` | Done (24 grid runs + 3 extension runs, MPS); findings final | **256 × 1** (width compute-bounded) |
-| S3 dropout, learning rate | `tune_s3_dropout`, `tune_s3_lr` | Unlocked: 12 + 6 runs at 256 × 1 (0.3 / 1e-3 reused from S2) | pending |
+| S3 dropout | `tune_s3_dropout` | Done (12 runs, MPS); findings final | **0.2** |
+| S3 learning rate | `tune_s3_lr` | Done (6 runs, MPS); findings provisional | 5e-4 marginal (−0.99 ± 0.96); pending the user's call |
+| Patience | | Decided from S1 to S3 patience tables | **5** from S4 on (`FROZEN_PATIENCE`) |
 | S4, S5, final | | Locked until the previous decision is in `DECISIONS` | |
 
 Findings for every stage, with per-province tables and robustness checks: `TUNING_FINDINGS.md`.
@@ -35,32 +39,17 @@ Findings for every stage, with per-province tables and robustness checks: `TUNIN
 check_outputs passed`. They start with "partial" and name the failed id if a run failed, and
 they copy any WARNING lines from the check.
 
-**Next session, in order** (after S3 finishes on the remote Mac):
-1. `git pull`, then check both groups. Every run should be mps, and only the gitignored
-   `test_predictions.npz` should be reported missing:
-   ```bash
-   uv run python scripts/check_outputs.py --group tune_s3_dropout
-   ```
-   ```bash
-   uv run python scripts/check_outputs.py --group tune_s3_lr
-   ```
-2. Run the two reports. Each axis is decided on its own, against the S2 winner (dropout 0.3,
-   learning rate 1e-3):
-   ```bash
-   uv run python scripts/15_tuning_report.py --stage s3_dropout
-   ```
-   ```bash
-   uv run python scripts/15_tuning_report.py --stage s3_lr
-   ```
-   Also look at:
-   - Does the 5e-4 arm peak later? Its patience table feeds the patience decision.
-   - What does dropout do to val CP? The 256 × 1 network has CP 0.78 with head-only dropout.
-     Selection stays on RMSE (see Interactions); CP is reported, not optimised.
-3. Write `DECISIONS["s3_dropout"]` and `DECISIONS["s3_lr"]`, and add the S3 section to
-   `TUNING_FINDINGS.md`. Decide the patience for S4 onward (see Early stopping) and record it in
-   the findings. Commit with the `s3_*` tables, then confirm `tune_s4_block --list` shows 12 runs.
-4. Give the user the S4 commands: 12 runs at B=8, about 12 h at 256 × 1, so shard it.
-   Update this Status section.
+**Next session, in order:**
+1. Settle the learning rate (the user's call):
+   - **Recommended:** add a `tune_s3_combo` group, dropout 0.2 × learning rate 5e-4 at the S3
+     fidelity (B=1, patience 10, seeds 42 to 44; 3 runs, about 20 min on MPS). Its incumbent is
+     the existing dropout-0.2 arm at 1e-3, compared seed-paired under the usual rule. Run it on the
+     remote Mac, pull, report, then write `DECISIONS["s3_lr"]` from that comparison.
+   - Or apply the rule as written: `DECISIONS["s3_lr"] = 5e-4`.
+2. Commit, then confirm `tune_s4_block --list` shows 12 runs, all with
+   `early_stop_patience=5`, dropout 0.2 and the chosen learning rate.
+3. Give the user the S4 commands: 12 runs at B=8 (96 networks), about 6 to 7 h single-process at
+   patience 5, so shard it. Update this Status section.
 
 **Open observations to carry forward:**
 - In the 2-epoch smoke run, the average of the MC-Dropout passes was about 6 W/m² worse in
@@ -69,8 +58,8 @@ they copy any WARNING lines from the check.
   - The smoke models were barely trained, so this proves nothing yet.
   - The S5 curves measure exactly this contrast on identical, fully trained weights. If it
     holds, it matters for the paper's MC-Dropout claim.
-- Patience stays at 10 through S3. The decision to lower it before S4 comes from the
-  `<stage>_patience.csv` files (see Early stopping). S2 already shows it is not safe for small
+- Patience is 5 from S4 on, for the 256 × 1 architecture only (see Early stopping). An
+  ablation that narrows the network must restore 10: S2 shows 5 is not safe for 32- or 64-wide
   networks.
 - The benchmark methodology is still undeclared (CLAUDE.md). Nothing in tuning depends on it.
 
@@ -127,8 +116,10 @@ Notes on the grids:
 - **Architecture.** The head is always one hidden layer of half the LSTM width, as in the
   incumbent. Width and depth are crossed because they trade off against each other: a deeper,
   narrower network can match a wider, shallower one.
-- **Dropout and learning rate** are each moved one at a time from the S2 winner. Their
-  combination is checked in S4, which trains every arm with both chosen values. A lower
+- **Dropout and learning rate** are each moved one at a time from the S2 winner. S4 trains
+  every arm with both chosen values, but it has no arm without them, so it cannot detect an
+  interaction. When both axes move, the combination gets its own 3-run check against the
+  single-axis winner (see Status). A lower
   learning rate also spreads the optimum over more epochs. FINDINGS observed the best epoch
   at 0 to 5 with ~1,700 steps per epoch, so a slower rate also makes the per-epoch
   early-stopping choice less coarse.
@@ -199,6 +190,12 @@ networks would have kept a different epoch. If S1 to S3 (about 50 networks) show
 patience 5 or 7, the patience is lowered before S4. S4 and S5 are the expensive stages (about
 10 h of the total), and the frozen configuration and every ablation would use the lower value.
 
+**Outcome (after S3): patience 5 from S4 on.** None of the 18 networks at the chosen 256 × 1
+width (S2 and S3, every dropout rate and learning rate) would have kept a different epoch at
+patience 5 or 7; the longest wait for a new best was 4 epochs. For 32- and 64-wide networks it
+is not safe (8 of 18 changed at patience 5), so the value is tied to the architecture. It is
+`FROZEN_PATIENCE` in `configs/experiment_grid.py`, applied to S4, S5 and the final reference.
+
 ## Interactions and how the order handles them
 
 | Interaction | Handling |
@@ -207,7 +204,7 @@ patience 5 or 7, the patience is lowered before S4. S4 and S5 are the expensive 
 | lookback ↔ capacity | Lookback first at the incumbent architecture, then architecture at the chosen lookback. |
 | width ↔ depth | Crossed grid in S2. |
 | dropout ↔ MC-Dropout spread | Dropout is chosen for accuracy at B=1. Its effect on the intervals is measured in S4/S5, and T is chosen at the chosen dropout. Choosing dropout on CRPS at B=1 would favour too much dropout, because a single network's MC spread has to stand in for the bootstrap spread it lacks at B=8. |
-| dropout ↔ learning rate | Each moved one at a time; the combination is checked in S4. |
+| dropout ↔ learning rate | Each moved one at a time; if both change, a 3-run combined arm is compared with the dropout winner before S4. |
 | block length ↔ ensemble size | B is chosen at the chosen block length. |
 | ensemble size ↔ MC passes | Crossed B × T surface in S5, at no training cost. |
 
@@ -229,14 +226,16 @@ Estimates per stage (lookback 24; longer lookbacks scale roughly linearly):
 |---|---|
 | S1 | ~1 h |
 | S2 | 2 to 3 h |
-| S3 | 1 to 1.5 h at 64 × 2; ~2.5 h single-process at the chosen 256 × 1 |
-| S4 | ~6 h at 64 × 2; ~12 h at 256 × 1 |
-| S5 | ~4 h at 64 × 2; ~6 to 7 h at 256 × 1, curves included |
-| Final | 1 to 2.5 h at 64 × 2; ~2 h at 256 × 1 (2 new seeds at B=8) |
-| **Total** | **15 to 18 h** as planned; **about 25 h** for the remaining stages at 256 × 1 |
+| S3 | 1 to 1.5 h at 64 × 2; done in 18 runs at 256 × 1 (6 to 8 min per network) |
+| S3 combination check (if run) | ~20 min (3 networks at B=1) |
+| S4 | ~6 to 7 h at 256 × 1, patience 5 (96 networks) |
+| S5 | ~3.5 to 4 h at 256 × 1, patience 5, curves included |
+| Final | ~1 h at 256 × 1, patience 5 (2 new seeds at B=8) |
+| **Total** | **about 11 to 12 h** for the remaining stages |
 
-S2 chose a network that trains in about 7.6 min instead of 3.5 to 4 min, which doubles every
-remaining stage. These are single-process figures; sharding shortens the wall clock.
+S2 chose a network that trains in about 7.6 min (6.5 min at dropout 0.2) instead of 3.5 to
+4 min. Patience 5 cuts a dropout-0.2 network from about 13 epochs to about 8, which takes back
+most of that. These are single-process figures; sharding shortens the wall clock.
 
 ## Runbook
 

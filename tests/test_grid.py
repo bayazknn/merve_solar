@@ -118,6 +118,7 @@ def test_stage_four_runs_the_full_ensemble_and_moves_only_the_block(decided):
     assert (first.n_bootstrap, first.mc_dropout_passes) == (8, 100)
     assert (first.lookback_hours, first.hidden_sizes, first.lstm_layers) == (48, [128, 64], 1)
     assert (first.dropout_rate, first.learning_rate) == (0.2, 5e-4)
+    assert first.early_stop_patience == grid.FROZEN_PATIENCE
     for configs in arms.values():
         assert _diff(first, configs[0]) <= {"experiment_id", "bootstrap_block_length"}
 

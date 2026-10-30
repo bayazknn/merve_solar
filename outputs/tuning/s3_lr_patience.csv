@@ -1,0 +1,4 @@
+arm,networks,longest_wait_max,best_epoch_max,epochs_mean,changed_by_patience_3,changed_by_patience_5,changed_by_patience_7
+lr5e-4,3,1,5,15.0,0,0,0
+lr1e-3,3,1,7,14.666666666666666,0,0,0
+lr2e-3,3,4,6,14.666666666666666,1,0,0
