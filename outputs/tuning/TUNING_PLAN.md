@@ -9,7 +9,7 @@ in `TUNING_FINDINGS.md`**, backed by the `<stage>_*.csv` tables next to this fil
 ## Status (update at the end of every session)
 
 **As of 2026-10-30 (after the S5 pull): tuning is complete. The frozen configuration is lookback
-24 h, 256 × 1, dropout 0.2, learning rate 5e-4, patience 5, block 168 h, B = 6, T = 50
+24 h, 256 × 1, dropout 0.2, learning rate 5e-4, patience 5, block 168 h, B = 6, T = 100
 (`TUNING_FINDINGS.md`, Frozen configuration). `final_reference` is unlocked (5 new runs), but one
 setting is open: the conformal mode, which is `"none"` in every tuning run and in the final
 configs as they stand. Decide it before running the final reference.**
@@ -23,9 +23,9 @@ configs as they stand. Decide it before running the final reference.**
 | S3 learning rate | `tune_s3_lr` | Done (6 runs, MPS); findings final | **5e-4** (marginal pass, rule applied as written) |
 | Patience | | Decided from S1 to S3 patience tables | **5** from S4 on (`FROZEN_PATIENCE`) |
 | S4 block length | `tune_s4_block` | Done (12 runs at B=8, MPS, 2 shards); findings final | **168 h** (incumbent kept; all blocks within 0.15 W/m² CRPS) |
-| S5 ensemble size, MC passes | `tune_s5_ensemble` | Done (3 runs at B=16, curves, MPS, 3 shards); findings final | **B = 6, T = 50** (cheapest cell within one seed sd of the best) |
+| S5 ensemble size, MC passes | `tune_s5_ensemble` | Done (3 runs at B=16, curves, MPS, 3 shards); findings final | **B = 6, T = 100** (B by the rule; T raised from the rule's 50 for stable interval endpoints) |
 | Conformal mode | | Open: needed for the headline row | pending (the user's call) |
-| Final | `final_reference` | Unlocked: 5 runs at B=6, T=50, seeds 42 to 46 | wait for the conformal decision |
+| Final | `final_reference` | Unlocked: 5 runs at B=6, T=100, seeds 42 to 46 | wait for the conformal decision |
 
 Findings for every stage, with per-province tables and robustness checks: `TUNING_FINDINGS.md`.
 
@@ -44,13 +44,26 @@ check_outputs passed`. They start with "partial" and name the failed id if a run
 they copy any WARNING lines from the check.
 
 **Next session, in order:**
-1. **Decide the conformal mode for the frozen configuration.** Raw daylight CP is 0.79 at the
-   chosen cell (best anywhere on the S5 grid: 0.81), so the paper's headline row needs the
-   conformal layer. The mode cannot be chosen on post-correction validation coverage, because
-   validation is the calibration split. It has to be fixed by argument (which conditional
-   coverage the paper claims: per province, per horizon or both) or by a cross-fitted
-   comparison inside the validation split. The uncorrected twin then belongs to the ablation
-   programme.
+1. **Decide the conformal mode for the frozen configuration** (being decided with the user).
+   Raw daylight CP is 0.79 at the chosen cell, so the paper's headline row needs the conformal
+   layer. Agreed so far:
+   - **The city axis is required**: the cross-province claim needs coverage per province.
+   - **No season axis**: validation (2024-09-03 → 2025-06-11) has no July or August and only
+     11 days of June. A summer cell would be fitted on those 11 days and applied to two test
+     summers.
+   - **Candidates: `per_city` (5 factors) and `city_horizon` (120 factors).** The question is
+     whether coverage varies with the lead time enough to need a factor per step, at the price of
+     about 130 effective observations per cell.
+   - **Not by test, not by in-sample validation.** `08_conformal_mode_selection.py` scores on
+     the test split and must not be used to choose. Post-correction validation CP is fitted by
+     construction.
+   - **Proposed check (validation only):** reload the first 6 networks of each S5 run (seeds 42
+     to 44, on the Mac mini), predict validation at T=100, then fit each candidate on some
+     months and score it on the others: alternating months for the geometry, and
+     leave-one-season-out (fit on two seasons, score on the third) for the summer-transfer risk.
+     Score aggregate |CP − 0.95|, worst province and worst horizon step. Also refit k month by
+     month to measure how seasonal it is. About 15 to 35 min of inference; the fitting takes
+     seconds. Needs a new script.
 2. Set `conformal_mode` on the final configs in `configs/experiment_grid.py` (the ids stay
    `final_s42` to `final_s46`; the mode is a ledger column), check `final_reference --list`,
    run the grid tests, commit and push.

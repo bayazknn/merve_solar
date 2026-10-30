@@ -29,7 +29,7 @@ mean of all the samples), three score the **predictive distribution** (all the s
 which is what the uncertainty layer produces).
 
 **What is being scored.** For every daylight hour the model produces not one forecast but a
-cloud of samples: B networks × T MC-Dropout passes (for example 6 × 50 = 300 samples). Their
+cloud of samples: B networks × T MC-Dropout passes (for example 6 × 100 = 600 samples). Their
 mean is the point forecast. Their 2.5th and 97.5th percentiles are the lower and upper ends of
 the 95% prediction interval. Night hours are left out of every number here.
 
@@ -114,7 +114,7 @@ is wider. Compare CP and CRPS only within a stage, or across stages of the same 
 | S3 | learning rate | 1e-3 | **5e-4** | −0.99 ± 0.96 | final (marginal pass, accepted as written) |
 | — | early-stopping patience, S4 on | 10 | **5** | n/a (no network changes) | final |
 | S4 | bootstrap block length | 168 h | **168 h** | 0 (incumbent kept; criterion val CRPS) | final |
-| S5 | ensemble size B × MC passes T | 8 × 100 | **6 × 50** | +0.27 ± 0.20 val CRPS vs the best cell (16 × 150); cost-driven | final |
+| S5 | ensemble size B × MC passes T | 8 × 100 | **6 × 100** | +0.24 ± 0.20 val CRPS vs the best cell (16 × 150); B cost-driven, T amended | final |
 
 ## S1: lookback (final, decided 2026-10-29)
 
@@ -486,9 +486,11 @@ while the interval widens only from about 150 to about 180 W/m².
 
 ## S5: ensemble size and MC passes (final, decided 2026-10-30)
 
-**Decision: B = 6 networks, T = 50 MC-Dropout passes.** It is the cheapest cell whose mean val
-CRPS is within one seed sd of the best cell (B=16, T=150), which is the pre-registered rule
-(`TUNING_PLAN.md`, Grids). Every cell is read off one 16-network run per seed (seeds 42 to 44),
+**Decision: B = 6 networks, T = 100 MC-Dropout passes.** B is the pre-registered rule's choice:
+the cheapest cell whose mean val CRPS is within one seed sd of the best cell (B=16, T=150)
+(`TUNING_PLAN.md`, Grids). The rule's own pick was 6 × 50; T was raised to 100 on 2026-10-30
+(see the T bullet below), a documented departure from the rule's tie-break, not from its
+tolerance. Every cell is read off one 16-network run per seed (seeds 42 to 44),
 using its first B networks and first T passes, so all cells share their networks and are
 compared seed by seed. Configuration: 256 × 1, dropout 0.2, learning rate 5e-4, block 168 h,
 patience 5.
@@ -498,8 +500,8 @@ patience 5.
 | B × T | Draws | val CRPS | Δ CRPS vs 16 × 150 (paired) | val RMSE | val CP | val PINW |
 |---|---|---|---|---|---|---|
 | 4 × 50 | 200 | 46.36 | +0.48 ± 0.54 | 88.43 | 0.779 | 0.168 |
-| **6 × 50** | 300 | 46.16 | **+0.27 ± 0.20** | 88.37 | 0.790 | 0.171 |
-| 6 × 100 | 600 | 46.12 | +0.24 ± 0.20 | 88.35 | 0.794 | 0.172 |
+| 6 × 50 (the rule's pick) | 300 | 46.16 | +0.27 ± 0.20 | 88.37 | 0.790 | 0.171 |
+| **6 × 100 (decided)** | 600 | 46.12 | **+0.24 ± 0.20** | 88.35 | 0.794 | 0.172 |
 | 8 × 100 (incumbent, = S4) | 800 | 46.17 | +0.28 ± 0.20 | 88.38 | 0.798 | 0.173 |
 | 12 × 100 | 1,200 | 45.99 | +0.11 ± 0.17 | 88.23 | 0.804 | 0.175 |
 | 16 × 100 | 1,600 | 45.89 | +0.01 ± 0.00 | 88.17 | 0.808 | 0.177 |
@@ -531,9 +533,16 @@ What the surface shows:
 - **What the rule buys.** Six networks instead of eight cut every remaining training run by a
   quarter: the final reference and every ablation arm. That is why a cost rule was chosen for
   this stage, and why B is not pushed to 16 for a 0.27 W/m² gain.
-- **T is chosen on the same rule** (fewest passes within the tolerance). Passes cost only
-  inference, so T=100 would also be defensible. It would buy 0.04 W/m² and the 300 draws per
-  element at T=50 already place about 7 samples in each 2.5% tail.
+- **T = 100, not the rule's 50.** The rule sorts cells by B and then T, so within B=6 it took the
+  fewest passes. But passes cost only inference, never training, so the cost argument behind the
+  rule does not apply to T. The reason for 100 is Monte Carlo stability, not the CRPS gain: 600
+  draws per element put about 15 samples beyond each 2.5% interval endpoint instead of about 7,
+  so the interval endpoints are estimated more stably. The CRPS gain (0.04 W/m², 46.16 → 46.12)
+  is consistent on every seed but too small to justify the change by itself. Inference stays
+  cheaper than the previous 8 × 100.
+- **The block length was not reopened.** 240 h failed the S4 rule (−0.15 ± 0.18 W/m²), and a
+  noise-level gain does not become real by being combined with another change. The 168 h
+  block stays.
 
 **MC-Dropout against dropout-off, on identical weights** (val, daylight; MC at T=100 minus the
 deterministic ensemble of the same B networks, mean over seeds):
@@ -592,7 +601,7 @@ Source: `s5_patience.csv`.
 | Early-stopping patience | 5 | after S3 |
 | Bootstrap block length | 168 h | S4 |
 | Ensemble size B | 6 | S5 |
-| MC-Dropout passes T | 50 | S5 |
+| MC-Dropout passes T | 100 | S5 (rule pick 50, amended) |
 | Conformal mode | not yet decided | see `TUNING_PLAN.md` |
 
 ## Carried forward
