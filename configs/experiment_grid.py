@@ -54,7 +54,7 @@ DECISIONS = {
     "s3_dropout": 0.2,   # dropout_rate; -1.33 +/- 0.36 W/m^2 vs 0.3, CRPS unchanged (-0.08); 0.1 is as accurate but CRPS +2.0
     "s3_lr": 5e-4,       # learning_rate; passes the rule marginally (-0.99 +/- 0.96 W/m^2, measured at dropout 0.3); accepted as written, combination untested (TUNING_FINDINGS.md)
     "s4": 168,           # bootstrap_block_length; incumbent kept: all four blocks within 0.15 W/m^2 val CRPS (best 240 h, -0.15 +/- 0.18)
-    "s5": None,          # (n_bootstrap, mc_dropout_passes)
+    "s5": (6, 50),       # (n_bootstrap, mc_dropout_passes); cheapest cell within one seed sd of the best (16, 150): +0.27 +/- 0.20 W/m^2 val CRPS, seed-paired
 }
 
 # --- grids ---------------------------------------------------------------------------------------

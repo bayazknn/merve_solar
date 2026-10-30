@@ -30,6 +30,7 @@ decision rule) and the session status. This file holds the results.
 | S3 | learning rate | 1e-3 | **5e-4** | −0.99 ± 0.96 | final (marginal pass, accepted as written) |
 | — | early-stopping patience, S4 on | 10 | **5** | n/a (no network changes) | final |
 | S4 | bootstrap block length | 168 h | **168 h** | 0 (incumbent kept; criterion val CRPS) | final |
+| S5 | ensemble size B × MC passes T | 8 × 100 | **6 × 50** | +0.27 ± 0.20 val CRPS vs the best cell (16 × 150); cost-driven | final |
 
 ## S1: lookback (final, decided 2026-10-29)
 
@@ -359,6 +360,103 @@ training-dynamics findings; the ensemble averages over it, which is consistent w
 seed sd at B=8: val CRPS sd averages 0.15 over the S4 arms, against 0.40 over the seven 256 × 1
 arms at B=1 (S2, S3).
 
+## S5: ensemble size and MC passes (final, decided 2026-10-30)
+
+**Decision: B = 6 networks, T = 50 MC-Dropout passes.** It is the cheapest cell whose mean val
+CRPS is within one seed sd of the best cell (B=16, T=150), which is the pre-registered rule
+(`TUNING_PLAN.md`, Grids). Every cell is read off one 16-network run per seed (seeds 42 to 44),
+using its first B networks and first T passes, so all cells share their networks and are
+compared seed by seed. Configuration: 256 × 1, dropout 0.2, learning rate 5e-4, block 168 h,
+patience 5.
+
+**Selected cells**, MC-Dropout inference (val, daylight):
+
+| B × T | Draws | val CRPS | Δ CRPS vs 16 × 150 (paired) | val RMSE | val CP | val PINW |
+|---|---|---|---|---|---|---|
+| 4 × 50 | 200 | 46.36 | +0.48 ± 0.54 | 88.43 | 0.779 | 0.168 |
+| **6 × 50** | 300 | 46.16 | **+0.27 ± 0.20** | 88.37 | 0.790 | 0.171 |
+| 6 × 100 | 600 | 46.12 | +0.24 ± 0.20 | 88.35 | 0.794 | 0.172 |
+| 8 × 100 (incumbent, = S4) | 800 | 46.17 | +0.28 ± 0.20 | 88.38 | 0.798 | 0.173 |
+| 12 × 100 | 1,200 | 45.99 | +0.11 ± 0.17 | 88.23 | 0.804 | 0.175 |
+| 16 × 100 | 1,600 | 45.89 | +0.01 ± 0.00 | 88.17 | 0.808 | 0.177 |
+| 16 × 150 (best) | 2,400 | 45.89 | 0 | 88.17 | 0.809 | 0.177 |
+
+Source: `s5_summary.csv` (every cell, both inference modes). The paired differences are
+computed from the three runs' `ensemble_curves.csv`.
+
+**Per seed, val CRPS at T = 100:**
+
+| Seed | B=4 | 6 | 8 | 10 | 12 | 14 | 16 |
+|---|---|---|---|---|---|---|---|
+| 42 | 45.78 | 45.99 | 46.11 | 46.02 | 46.05 | 46.11 | 45.97 |
+| 43 | 46.74 | 46.40 | 46.34 | 46.36 | 46.08 | 46.21 | 46.14 |
+| 44 | 46.40 | 45.98 | 46.07 | 46.07 | 45.85 | 45.67 | 45.56 |
+
+What the surface shows:
+- **B matters little and T barely at all.** From B=4 to B=16 val CRPS improves by about
+  0.4 W/m² (1%). From T=50 to T=150 it improves by 0.02 to 0.08, depending on B, on every seed
+  (paired sd ≤ 0.004). RMSE moves by under 0.3 over the whole grid.
+- **B=6 and B=8 are indistinguishable.** Seed-paired, both cost about 0.27 W/m² against the
+  best cell, and B=8 is not better than B=6 on the mean. Below B=12 the curve is not monotone,
+  because each seed adds networks in a fixed order and one weak network shows up at every
+  larger B. Only from B=12 on is a gain (about 0.15 to 0.25 W/m²) consistent across seeds.
+- **The rule trades 0.6% of CRPS for cost.** The selected cell is worse than the best on all
+  three seeds (+0.46, +0.30, +0.06), so the cost is real, but at 0.27 W/m² it is small next to the
+  between-seed sd of a single run's CRPS (0.15 to 0.30). It also costs 0.019 in raw CP, which the
+  conformal layer absorbs.
+- **What the rule buys.** Six networks instead of eight cut every remaining training run by a
+  quarter: the final reference and every ablation arm. That is why a cost rule was chosen for
+  this stage, and why B is not pushed to 16 for a 0.27 W/m² gain.
+- **T is chosen on the same rule** (fewest passes within the tolerance). Passes cost only
+  inference, so T=100 would also be defensible. It would buy 0.04 W/m² and the 300 draws per
+  element at T=50 already place about 7 samples in each 2.5% tail.
+
+**MC-Dropout against dropout-off, on identical weights** (val, daylight; MC at T=100 minus the
+deterministic ensemble of the same B networks, mean over seeds):
+
+| B | Δ RMSE | Δ bias | Δ CRPS | CP (dropout-off) | CP (MC) | Δ PINW |
+|---|---|---|---|---|---|---|
+| 4 | +0.06 | +0.46 | −7.14 | 0.229 | 0.784 | +0.125 |
+| 6 | +0.06 | +0.48 | −6.48 | 0.276 | 0.794 | +0.119 |
+| 8 | +0.06 | +0.49 | −6.21 | 0.302 | 0.798 | +0.114 |
+| 16 | +0.05 | +0.51 | −5.52 | 0.373 | 0.808 | +0.104 |
+
+Source: `s5_summary.csv` (rows with `inference_mode` = `deterministic` and `mc_dropout`).
+
+- **The smoke-run concern does not hold.** The 2-epoch smoke run showed the MC average about
+  6 W/m² worse in RMSE than dropout-off. On fully trained weights the difference is +0.05 to
+  +0.06 W/m² (paired sd ≤ 0.02): real but negligible. MC-Dropout does not cost point accuracy.
+- **MC-Dropout supplies most of the predictive spread.** Without it, the bootstrap ensemble alone
+  covers 23% to 37% of daylight observations at the nominal 95% level; with it, 78% to 81%. Its
+  CRPS is 5.5 to 7.1 W/m² better. The bootstrap still adds spread (dropout-off CP rises from 0.23
+  to 0.37 as B grows from 4 to 16), but at this configuration the dropout term is the larger
+  of the two. This is the direct measurement the paper's Bootstrap × MC-Dropout claim needs.
+- **Neither closes the coverage gap.** The best raw CP anywhere on the grid is 0.81. The pooled
+  sample contains epistemic spread only, so the conformal layer is what brings coverage to the
+  nominal level. That makes the conformal mode a decision for the frozen configuration, not
+  only an ablation (`TUNING_PLAN.md`, Status).
+
+**Early stopping.** All 48 networks kept their best epoch at 1 to 3 and stopped after 7 to 9
+epochs. The longest wait for a new best was 1 epoch, and patience 3 would have changed none.
+Source: `s5_patience.csv`.
+
+**Cost.** With three runs sharing the GPU, a network took 7.2 to 7.5 min (about 1.9 h per
+16-network run), the curves included in the process time.
+
+## Frozen configuration
+
+| Setting | Value | Stage |
+|---|---|---|
+| Lookback | 24 h | S1 |
+| LSTM | 1 layer of width 256, head width 128 | S2 |
+| Dropout rate | 0.2 (head only, at 1 layer) | S3 |
+| Learning rate | 5e-4 | S3 |
+| Early-stopping patience | 5 | after S3 |
+| Bootstrap block length | 168 h | S4 |
+| Ensemble size B | 6 | S5 |
+| MC-Dropout passes T | 50 | S5 |
+| Conformal mode | not yet decided | see `TUNING_PLAN.md` |
+
 ## Carried forward
 
 - **Patience** is 5 from S4 on (above). Ablations that change the architecture's width restore 10.
@@ -367,5 +465,5 @@ arms at B=1 (S2, S3).
 - **Coverage.** Raw ensemble CP at B=8 is 0.80 (Rize 0.70). The conformal layer is required to
   reach nominal coverage; S5 measures how far B and T move it.
 - **MC-Dropout spread at 1 layer** (S2) and the smoke-run gap between MC-averaged and
-  dropout-off predictions (`TUNING_PLAN.md`) are both measured on fully trained weights by the
-  S5 ensemble curves.
+  dropout-off predictions are both resolved by S5: dropout is the larger source of spread, and
+  it costs no point accuracy.

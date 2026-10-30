@@ -8,9 +8,11 @@ in `TUNING_FINDINGS.md`**, backed by the `<stage>_*.csv` tables next to this fil
 
 ## Status (update at the end of every session)
 
-**As of 2026-10-30 (after the S4 pull): S1 to S4 are decided (lookback 24 h, 256 × 1, dropout
-0.2, learning rate 5e-4, block 168 h), and patience is 5. S5 is unlocked and ready to run on the
-remote Mac.**
+**As of 2026-10-30 (after the S5 pull): tuning is complete. The frozen configuration is lookback
+24 h, 256 × 1, dropout 0.2, learning rate 5e-4, patience 5, block 168 h, B = 6, T = 50
+(`TUNING_FINDINGS.md`, Frozen configuration). `final_reference` is unlocked (5 new runs), but one
+setting is open: the conformal mode, which is `"none"` in every tuning run and in the final
+configs as they stand. Decide it before running the final reference.**
 
 | Stage | Group | State | Decision |
 |---|---|---|---|
@@ -21,8 +23,9 @@ remote Mac.**
 | S3 learning rate | `tune_s3_lr` | Done (6 runs, MPS); findings final | **5e-4** (marginal pass, rule applied as written) |
 | Patience | | Decided from S1 to S3 patience tables | **5** from S4 on (`FROZEN_PATIENCE`) |
 | S4 block length | `tune_s4_block` | Done (12 runs at B=8, MPS, 2 shards); findings final | **168 h** (incumbent kept; all blocks within 0.15 W/m² CRPS) |
-| S5 ensemble size, MC passes | `tune_s5_ensemble` | Unlocked: 3 runs at B=16, with ensemble curves | pending |
-| Final | `final_reference` | Locked until `DECISIONS["s5"]` | |
+| S5 ensemble size, MC passes | `tune_s5_ensemble` | Done (3 runs at B=16, curves, MPS, 3 shards); findings final | **B = 6, T = 50** (cheapest cell within one seed sd of the best) |
+| Conformal mode | | Open: needed for the headline row | pending (the user's call) |
+| Final | `final_reference` | Unlocked: 5 runs at B=6, T=50, seeds 42 to 46 | wait for the conformal decision |
 
 Findings for every stage, with per-province tables and robustness checks: `TUNING_FINDINGS.md`.
 
@@ -40,46 +43,32 @@ Findings for every stage, with per-province tables and robustness checks: `TUNIN
 check_outputs passed`. They start with "partial" and name the failed id if a run failed, and
 they copy any WARNING lines from the check.
 
-**Next session, in order** (after S5 finishes on the remote Mac):
-1. `git pull`, then check the group with the curves. Every run should be mps, and only the
-   gitignored `test_predictions.npz` should be reported missing:
+**Next session, in order:**
+1. **Decide the conformal mode for the frozen configuration.** Raw daylight CP is 0.79 at the
+   chosen cell (best anywhere on the S5 grid: 0.81), so the paper's headline row needs the
+   conformal layer. The mode cannot be chosen on post-correction validation coverage, because
+   validation is the calibration split. It has to be fixed by argument (which conditional
+   coverage the paper claims: per province, per horizon or both) or by a cross-fitted
+   comparison inside the validation split. The uncorrected twin then belongs to the ablation
+   programme.
+2. Set `conformal_mode` on the final configs in `configs/experiment_grid.py` (the ids stay
+   `final_s42` to `final_s46`; the mode is a ledger column), check `final_reference --list`,
+   run the grid tests, commit and push.
+3. Give the user the final-reference commands: 5 runs × 6 networks, about 2.5 to 3 h
+   single-process, or about 1.5 h with three shards:
    ```bash
-   uv run python scripts/check_outputs.py --group tune_s5_ensemble --ensemble-curves
+   uv run python scripts/run_all_experiments.py --group final_reference --skip-existing --continue-on-error --shard 0/3
    ```
-2. Run the report. It reads `ensemble_curves.csv` and scores every (B, T) cell on val CRPS; the
-   choice is the cheapest cell within one seed sd of the best (see Grids):
-   ```bash
-   uv run python scripts/15_tuning_report.py --stage s5
-   ```
-   Also look at:
-   - The MC-Dropout versus dropout-off contrast on identical weights (Open observations).
-   - How far B moves val CP: at B=8 it is 0.80 (Rize 0.70), so the conformal layer is expected
-     to carry calibration.
-3. Write `DECISIONS["s5"]`, add the S5 section to `TUNING_FINDINGS.md`, commit with the `s5_*`
-   tables, then confirm `final_reference --list`. If S5 picks (8, 100), the three 168 h S4 runs
-   are reused and only seeds 45 and 46 are new.
-4. Give the user the final-reference commands. Update this Status section.
-
-**S5 commands for the remote Mac** (3 runs × 16 networks, about 4 h single-process plus the
-curves; one shard per run):
-```bash
-git pull && uv sync --dev
-uv run python scripts/run_all_experiments.py --group tune_s5_ensemble --list
-uv run python scripts/run_all_experiments.py --group tune_s5_ensemble --ensemble-curves --skip-existing --continue-on-error --shard 0/3
-uv run python scripts/run_all_experiments.py --group tune_s5_ensemble --ensemble-curves --skip-existing --continue-on-error --shard 1/3
-uv run python scripts/run_all_experiments.py --group tune_s5_ensemble --ensemble-curves --skip-existing --continue-on-error --shard 2/3
-uv run python scripts/check_outputs.py --group tune_s5_ensemble --ensemble-curves
-git add outputs/experiments outputs/experiments_ledger.csv && git commit -m "Tuning S5 (ensemble size, MC passes): 3 runs on Mac mini, check_outputs passed" && git push
-```
-The three shard commands run in separate terminals; the check and commit run once all finish.
+   (and `--shard 1/3`, `--shard 2/3` in two more terminals), then
+   `check_outputs.py --group final_reference` and the usual result-path commit.
+4. After the pull: report the five-seed mean ± sd of the validation and test rows. This is the
+   first time a test metric of the frozen configuration is read. Then start the ablation
+   programme (After tuning).
 
 **Open observations to carry forward:**
-- In the 2-epoch smoke run, the average of the MC-Dropout passes was about 6 W/m² worse in
-  RMSE than the same networks with dropout off (106.1 vs 99.8 on test). The bias was also
-  more negative: −15.8 vs −14.4 W/m².
-  - The smoke models were barely trained, so this proves nothing yet.
-  - The S5 curves measure exactly this contrast on identical, fully trained weights. If it
-    holds, it matters for the paper's MC-Dropout claim.
+- **Resolved by S5:** the smoke run's 6 W/m² RMSE gap between MC-averaged and dropout-off
+  predictions does not hold on trained weights (+0.05 W/m²). MC-Dropout supplies most of the
+  spread: dropout-off CP is 0.28 at B=6, against 0.79 with MC-Dropout.
 - Patience is 5 from S4 on, for the 256 × 1 architecture only (see Early stopping). An
   ablation that narrows the network must restore 10: S2 shows 5 is not safe for 32- or 64-wide
   networks.
@@ -128,7 +117,7 @@ that a difference can exceed seed noise.
 | S4 | block length (h) | L + 24 + 24k, k ∈ {3, 5, 8, 12} | 168 | days | 4 | 12 (B=8) |
 | S5 | ensemble size B | 4, 6, 8, 10, 12, 14, 16 | 8 | 2 | 7 | 3 (B=16) |
 | S5 | MC passes T | 50, 75, 100, 125, 150 | 100 | 25 | 5 | 0 |
-| Final | frozen configuration | 5 seeds | | | 1 | 2 to 5 |
+| Final | frozen configuration | 5 seeds | | | 1 | 5 (B=6 is not the S4 fidelity, so no run is reused) |
 
 Notes on the grids:
 
@@ -249,9 +238,9 @@ Estimates per stage (lookback 24; longer lookbacks scale roughly linearly):
 | S2 | 2 to 3 h |
 | S3 | 1 to 1.5 h at 64 × 2; done in 18 runs at 256 × 1 (6 to 8 min per network) |
 | S4 | done: 12 runs at about 41.5 min each with 2 shards (5.2 min per network) |
-| S5 | ~3.5 to 4 h at 256 × 1, patience 5, curves included |
-| Final | ~1 h at 256 × 1, patience 5 (2 new seeds at B=8) |
-| **Total** | **about 5 h** for the remaining stages (S5 and final) |
+| S5 | done: 3 runs at about 1.9 h each with 3 shards (7.2 to 7.5 min per network), curves included |
+| Final | ~2.5 to 3 h single-process at B=6 (5 new runs, 30 networks); ~1.5 h with 3 shards |
+| **Total** | **about 3 h** left (final reference) |
 
 S2 chose a network that trains in about 7.6 min (6.5 min at dropout 0.2) instead of 3.5 to
 4 min. Patience 5 cuts a dropout-0.2 network from about 13 epochs to about 8, which takes back
