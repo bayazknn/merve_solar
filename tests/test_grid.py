@@ -153,51 +153,43 @@ def test_the_smoke_group_covers_every_new_code_path():
     assert all(c.max_epochs <= 2 for c in smoke.values())
 
 
+
 ABLATION_CHANGES = {
-    "abl_uncertainty": {
-        "plain_lstm": {"n_bootstrap", "inference_mode", "mc_dropout_passes", "conformal_mode"},
-        "single_mc_dropout": {"n_bootstrap", "mc_dropout_passes"},
-        "bootstrap_only": {"inference_mode", "mc_dropout_passes", "conformal_mode"},
-        "seed_ensemble": {"bootstrap_resample"},
-        "no_conformal": {"conformal_mode"},
-    },
-    "abl_transfer": {
-        "per_province": {"training_scope"},
-        "no_city_embedding": {"city_embedding_dim"},
-        "without_rize": {"excluded_cities"},
-    },
-    "abl_training": {
-        "daylight_only_loss": {"loss_daylight_only"},
-        "no_nonneg_penalty": {"nonneg_penalty_weight"},
-    },
-    "abl_transfer_lopo": {f"without_{c.lower()}": {"excluded_cities"} for c in grid.LOPO_CITIES},
+    "per_city_mc_dropout": {"training_scope"},
+    "global_normal_dropout": {"inference_mode", "mc_dropout_passes"},
+    "per_city_normal_dropout": {"training_scope", "inference_mode", "mc_dropout_passes"},
+    "global_plain_lstm": {"n_bootstrap", "inference_mode", "mc_dropout_passes", "conformal_mode"},
+    "per_city_plain_lstm": {"training_scope", "n_bootstrap", "inference_mode", "mc_dropout_passes",
+                            "conformal_mode"},
 }
 
 
-@pytest.mark.parametrize("stage", list(ABLATION_CHANGES))
-def test_every_ablation_arm_changes_only_its_own_axis_from_the_reference(decided, stage):
+def test_every_ablation_arm_changes_only_its_own_axes_from_the_reference(decided):
     decided()
-    arms = stage_arms(stage)
-    reference = arms.pop("full")
+    arms = stage_arms("abl_scope_dropout")
+    reference = arms.pop("global_mc_dropout")
     assert [c.experiment_id for c in reference] == [f"final_s{s}" for s in grid.ABLATION_SEEDS]
-    assert set(arms) == set(ABLATION_CHANGES[stage])
+    assert set(arms) == set(ABLATION_CHANGES)
+    by_seed = {c.seed: c for c in grid._final()["final"]}
     for label, configs in arms.items():
-        assert [c.seed for c in configs] == list(grid.ABLATION_SEEDS)
-        for ref, arm in zip(reference, configs):
+        expected_seeds = grid.BENCHMARK_SEEDS if "plain" in label else grid.ABLATION_SEEDS
+        assert [c.seed for c in configs] == list(expected_seeds)
+        for arm in configs:
             assert arm.experiment_id.startswith("abl_")
-            assert _diff(ref, arm) == {"experiment_id"} | ABLATION_CHANGES[stage][label], label
+            assert _diff(by_seed[arm.seed], arm) == {"experiment_id"} | ABLATION_CHANGES[label], label
 
 
-def test_ablation_groups_train_only_new_runs_and_match_draws(decided):
+def test_the_ablation_group_trains_only_new_runs(decided):
     decided(s5=(6, 100))
-    for group in ("abl_uncertainty", "abl_transfer", "abl_training", "abl_transfer_lopo"):
-        assert all(c.experiment_id.startswith("abl_") for c in build_experiment_grid([group]))
-    arms = stage_arms("abl_uncertainty")
-    (single,) = {c.n_bootstrap * c.mc_dropout_passes for c in arms["single_mc_dropout"]}
-    assert single == 600
+    configs = build_experiment_grid(["abl_scope_dropout"])
+    assert len(configs) == 12 and all(c.experiment_id.startswith("abl_") for c in configs)
+    plain = [c for c in configs if "plain" in c.experiment_id]
+    assert all(c.n_bootstrap == 1 and c.conformal_mode == "none" for c in plain)
 
 
 def test_the_smoke_group_covers_the_ablation_code_paths():
     smoke = EXPERIMENT_GROUPS["smoke"]()
     assert any(c.training_scope == "per_city" and c.conformal_mode != "none" for c in smoke)
+    assert any(c.training_scope == "per_city" and c.inference_mode == "deterministic"
+               and c.conformal_mode != "none" for c in smoke)
     assert any(c.city_embedding_dim == 0 for c in smoke)

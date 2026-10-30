@@ -1,0 +1,36 @@
+device=mps
+training_scope=per_city model_family=lstm
+loss_function=mse
+inference_mode=deterministic bootstrap_resample=True pooled draws per element=2
+active_cities=['Ankara', 'Antalya', 'Konya', 'Rize', 'Van'] excluded=[]
+train_end=2024-09-03 03:00:00 val_end=2025-06-11 09:00:00
+test daylight elements: 560448 of 1099080
+Ankara/train: 45365 windows
+Ankara/val: 6703 windows
+Ankara/test: 9159 windows
+Ankara replica 0: best_val_loss=0.0753 best_epoch=1 last_val_loss=0.0753 epochs=2  WARNING: hit max_epochs
+Ankara replica 1: best_val_loss=0.0740 best_epoch=1 last_val_loss=0.0740 epochs=2  WARNING: hit max_epochs
+Antalya/train: 45365 windows
+Antalya/val: 6703 windows
+Antalya/test: 9159 windows
+Antalya replica 0: best_val_loss=0.0604 best_epoch=1 last_val_loss=0.0604 epochs=2  WARNING: hit max_epochs
+Antalya replica 1: best_val_loss=0.0588 best_epoch=1 last_val_loss=0.0588 epochs=2  WARNING: hit max_epochs
+Konya/train: 45365 windows
+Konya/val: 6703 windows
+Konya/test: 9159 windows
+Konya replica 0: best_val_loss=0.0725 best_epoch=1 last_val_loss=0.0725 epochs=2  WARNING: hit max_epochs
+Konya replica 1: best_val_loss=0.0681 best_epoch=1 last_val_loss=0.0681 epochs=2  WARNING: hit max_epochs
+Rize/train: 45365 windows
+Rize/val: 6703 windows
+Rize/test: 9159 windows
+Rize replica 0: best_val_loss=0.1195 best_epoch=1 last_val_loss=0.1195 epochs=2  WARNING: hit max_epochs
+Rize replica 1: best_val_loss=0.1112 best_epoch=1 last_val_loss=0.1112 epochs=2  WARNING: hit max_epochs
+Van/train: 45365 windows
+Van/val: 6703 windows
+Van/test: 9159 windows
+Van replica 0: best_val_loss=0.0677 best_epoch=1 last_val_loss=0.0677 epochs=2  WARNING: hit max_epochs
+Van replica 1: best_val_loss=0.0673 best_epoch=1 last_val_loss=0.0673 epochs=2  WARNING: hit max_epochs
+conformal_mode=city_horizon alpha=0.050000000000000044 pooled_k=78.0882 (n=386035) daylight k in [31.6626, 140.9818] mean 78.8946; 0 calibration elements dropped for a degenerate half-width; calibration pass: the validation predictions scored above
+clamped 538632 test night elements to zero
+train_time_sec=59.9
+total_training_time_sec=62.5

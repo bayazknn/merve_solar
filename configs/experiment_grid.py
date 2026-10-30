@@ -201,12 +201,20 @@ def _final() -> dict:
                           conformal_mode=FINAL_CONFORMAL_MODE)}
 
 
-# --- ablations: one change from the frozen configuration per arm (outputs/ablation/ABLATION_PLAN.md)
+# --- ablations: a 2 x 3 design on the frozen configuration (outputs/ablation/ABLATION_PLAN.md)
+#
+# Training scope (one model for all provinces / one per province) crossed with the predictive
+# layer: the full method (MC-Dropout), the same ensemble with dropout off at prediction, and the
+# plain LSTM benchmark (one network, dropout off, no ensemble, no correction). Every arm keeps the
+# frozen architecture and training settings, so the benchmark is the method's own network
+# without its uncertainty layer.
 
-ABLATION_SEEDS = TUNE_SEEDS
-# Provinces left out one at a time in the optional leave-one-province-out group. Rize is left
-# out in abl_transfer already, since it is the one province the EDA marks as its own regime.
-LOPO_CITIES = ("Ankara", "Antalya", "Konya", "Van")
+# The ensemble's seed-to-seed sd is 0.09 W/m^2 RMSE / 0.10 CRPS (final reference, 5 seeds), so
+# two seeds suffice for the ensemble arms. A single network varies 3 to 5 times more (S3:
+# 0.25-0.5 W/m^2 val RMSE), and costs a sixth as much, so the benchmark keeps three.
+ABLATION_SEEDS = (42, 43)
+BENCHMARK_SEEDS = TUNE_SEEDS
+SCOPES = ("global", "per_city")
 
 
 def _frozen() -> dict:
@@ -217,65 +225,29 @@ def _frozen() -> dict:
     return dict(base, n_bootstrap=b, mc_dropout_passes=t, conformal_mode=FINAL_CONFORMAL_MODE)
 
 
-def _reference() -> list:
-    """The final reference at the ablation seeds: the 'full' arm every ablation is paired with."""
+def _ablation(tag: str, seeds=ABLATION_SEEDS, **changes) -> list:
+    return _arm(f"abl_{tag}", seeds=seeds, **{**_frozen(), **changes})
+
+
+def _abl_scope_dropout() -> dict:
+    """Arm label -> configs. The global MC-Dropout arm is the final reference at the ablation
+    seeds; normal dropout changes only inference_mode, so the two share training settings and
+    differ in how the trained networks are sampled."""
     (final,) = _final().values()
-    return [c for c in final if c.seed in ABLATION_SEEDS]
-
-
-def _ablation(tag: str, **changes) -> list:
-    return _arm(f"abl_{tag}", seeds=ABLATION_SEEDS, **{**_frozen(), **changes})
-
-
-def _abl_uncertainty() -> dict:
-    """What each part of the uncertainty layer adds. Draws per element are matched (600) where an
-    arm keeps MC-Dropout, so a difference is not a Monte Carlo effect."""
-    _need("s5")
-    b, t = DECISIONS["s5"]
-    deterministic = dict(inference_mode="deterministic", mc_dropout_passes=1)
-    return {
-        "full": _reference(),
-        # One network, dropout off at prediction: a plain point forecast. Its one-draw interval
-        # has zero width, so the conformal layer has nothing to rescale.
-        "plain_lstm": _ablation("plain_lstm", n_bootstrap=1, conformal_mode="none", **deterministic),
-        "single_mc_dropout": _ablation("single_mcd", n_bootstrap=1, mc_dropout_passes=b * t),
-        # Uncorrected, and compared with no_conformal: rescaling a 6-value sample spreads it
-        # into 6 far-apart points (smoke: k ~ 73 at 2 networks), so a corrected CRPS would
-        # measure that artifact rather than what MC-Dropout adds.
-        "bootstrap_only": _ablation("bootstrap_only", conformal_mode="none", **deterministic),
-        "seed_ensemble": _ablation("seed_ensemble", bootstrap_resample=False),
-        "no_conformal": _ablation("no_conformal", conformal_mode="none"),
-    }
-
-
-def _abl_transfer() -> dict:
-    """Does pooling the five provinces in one model help each of them?"""
-    return {
-        "full": _reference(),
-        "per_province": _ablation("per_province", training_scope="per_city"),
-        "no_city_embedding": _ablation("no_city_embedding", city_embedding_dim=0),
-        "without_rize": _ablation("without_rize", excluded_cities=["Rize"]),
-    }
-
-
-def _abl_transfer_lopo() -> dict:
-    return {"full": _reference(),
-            **{f"without_{c.lower()}": _ablation(f"without_{c.lower()}", excluded_cities=[c])
-               for c in LOPO_CITIES}}
-
-
-def _abl_training() -> dict:
-    return {
-        "full": _reference(),
-        "daylight_only_loss": _ablation("daylight_loss", loss_daylight_only=True),
-        "no_nonneg_penalty": _ablation("no_nonneg_penalty", nonneg_penalty_weight=0.0),
-    }
+    normal = dict(inference_mode="deterministic", mc_dropout_passes=1)
+    plain = dict(normal, n_bootstrap=1, conformal_mode="none")
+    arms = {"global_mc_dropout": [c for c in final if c.seed in ABLATION_SEEDS]}
+    arms["per_city_mc_dropout"] = _ablation("per_city_mcd", training_scope="per_city")
+    for scope in SCOPES:
+        arms[f"{scope}_normal_dropout"] = _ablation(f"{scope}_normal_dropout",
+                                                    training_scope=scope, **normal)
+        arms[f"{scope}_plain_lstm"] = _ablation(f"{scope}_plain_lstm", seeds=BENCHMARK_SEEDS,
+                                                training_scope=scope, **plain)
+    return arms
 
 
 STAGES = {"s1": _s1, "s2": _s2, "s3_dropout": _s3_dropout, "s3_lr": _s3_lr, "s4": _s4,
-          "s5": _s5, "final": _final, "abl_uncertainty": _abl_uncertainty,
-          "abl_transfer": _abl_transfer, "abl_transfer_lopo": _abl_transfer_lopo,
-          "abl_training": _abl_training}
+          "s5": _s5, "final": _final, "abl_scope_dropout": _abl_scope_dropout}
 
 
 def stage_arms(stage: str) -> dict:
@@ -316,6 +288,9 @@ def _smoke_configs() -> list:
                          training_scope="per_city", conformal_mode=FINAL_CONFORMAL_MODE, **SMOKE),
         ExperimentConfig(experiment_id="smoke_no_city_embedding_b1", n_bootstrap=1,
                          city_embedding_dim=0, **SMOKE),
+        ExperimentConfig(experiment_id="smoke_per_city_deterministic_conformal_b2", n_bootstrap=2,
+                         training_scope="per_city", inference_mode="deterministic",
+                         conformal_mode=FINAL_CONFORMAL_MODE, **{**SMOKE, "mc_dropout_passes": 1}),
     ]
 
 
@@ -328,11 +303,7 @@ EXPERIMENT_GROUPS = {
     "tune_s4_block": _new_runs("s4", "tune_s4_"),
     "tune_s5_ensemble": _new_runs("s5", "tune_s5_"),
     "final_reference": _new_runs("final", "final_"),
-    "abl_uncertainty": _new_runs("abl_uncertainty", "abl_"),
-    "abl_transfer": _new_runs("abl_transfer", "abl_"),
-    "abl_training": _new_runs("abl_training", "abl_"),
-    # Optional, after abl_transfer: four more runs of three seeds each.
-    "abl_transfer_lopo": _new_runs("abl_transfer_lopo", "abl_"),
+    "abl_scope_dropout": _new_runs("abl_scope_dropout", "abl_"),
 }
 
 

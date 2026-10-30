@@ -44,8 +44,9 @@ check_outputs passed`. They start with "partial" and name the failed id if a run
 they copy any WARNING lines from the check.
 
 **Next session, in order:** the ablation programme is drafted in
-`outputs/ablation/ABLATION_PLAN.md` (groups `abl_uncertainty`, `abl_transfer`, `abl_training`
-and the optional `abl_transfer_lopo` in `configs/experiment_grid.py`). Run it on the remote Mac
+`outputs/ablation/ABLATION_PLAN.md` (group `abl_scope_dropout` in
+`configs/experiment_grid.py`: 12 runs, global / per province x MC-Dropout / normal dropout /
+plain LSTM benchmark). Run it on the remote Mac
 from the commands in that document's Section 7, then pull and analyse.
 
 **Final reference, as run** (for reproduction; 5 runs × 6 networks, 31 to 43 min per run with
@@ -65,7 +66,7 @@ uv run python scripts/17_final_reference_report.py
 - Patience is 5 from S4 on, for the 256 × 1 architecture only (see Early stopping). An
   ablation that narrows the network must restore 10: S2 shows 5 is not safe for 32- or 64-wide
   networks.
-- The benchmark methodology is still undeclared (CLAUDE.md). Nothing in tuning depends on it.
+- The benchmark is the plain LSTM (declared 2026-10-30; CLAUDE.md). Nothing in tuning depends on it.
 - **From the final reference:** Konya under-covers (test CP 0.941) and Van over-covers (0.962)
   after correction, a 0.012 worst-province gap against 0.006 predicted on validation. Raw
   ensemble spread is flat across horizon steps; all of the interval's horizon growth comes from

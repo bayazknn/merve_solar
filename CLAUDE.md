@@ -177,10 +177,11 @@ pooled sample. The pooled distribution has no aleatoric term, so raw intervals u
 `conformal_mode` (`conformal.py`, default `"none"`) is the recalibration layer, and it leaves
 RMSE/MAE/R² bit-identical to its uncorrected twin.
 
-**Benchmark: to be declared.** The benchmarking methodology will be declared later by the user.
-Climatology is **not** a benchmark, and no other forecast (persistence included) is to be
-treated as a floor, or used to call a run a result, until then. The naive baseline rows stay in
-the ledger as descriptive references only.
+**Benchmark: the plain LSTM** (declared by the user, 2026-10-30): one network of the frozen
+architecture and training settings, dropout off at prediction, no ensemble, no conformal layer
+(arms `*_plain_lstm` in `abl_scope_dropout`), run both global and per province. It has no range,
+so it is compared on RMSE/MAE/R² and on CRPS (which equals its MAE). Climatology and persistence
+are **not** benchmarks; the naive baseline rows stay in the ledger as descriptive references only.
 
 ### Figures, tables and manuscript text
 
@@ -209,11 +210,11 @@ the ledger as descriptive references only.
   reference row** (summary: `scripts/17_final_reference_report.py` → `outputs/final_reference/`).
   Runs happen on the remote Mac, the analysis here after a pull.
 - **Ablation programme drafted** (`outputs/ablation/ABLATION_PLAN.md`, plain English for
-  non-specialist readers): groups `abl_uncertainty`, `abl_transfer`, `abl_training`, optional
-  `abl_transfer_lopo`, 3 seeds each, paired with `final_s42`..`final_s44`. Feature-set arms
-  need a per-run feature-set field first.
+  non-specialist readers): one group `abl_scope_dropout`, a 2 x 3 table of training scope
+  (global / per province) x predictive layer (MC-Dropout / normal dropout / plain LSTM
+  benchmark). 12 new runs: ensemble arms at seeds 42-43 (global MC-Dropout reuses
+  `final_s42`, `final_s43`), plain LSTM at 42-44. Further arms are listed there as candidates.
 
-- Declare the benchmark methodology (pending, from the user).
 - `config_005_default_full` was the pre-tuning reference run; scripts 09 and 12 and the numbers
   in `METHODOLOGY.md` still come from it and must be regenerated on the final reference. `config_000_smoke` and
   `config_002_default_full` are pre-fix rows. Every network stops early (best epoch 0–5); this
