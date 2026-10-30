@@ -26,7 +26,7 @@ decision rule) and the session status. This file holds the results.
 | S1 | lookback | 24 h | **24 h** | 0 (incumbent kept) | final |
 | S2 | LSTM width × depth | 64 × 2 | **256 × 1** | −9.51 ± 0.71 | final (width compute-bounded) |
 | S3 | dropout rate | 0.3 | **0.2** | −1.33 ± 0.36 | final |
-| S3 | learning rate | 1e-3 | 5e-4 passes the rule marginally | −0.99 ± 0.96 | **provisional** (see below) |
+| S3 | learning rate | 1e-3 | **5e-4** | −0.99 ± 0.96 | final (marginal pass, accepted as written) |
 | — | early-stopping patience, S4 on | 10 | **5** | n/a (no network changes) | final |
 
 ## S1: lookback (final, decided 2026-10-29)
@@ -212,10 +212,10 @@ dropout would cure. The paper can state it with these numbers.
 at 1 layer, so in the final model the bootstrap ensemble (S4, S5) and the conformal layer carry
 even more of the calibration. How much of the final spread is dropout's is measured in S5.
 
-## S3: learning rate (provisional)
+## S3: learning rate (final, decided 2026-10-30)
 
-**Status: 5e-4 passes the decision rule by 0.03 W/m², and the evidence behind it is weak. Not yet
-recorded in `DECISIONS`.** All arms are 256 × 1 at dropout 0.3; the 1e-3 arm is the S2 winner,
+**Decision: 5e-4, by the decision rule as written.** It passes by 0.03 W/m², and the evidence
+behind it is weak (below). All arms are 256 × 1 at dropout 0.3; the 1e-3 arm is the S2 winner,
 reused.
 
 | Learning rate | val RMSE | Δ RMSE | val MAE | val CRPS | Δ CRPS | val CP | val PINW | Mean best epoch | Train min/network |
@@ -251,11 +251,14 @@ Why the marginal pass is not convincing:
 - 5e-4 does not peak later (mean best epoch 4.0, max 5), so the hoped-for finer early-stopping
   resolution did not materialise either.
 
-**Recommendation: settle it with one combined arm before S4.** Train dropout 0.2 with learning
-rate 5e-4 at the S3 fidelity (B=1, patience 10, seeds 42 to 44; 3 runs, about 20 min on MPS) and
-compare it, seed-paired, with the existing dropout-0.2 arm at 1e-3 under the same decision rule.
-This tests the configuration that would actually be frozen, and costs about 3% of S4. If the
-user prefers to apply the rule as written, 5e-4 is recorded and S4 runs on (0.2, 5e-4).
+A 3-run combined arm (dropout 0.2 × learning rate 5e-4 at B=1, against dropout 0.2 at 1e-3) was
+considered and not run: the pre-registered rule was applied as written. Consequences for the
+paper:
+- The frozen pair (dropout 0.2, learning rate 5e-4) was never trained against its single-axis
+  neighbours at the same fidelity, so the manuscript should describe the two values as chosen
+  one axis at a time, not jointly.
+- The learning rate is the least supported tuning choice so far. A learning-rate arm (1e-3 on
+  the frozen configuration) is a candidate for the ablation programme if a reviewer asks.
 
 ## Early-stopping patience (decided 2026-10-30)
 

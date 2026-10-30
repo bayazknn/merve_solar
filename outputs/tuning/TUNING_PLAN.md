@@ -8,10 +8,8 @@ in `TUNING_FINDINGS.md`**, backed by the `<stage>_*.csv` tables next to this fil
 
 ## Status (update at the end of every session)
 
-**As of 2026-10-30 (after the S3 pull): S1 (lookback 24 h), S2 (256 × 1) and the S3 dropout rate
-(0.2) are decided, and patience is 5 from S4 on. The S3 learning rate is open: 5e-4 passes the
-decision rule only marginally, and the recommendation is a 3-run confirmation arm before S4
-(`TUNING_FINDINGS.md`, S3 learning rate). S4 stays locked until `DECISIONS["s3_lr"]` is set.**
+**As of 2026-10-30: S1 to S3 are decided (lookback 24 h, 256 × 1, dropout 0.2, learning rate
+5e-4), and patience is 5 from S4 on. S4 is unlocked and ready to run on the remote Mac.**
 
 | Stage | Group | State | Decision |
 |---|---|---|---|
@@ -19,9 +17,10 @@ decision rule only marginally, and the recommendation is a 3-run confirmation ar
 | S1 lookback | `tune_s1_lookback` | Done (9 runs, MPS); findings final | **24 h** (incumbent kept) |
 | S2 architecture | `tune_s2_arch` | Done (24 grid runs + 3 extension runs, MPS); findings final | **256 × 1** (width compute-bounded) |
 | S3 dropout | `tune_s3_dropout` | Done (12 runs, MPS); findings final | **0.2** |
-| S3 learning rate | `tune_s3_lr` | Done (6 runs, MPS); findings provisional | 5e-4 marginal (−0.99 ± 0.96); pending the user's call |
+| S3 learning rate | `tune_s3_lr` | Done (6 runs, MPS); findings final | **5e-4** (marginal pass, rule applied as written) |
 | Patience | | Decided from S1 to S3 patience tables | **5** from S4 on (`FROZEN_PATIENCE`) |
-| S4, S5, final | | Locked until the previous decision is in `DECISIONS` | |
+| S4 block length | `tune_s4_block` | Unlocked: 12 runs at B=8, patience 5 | pending |
+| S5, final | | Locked until the previous decision is in `DECISIONS` | |
 
 Findings for every stage, with per-province tables and robustness checks: `TUNING_FINDINGS.md`.
 
@@ -39,17 +38,35 @@ Findings for every stage, with per-province tables and robustness checks: `TUNIN
 check_outputs passed`. They start with "partial" and name the failed id if a run failed, and
 they copy any WARNING lines from the check.
 
-**Next session, in order:**
-1. Settle the learning rate (the user's call):
-   - **Recommended:** add a `tune_s3_combo` group, dropout 0.2 × learning rate 5e-4 at the S3
-     fidelity (B=1, patience 10, seeds 42 to 44; 3 runs, about 20 min on MPS). Its incumbent is
-     the existing dropout-0.2 arm at 1e-3, compared seed-paired under the usual rule. Run it on the
-     remote Mac, pull, report, then write `DECISIONS["s3_lr"]` from that comparison.
-   - Or apply the rule as written: `DECISIONS["s3_lr"] = 5e-4`.
-2. Commit, then confirm `tune_s4_block --list` shows 12 runs, all with
-   `early_stop_patience=5`, dropout 0.2 and the chosen learning rate.
-3. Give the user the S4 commands: 12 runs at B=8 (96 networks), about 6 to 7 h single-process at
-   patience 5, so shard it. Update this Status section.
+**Next session, in order** (after S4 finishes on the remote Mac):
+1. `git pull`, then check the group. Every run should be mps, and only the gitignored
+   `test_predictions.npz` should be reported missing:
+   ```bash
+   uv run python scripts/check_outputs.py --group tune_s4_block
+   ```
+2. Run the report. S4 is judged on `val_CRPS_daylight` against the 168 h block; val CP is
+   reported beside it:
+   ```bash
+   uv run python scripts/15_tuning_report.py --stage s4
+   ```
+   Also look at the patience table: S4 is the first stage at patience 5 and on bootstrap
+   replicas, so any network changed at patience 3 is a warning sign.
+3. Write `DECISIONS["s4"]`, add the S4 section to `TUNING_FINDINGS.md`, commit with the `s4_*`
+   tables, then confirm `tune_s5_ensemble --list` shows 3 runs.
+4. Give the user the S5 commands (3 runs at B=16, with `--ensemble-curves`). Update this Status
+   section.
+
+**S4 commands for the remote Mac** (12 runs × 8 networks, about 6 to 7 h single-process, so two
+shards):
+```bash
+git pull && uv sync --dev
+uv run python scripts/run_all_experiments.py --group tune_s4_block --list
+uv run python scripts/run_all_experiments.py --group tune_s4_block --skip-existing --continue-on-error --shard 0/2
+uv run python scripts/run_all_experiments.py --group tune_s4_block --skip-existing --continue-on-error --shard 1/2
+uv run python scripts/check_outputs.py --group tune_s4_block
+git add outputs/experiments outputs/experiments_ledger.csv && git commit -m "Tuning S4 (block length): 12 runs on Mac mini, check_outputs passed" && git push
+```
+The two shard commands run in separate terminals; the check and commit run once both finish.
 
 **Open observations to carry forward:**
 - In the 2-epoch smoke run, the average of the MC-Dropout passes was about 6 W/m² worse in
@@ -118,8 +135,7 @@ Notes on the grids:
   narrower network can match a wider, shallower one.
 - **Dropout and learning rate** are each moved one at a time from the S2 winner. S4 trains
   every arm with both chosen values, but it has no arm without them, so it cannot detect an
-  interaction. When both axes move, the combination gets its own 3-run check against the
-  single-axis winner (see Status). A lower
+  interaction. After S3 the combination (0.2, 5e-4) was accepted untested. A lower
   learning rate also spreads the optimum over more epochs. FINDINGS observed the best epoch
   at 0 to 5 with ~1,700 steps per epoch, so a slower rate also makes the per-epoch
   early-stopping choice less coarse.
@@ -204,7 +220,7 @@ is not safe (8 of 18 changed at patience 5), so the value is tied to the archite
 | lookback ↔ capacity | Lookback first at the incumbent architecture, then architecture at the chosen lookback. |
 | width ↔ depth | Crossed grid in S2. |
 | dropout ↔ MC-Dropout spread | Dropout is chosen for accuracy at B=1. Its effect on the intervals is measured in S4/S5, and T is chosen at the chosen dropout. Choosing dropout on CRPS at B=1 would favour too much dropout, because a single network's MC spread has to stand in for the bootstrap spread it lacks at B=8. |
-| dropout ↔ learning rate | Each moved one at a time; if both change, a 3-run combined arm is compared with the dropout winner before S4. |
+| dropout ↔ learning rate | Each moved one at a time. S4 carries both chosen values but cannot detect an interaction; the combination was not tested separately (S3 findings). |
 | block length ↔ ensemble size | B is chosen at the chosen block length. |
 | ensemble size ↔ MC passes | Crossed B × T surface in S5, at no training cost. |
 
@@ -227,7 +243,6 @@ Estimates per stage (lookback 24; longer lookbacks scale roughly linearly):
 | S1 | ~1 h |
 | S2 | 2 to 3 h |
 | S3 | 1 to 1.5 h at 64 × 2; done in 18 runs at 256 × 1 (6 to 8 min per network) |
-| S3 combination check (if run) | ~20 min (3 networks at B=1) |
 | S4 | ~6 to 7 h at 256 × 1, patience 5 (96 networks) |
 | S5 | ~3.5 to 4 h at 256 × 1, patience 5, curves included |
 | Final | ~1 h at 256 × 1, patience 5 (2 new seeds at B=8) |
