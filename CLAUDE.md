@@ -209,16 +209,14 @@ are **not** benchmarks; the naive baseline rows stay in the ledger as descriptiv
   `FINAL_CONFORMAL_MODE`. **`final_s42`..`final_s46` (group `final_reference`) are the paper's
   reference row** (summary: `scripts/17_final_reference_report.py` → `outputs/final_reference/`).
   Runs happen on the remote Mac, the analysis here after a pull.
-- **Ablation programme drafted** (`outputs/ablation/ABLATION_PLAN.md`, plain English for
-  non-specialist readers): one group `abl_scope_dropout`, a 2 x 3 table of training scope
-  (global / per province) x predictive layer (MC-Dropout / normal dropout / plain LSTM
-  benchmark). 12 new runs: ensemble arms at seeds 42-43 (global MC-Dropout reuses
-  `final_s42`, `final_s43`), plain LSTM at 42-44. Plus group `abl_daylight_loss` (2 runs,
-  `loss_daylight_only=True`, global MC-Dropout, seeds 42-43; `scripts/run_abl_daylight_loss.sh`),
-  and group `abl_no_city_embedding` (2 runs, `city_embedding_dim=0`, global MC-Dropout,
-  seeds 42-43; `scripts/run_abl_no_city_embedding.sh`), both kept separate so the running
-  shards were not reshuffled. Further arms are listed there as candidates.
-
+- **Ablation programme done** (2026-10-30): plan in `outputs/ablation/ABLATION_PLAN.md`,
+  results and reading in `outputs/ablation/ABLATION_FINDINGS.md` (`scripts/18_ablation_report.py`,
+  paired 7-day block bootstrap on `daily_scores.csv`). Groups `abl_scope_dropout` (12 runs),
+  `abl_daylight_loss` (2), `abl_no_city_embedding` (2). Findings: method vs plain LSTM CRPS
+  −25% with equal central accuracy; MC-Dropout gives ~7/8 of that gain; shared model beats
+  per province on MAE/CRPS; the province code helps a little (Rize); daylight-only loss
+  improves MAE but worsens CRPS. The final configuration is unchanged. Not done: the
+  sunrise/sunset check of the daylight-only arm needs `test_predictions.npz` on the Mac.
 - `config_005_default_full` was the pre-tuning reference run; scripts 09 and 12 and the numbers
   in `METHODOLOGY.md` still come from it and must be regenerated on the final reference. `config_000_smoke` and
   `config_002_default_full` are pre-fix rows. Every network stops early (best epoch 0–5); this

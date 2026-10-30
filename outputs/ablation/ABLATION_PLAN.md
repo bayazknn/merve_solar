@@ -4,16 +4,14 @@ This document explains the ablation experiments: what they are, why we run them,
 them, and how to read the results. It is written for a reader who does not know the project.
 Results are added in the last section once the runs finish.
 
-**Status (2026-10-30).** Three run groups, all in `configs/experiment_grid.py`:
+**Status (2026-10-30): done.** All 16 runs finished on the remote Mac and passed their checks.
+The results and their reading are in `ABLATION_FINDINGS.md`; Section 7 below summarises them.
 
 | Group | Runs | What it tests | State |
 |---|---|---|---|
-| `abl_scope_dropout` | 12 | All provinces vs one model per province × MC-Dropout / normal dropout / plain LSTM benchmark (Sections 5.1 to 5.3) | Running on the remote Mac, 3 shards |
-| `abl_daylight_loss` | 2 | Training on daylight hours only (Section 5.4) | Started next to the shards, `scripts/run_abl_daylight_loss.sh` |
-| `abl_no_city_embedding` | 2 | The shared model without the province code (Section 5.5) | Added after the others; `scripts/run_abl_no_city_embedding.sh` |
-
-Next step: once every process has finished, run the checks and commit once (Section 6), then
-pull here and fill Section 7.
+| `abl_scope_dropout` | 12 | All provinces vs one model per province × MC-Dropout / normal dropout / plain LSTM benchmark (Sections 5.1 to 5.3) | Done |
+| `abl_daylight_loss` | 2 | Training on daylight hours only (Section 5.4) | Done |
+| `abl_no_city_embedding` | 2 | The shared model without the province code (Section 5.5) | Done |
 
 ## 1. The project in one paragraph
 
@@ -375,9 +373,15 @@ git add outputs/experiments outputs/experiments_ledger.csv && git commit -m "Abl
 
 ## 7. Results
 
-*To be filled in after the runs.* The plan is the table in Section 5.1, filled with daylight test
-metrics (mean ± sd over seeds), then per-province tables for question A, raw and corrected
-numbers for question B, the method against the benchmark for question C, and the
-daylight-only and no-province-code arms against the reference, per province (Sections 5.4
-and 5.5). Each table is
-followed by a short reading in the terms of Section 4.
+Full results, tables per province and their reading: `ABLATION_FINDINGS.md`. Numbers:
+`outputs/ablation/` (`scripts/18_ablation_report.py`). In short (test year, daylight hours):
+
+| Comparison | RMSE | CRPS | Verdict |
+|---|---|---|---|
+| C: plain LSTM minus method (shared) | +0.67\* | **+14.79\*** (−25% for the method) | The method's gain is the calibrated range, not the central forecast |
+| B: normal minus MC-Dropout (shared) | −0.04 | **+12.89\*** | MC-Dropout makes the range; it does not change the central forecast |
+| A: per province minus shared (MC-Dropout) | +0.78 (interval includes 0) | +1.13\* (MAE +1.74\*) | Shared model better, in all three model types |
+| No province code minus method | +0.99\* | +0.42\* | The code helps a little, mostly in Rize |
+| Daylight-only loss minus method | −0.35\* | +1.37\* (MAE −1.51\*) | Better central forecast, worse range; keep the all-hours loss |
+
+\* = real by the Section 4 rule. The final configuration is unchanged.

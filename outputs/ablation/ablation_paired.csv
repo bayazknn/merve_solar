@@ -1,0 +1,181 @@
+comparison,question,arm,reference,group,metric,seeds,diff_mean,diff_per_seed,ci_low,ci_high,same_sign,real
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Aggregate,RMSE,42 43,0.7828948988600288,+0.780 +0.785,-0.09791747514107028,1.671587263438324,True,False
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Aggregate,MAE,42 43,1.73589237030588,+1.644 +1.827,1.157169381228446,2.3076957247194967,True,True
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Aggregate,CRPS,42 43,1.13048328519697,+1.089 +1.172,0.7539304994255706,1.5235518444575071,True,True
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Ankara,RMSE,42 43,2.3833261011740703,+2.202 +2.564,1.0714447837859071,3.6452186934765662,True,True
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Ankara,MAE,42 43,3.523509834836595,+3.272 +3.775,2.5188102214911896,4.47595145621653,True,True
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Ankara,CRPS,42 43,2.541334600161939,+2.266 +2.817,1.9610373997710677,3.0866931934039497,True,True
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Antalya,RMSE,42 43,1.50083698381831,+1.725 +1.277,0.07700646270953054,2.8776643713866497,True,True
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Antalya,MAE,42 43,1.5336053992952863,+1.069 +1.998,0.7262659590033402,2.400145149852124,True,True
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Antalya,CRPS,42 43,0.47983499681299335,+0.391 +0.569,-0.13720674660459808,1.1795550788487765,True,False
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Konya,RMSE,42 43,0.5844437019691142,+0.855 +0.314,-0.8662892476971139,2.2247743442210175,True,False
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Konya,MAE,42 43,1.6901947138285607,+1.652 +1.729,0.6586225102965391,2.8097932523159477,True,True
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Konya,CRPS,42 43,0.861279915665051,+0.960 +0.762,0.21011439604132437,1.6282369749949845,True,True
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Rize,RMSE,42 43,-0.258542563453247,-0.641 +0.124,-2.284845329889163,1.7457470591247435,False,False
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Rize,MAE,42 43,2.089873316372291,+1.529 +2.651,0.8418292306706183,3.4225917196146023,True,True
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Rize,CRPS,42 43,1.519681961723773,+1.265 +1.774,0.6484845363393956,2.4401805102154603,True,True
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Van,RMSE,42 43,-0.0008329212220488103,+0.219 -0.220,-1.1973096503825376,1.2175351116353696,False,False
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Van,MAE,42 43,-0.15458597778465233,+0.701 -1.010,-1.1082826484862889,0.7766787918433689,False,False
+"A: per province vs shared, MC-Dropout",A,per_city_mc_dropout,global_mc_dropout,Van,CRPS,42 43,0.24801520503373808,+0.558 -0.062,-0.26346567706102747,0.8047088053244448,False,False
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Aggregate,RMSE,42 43,0.7531976865051391,+0.760 +0.747,-0.13237123403877094,1.650825101221938,True,False
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Aggregate,MAE,42 43,1.6550423194706099,+1.566 +1.744,1.0654122683534668,2.2371707819731665,True,True
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Aggregate,CRPS,42 43,2.086167856640593,+2.494 +1.679,1.402895106641895,2.8020313870984266,True,True
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Ankara,RMSE,42 43,2.3198423656337326,+2.146 +2.494,0.9978005970535494,3.588048339168026,True,True
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Ankara,MAE,42 43,3.3980603131257823,+3.147 +3.649,2.3999916736276448,4.347696008242039,True,True
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Ankara,CRPS,42 43,4.429331840650292,+4.311 +4.547,3.364120758125084,5.4494810454566025,True,True
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Antalya,RMSE,42 43,1.4826417744844989,+1.700 +1.265,0.0253996612439094,2.88634681140941,True,True
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Antalya,MAE,42 43,1.4839554184599955,+1.020 +1.948,0.6798893547158148,2.3581880098932033,True,True
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Antalya,CRPS,42 43,0.41427131614873147,+1.586 -0.757,-0.9914727953726654,1.9458319177050105,False,False
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Konya,RMSE,42 43,0.5437967823524801,+0.839 +0.249,-0.9094750796917059,2.185236720363586,True,False
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Konya,MAE,42 43,1.6065595551643632,+1.570 +1.643,0.5714479014241296,2.7096934270929136,True,True
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Konya,CRPS,42 43,1.4415887689468008,+2.392 +0.491,0.24398340680798258,2.724110558629354,True,True
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Rize,RMSE,42 43,-0.24620340454521994,-0.634 +0.142,-2.2684510561630105,1.7618206136390722,False,False
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Rize,MAE,42 43,2.0524420493391062,+1.481 +2.623,0.8056455156521702,3.3800767286387017,True,True
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Rize,CRPS,42 43,2.196261572796125,+2.383 +2.010,0.8963827897231784,3.4679210099574145,True,True
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Van,RMSE,42 43,-0.05014424994298139,+0.199 -0.299,-1.2652720870842988,1.187376727550756,False,False
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Van,MAE,42 43,-0.2626036067684083,+0.612 -1.137,-1.2262970604962231,0.6644818414480598,False,False
+"A: per province vs shared, normal dropout",A,per_city_normal_dropout,global_normal_dropout,Van,CRPS,42 43,1.9404850584118059,+1.795 +2.086,0.8535594434363318,3.146167355554413,True,True
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Aggregate,RMSE,42 43 44,0.6574239713809078,+0.338 +1.247 +0.387,-0.2412997366836399,1.6011514846770705,True,False
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Aggregate,MAE,42 43 44,1.059260003842309,+1.550 +1.423 +0.205,0.5240559900200016,1.6253326161615165,True,True
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Aggregate,CRPS,42 43 44,1.059260003842309,+1.550 +1.423 +0.205,0.5240559900200016,1.6253326161615165,True,True
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Ankara,RMSE,42 43 44,1.201743333609637,+0.701 +2.459 +0.445,0.10752452952956897,2.4061042974801725,True,True
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Ankara,MAE,42 43 44,2.2558012634162217,+2.464 +4.860 -0.556,1.3726576633194447,3.1447885417073036,False,False
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Ankara,CRPS,42 43 44,2.2558012634162217,+2.464 +4.860 -0.556,1.3726576633194447,3.1447885417073036,False,False
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Antalya,RMSE,42 43 44,1.6031004793234018,+2.168 +1.564 +1.078,0.11269777046224926,3.263194915834232,True,True
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Antalya,MAE,42 43 44,1.2048813807205458,+2.604 +0.337 +0.674,0.27436166364407616,2.2815355600320957,True,True
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Antalya,CRPS,42 43 44,1.2048813807205458,+2.604 +0.337 +0.674,0.27436166364407616,2.2815355600320957,True,True
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Konya,RMSE,42 43 44,0.6845787569241916,-0.528 +1.649 +0.932,-0.9811090569131508,2.4775747976102522,False,False
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Konya,MAE,42 43 44,1.1433998400588337,+1.300 +1.398 +0.732,0.05053074744658511,2.336468393306691,True,True
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Konya,CRPS,42 43 44,1.1433998400588337,+1.300 +1.398 +0.732,0.05053074744658511,2.336468393306691,True,True
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Rize,RMSE,42 43 44,-1.320126388973127,-1.650 -0.152 -2.159,-4.072744578922017,1.1787883009545446,True,False
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Rize,MAE,42 43 44,0.19013768006042633,+0.648 -0.452 +0.374,-1.2291279441182903,1.6320523246145358,False,False
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Rize,CRPS,42 43 44,0.19013768006042633,+0.648 -0.452 +0.374,-1.2291279441182903,1.6320523246145358,False,False
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Van,RMSE,42 43 44,1.8586320162970462,+1.845 +1.157 +2.575,0.15868148517365427,3.6251629518834756,True,True
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Van,MAE,42 43 44,0.5068692947342489,+0.741 +0.975 -0.195,-0.6995761959534244,1.7975938442622201,False,False
+"A: per province vs shared, plain LSTM",A,per_city_plain_lstm,global_plain_lstm,Van,CRPS,42 43 44,0.5068692947342489,+0.741 +0.975 -0.195,-0.6995761959534244,1.7975938442622201,False,False
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Aggregate,RMSE,42 43,-0.04167210216269979,-0.044 -0.039,-0.06843793188546474,-0.01584335921321128,True,False
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Aggregate,MAE,42 43,-0.11907962743485356,-0.118 -0.120,-0.14999289474807478,-0.09055312576539994,True,False
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Aggregate,CRPS,42 43,12.892585458417617,+12.473 +13.312,12.366216357538061,13.378029867505273,True,True
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Ankara,RMSE,42 43,-0.011571626445984862,-0.021 -0.002,-0.05244901656055543,0.025970263186460004,True,False
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Ankara,MAE,42 43,-0.08149468835945939,-0.101 -0.062,-0.12233838726427351,-0.04339712501938529,True,False
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Ankara,CRPS,42 43,13.503044110940284,+13.132 +13.874,12.661452585033189,14.358059097977252,True,True
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Antalya,RMSE,42 43,-0.08660935135382886,-0.082 -0.091,-0.13099037027023144,-0.04304023469948125,True,False
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Antalya,MAE,42 43,-0.14220188267496425,-0.128 -0.157,-0.18303391064316274,-0.10298690680150673,True,False
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Antalya,CRPS,42 43,12.614281875642313,+11.518 +13.711,11.696399687600346,13.458494132523727,True,True
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Konya,RMSE,42 43,-0.03701517969599166,-0.047 -0.027,-0.08066975613973675,0.004730523341827936,True,False
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Konya,MAE,42 43,-0.10202255159445883,-0.095 -0.109,-0.14347311902078141,-0.06069075499629898,True,False
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Konya,CRPS,42 43,12.668646266066052,+11.368 +13.969,11.719571616572843,13.63818206746294,True,True
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Rize,RMSE,42 43,-0.04240563838101963,-0.042 -0.043,-0.09213286153000855,0.004917362041652268,True,False
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Rize,MAE,42 43,-0.17529637230990147,-0.174 -0.177,-0.23375248909723415,-0.1223047361714942,True,False
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Rize,CRPS,42 43,13.262969617363204,+13.831 +12.695,12.285767245797542,14.326697463053456,True,True
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Van,RMSE,42 43,-0.03867235492028698,-0.038 -0.040,-0.08450760381135662,0.0076321900516000815,True,False
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Van,MAE,42 43,-0.09432361871678552,-0.093 -0.095,-0.14417694183983265,-0.04455007971931792,True,False
+"B: normal vs MC-Dropout, shared",B,global_normal_dropout,global_mc_dropout,Van,CRPS,42 43,12.412332118668857,+12.506 +12.318,11.379813910894843,13.398981966745067,True,True
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Aggregate,RMSE,42 43,-0.07136931451758954,-0.065 -0.078,-0.10679733306981606,-0.037196149619737905,True,False
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Aggregate,MAE,42 43,-0.19992967827012365,-0.196 -0.203,-0.23759750239665758,-0.1649777962670986,True,False
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Aggregate,CRPS,42 43,13.84827002986124,+13.878 +13.818,13.280125617180339,14.439822795078557,True,True
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Ankara,RMSE,42 43,-0.07505536198632257,-0.078 -0.072,-0.12688310133186373,-0.026753305276405296,True,False
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Ankara,MAE,42 43,-0.2069442100702723,-0.225 -0.188,-0.24845175845184259,-0.1656886874155803,True,False
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Ankara,CRPS,42 43,15.391041351428637,+15.177 +15.605,14.014245553035044,16.622345168520432,True,True
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Antalya,RMSE,42 43,-0.10480456068763999,-0.107 -0.103,-0.1607649734980477,-0.05259629043525431,True,False
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Antalya,MAE,42 43,-0.19185186351025507,-0.177 -0.207,-0.24453264209656494,-0.14374459487387406,True,False
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Antalya,CRPS,42 43,12.54871819497805,+12.713 +12.384,11.587692283109838,13.586017385123089,True,True
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Konya,RMSE,42 43,-0.0776620993126258,-0.062 -0.093,-0.12924513052092834,-0.026490548460386978,True,False
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Konya,MAE,42 43,-0.1856577102586563,-0.176 -0.195,-0.23282112007151437,-0.13925503157360872,True,False
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Konya,CRPS,42 43,13.248955119347801,+12.799 +13.699,12.212607176139906,14.37351752356985,True,True
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Rize,RMSE,42 43,-0.03006647947299257,-0.035 -0.025,-0.0756769673379452,0.013675851719474589,True,False
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Rize,MAE,42 43,-0.21272763934308614,-0.221 -0.204,-0.26690252768529577,-0.16439135768160223,True,False
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Rize,CRPS,42 43,13.939549228435556,+14.948 +12.931,12.799775578430788,15.225855980389714,True,True
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Van,RMSE,42 43,-0.08798368364121956,-0.058 -0.118,-0.1564842670192041,-0.024823042183152927,True,False
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Van,MAE,42 43,-0.20234124770054152,-0.183 -0.222,-0.2670302069392628,-0.14408119030698113,True,False
+"B: normal vs MC-Dropout, per province",B,per_city_normal_dropout,per_city_mc_dropout,Van,CRPS,42 43,14.104801972046925,+13.744 +14.466,12.887349723995259,15.426355904560417,True,True
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Aggregate,RMSE,42 43 44,0.6726918638837466,+0.391 +0.707 +0.920,0.1028906413974762,1.2299645459107154,True,True
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Aggregate,MAE,42 43 44,0.18446039330085284,-1.077 +0.468 +1.163,-0.19970671700259324,0.5595735453701726,False,False
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Aggregate,CRPS,42 43 44,14.785559378163848,+13.917 +15.095 +15.345,13.097710728854924,16.627253939116795,True,True
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Ankara,RMSE,42 43 44,0.7425318293944514,+0.112 -0.021 +2.136,-0.35136322330369435,1.900766844650882,False,False
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Ankara,MAE,42 43 44,0.39581071174317134,-1.972 -0.442 +3.601,-0.37937903618163105,1.1385558827096636,False,False
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Ankara,CRPS,42 43 44,14.220095870655534,+12.415 +13.487 +16.758,11.824188593983775,16.742291061938516,True,True
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Antalya,RMSE,42 43 44,0.6118598140850082,+0.173 +0.899 +0.763,-0.14592009105533268,1.4006217505973484,True,False
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Antalya,MAE,42 43 44,0.5967420597520695,-1.160 +2.105 +0.844,-0.022134726694284915,1.185257820012425,False,False
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Antalya,CRPS,42 43 44,11.571202817033125,+10.366 +13.022 +11.326,9.754408222897988,13.454215731485917,True,True
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Konya,RMSE,42 43 44,0.6231842883736315,+1.225 -0.379 +1.024,-0.21586453308250278,1.4515278092223258,False,False
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Konya,MAE,42 43 44,0.28322387710465335,-0.159 -0.194 +1.203,-0.4071178462046688,0.9193415436215606,False,False
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Konya,CRPS,42 43 44,14.21015175992641,+14.071 +13.791 +14.768,11.75357964208267,16.646491766198427,True,True
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Rize,RMSE,42 43 44,1.3162813324694298,+0.492 +2.008 +1.448,-0.09393004419904093,2.7772145615948673,True,False
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Rize,MAE,42 43 44,-0.050975411522467574,-1.779 +1.752 -0.126,-0.9313238758168172,0.866902633490056,False,False
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Rize,CRPS,42 43 44,20.4764067579134,+19.285 +21.762 +20.382,18.430280415151795,22.711993320701726,True,True
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Van,RMSE,42 43 44,-0.1514966996840883,-0.108 +0.732 -1.079,-0.9535256903191964,0.7319000159212623,False,False
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Van,MAE,42 43 44,-0.29854416476507833,-0.313 -0.877 +0.295,-0.810533325562451,0.19997466871203692,False,False
+"C: plain LSTM vs method, shared",C,global_plain_lstm,global_mc_dropout,Van,CRPS,42 43 44,13.42288973557735,+13.420 +13.385 +13.463,11.826090591009386,15.080374961696398,True,True
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Aggregate,RMSE,42 43,0.5590164454520306,-0.051 +1.169,0.042545344182514815,1.0803029802094004,False,False
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Aggregate,MAE,42 43,-0.5540788053991506,-1.172 +0.064,-0.9330712215263824,-0.15604000789330827,False,False
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Aggregate,CRPS,42 43,14.861850140470363,+14.378 +15.346,13.11221225596009,16.774860552330736,True,True
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Ankara,RMSE,42 43,-0.7576372275567991,-1.389 -0.126,-1.4999443101258876,0.028005019664979328,True,False
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Ankara,MAE,42 43,-1.0688247522585783,-2.780 +0.642,-1.628438639562618,-0.5212386411910848,False,False
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Ankara,CRPS,42 43,14.071448271637834,+12.613 +15.530,11.78832794832129,16.643335401837064,True,True
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Antalya,RMSE,42 43,0.901270832497012,+0.617 +1.186,0.28167741448079636,1.5726418016015757,True,True
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Antalya,MAE,42 43,0.4097303813728459,+0.375 +0.444,-0.015647749401924302,0.8527108246539348,True,False
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Antalya,CRPS,42 43,12.684330403350106,+12.579 +12.790,10.65372390363906,14.79791980087001,True,True
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Konya,RMSE,42 43,0.3991230316088519,-0.158 +0.956,-0.5677762829581274,1.3378051391337442,False,False
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Konya,MAE,42 43,-0.5177504885992903,-0.510 -0.525,-1.34778996381497,0.20872433407918234,True,False
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Konya,CRPS,42 43,14.419263180196001,+14.411 +14.427,12.130282552802493,16.856670574393796,True,True
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Rize,RMSE,42 43,0.6080363397053503,-0.517 +1.733,-1.0111935933521088,2.1126079768679125,False,False
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Rize,MAE,42 43,-2.0052506775799515,-2.661 -1.350,-3.053169945486692,-0.9685094666778693,True,True
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Rize,CRPS,42 43,19.101890314987532,+18.667 +19.536,17.06457014245486,21.341390884626435,True,True
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Van,RMSE,42 43,1.8136572755206402,+1.518 +2.109,0.511421650544363,3.2201308666854063,True,True
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Van,MAE,42 43,0.4170964292282804,-0.274 +1.108,-0.5848732548912643,1.4966719435883142,False,False
+"C: plain LSTM vs method, per province",C,per_city_plain_lstm,per_city_mc_dropout,Van,CRPS,42 43,14.012534200736724,+13.603 +14.422,11.91952595465132,16.30709695903498,True,True
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Aggregate,RMSE,42 43,-0.3501552631425895,-0.512 -0.189,-0.6205811832986127,-0.07320846939373069,True,True
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Aggregate,MAE,42 43,-1.512522117476184,-2.085 -0.940,-1.8232487977967395,-1.2038008415425523,True,True
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Aggregate,CRPS,42 43,1.3681808332634624,+1.213 +1.523,1.1984031587382213,1.5269747353483185,True,True
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Ankara,RMSE,42 43,0.08003040135130846,+0.118 +0.042,-0.5094172125164885,0.6635853117697734,True,False
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Ankara,MAE,42 43,-1.0510492705577654,-1.973 -0.129,-1.6050080793591646,-0.5031602157755997,True,True
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Ankara,CRPS,42 43,1.7897174329223056,+1.510 +2.069,1.4727188637996724,2.080356641623148,True,True
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Antalya,RMSE,42 43,-0.5881965270310303,-0.907 -0.270,-0.9283658328247444,-0.28030845324210063,True,True
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Antalya,MAE,42 43,-1.8799244380667552,-2.709 -1.051,-2.174464468595884,-1.5828967452910168,True,True
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Antalya,CRPS,42 43,0.8706273390632759,+0.750 +0.991,0.662614731818545,1.0603030070873722,True,True
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Konya,RMSE,42 43,-0.48673133094163745,-0.891 -0.083,-0.9589855321304004,0.011075642994784833,True,False
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Konya,MAE,42 43,-1.8107979365120137,-2.440 -1.182,-2.388260779373285,-1.2942429866143579,True,True
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Konya,CRPS,42 43,1.0335385970349513,+0.810 +1.257,0.7588077242602373,1.3082677221946017,True,True
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Rize,RMSE,42 43,-0.10384613591031666,-0.287 +0.079,-0.7411909751932063,0.6080040028251759,False,False
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Rize,MAE,42 43,-0.4099590634869017,-1.096 +0.276,-0.9304852100329425,0.14250845919196894,False,False
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Rize,CRPS,42 43,2.3497388116836966,+2.194 +2.506,1.9721898773161066,2.7649584075183657,True,True
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Van,RMSE,42 43,-0.8108448882389538,-0.770 -0.852,-1.3498012820779277,-0.27634783911731053,True,True
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Van,MAE,42 43,-2.414058739269695,-2.215 -2.613,-2.9442642476495644,-1.8557338646552444,True,True
+D: daylight-only loss vs method,D,global_daylight_loss,global_mc_dropout,Van,CRPS,42 43,0.792911291168803,+0.796 +0.790,0.5482419526155048,1.030908650731474,True,True
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Aggregate,RMSE,42 43,0.9873990887739126,+1.418 +0.557,0.5205097899903286,1.4452857490797848,True,True
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Aggregate,MAE,42 43,0.41092130844872443,+0.341 +0.481,0.047135656559367065,0.8056968746123433,True,True
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Aggregate,CRPS,42 43,0.4165806046120686,+0.523 +0.311,0.21648073178210775,0.6295923121529151,True,True
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Ankara,RMSE,42 43,1.5621815069387566,+1.829 +1.295,0.6801075192926449,2.5213743094348597,True,True
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Ankara,MAE,42 43,0.22266036766747632,+0.021 +0.424,-0.5471835299689893,1.0848518498346678,True,False
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Ankara,CRPS,42 43,0.6301725164979928,+0.654 +0.607,0.19709655566620993,1.10829704139704,True,True
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Antalya,RMSE,42 43,-0.5181052030939952,+0.237 -1.273,-1.1176507849661275,0.07733808198971466,False,False
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Antalya,MAE,42 43,-0.18474784429247038,-0.431 +0.061,-0.6343452695876796,0.297736294313556,False,False
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Antalya,CRPS,42 43,-0.24232852201206256,-0.025 -0.460,-0.5382378196962887,0.049222816293835486,True,False
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Konya,RMSE,42 43,0.8741283863682057,+1.409 +0.340,-0.06755961401858919,1.931286024529172,True,False
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Konya,MAE,42 43,0.4507161409640865,+0.667 +0.234,-0.29299818179436976,1.2339737692007973,True,False
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Konya,CRPS,42 43,0.556248262986891,+0.844 +0.268,0.07032304863358085,1.06564613790606,True,True
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Rize,RMSE,42 43,2.441592679746556,+2.652 +2.231,1.0640571365277467,3.8433409317169973,True,True
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Rize,MAE,42 43,2.0098328746818908,+1.533 +2.486,1.162412305863779,2.9073818711711916,True,True
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Rize,CRPS,42 43,1.177341676997564,+1.027 +1.328,0.6224430057686996,1.7741326156465338,True,True
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Van,RMSE,42 43,-0.0745522296396004,+0.446 -0.595,-0.8195978700505359,0.6959695363784638,False,False
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Van,MAE,42 43,-0.4482209637766026,-0.090 -0.806,-1.07791579876951,0.25256571359554286,True,False
+E: no province code vs method,E,global_no_city_embedding,global_mc_dropout,Van,CRPS,42 43,-0.04153716744546898,+0.112 -0.195,-0.41968200855009724,0.3338032173749817,False,False
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Aggregate,RMSE,42 43,-0.20450418991388375,-0.638 +0.229,-1.244841495842015,0.8220022261989581,False,False
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Aggregate,MAE,42 43,1.3249710618571555,+1.303 +1.347,0.5998039182612078,2.0167811326160963,True,True
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Aggregate,CRPS,42 43,0.7139026805849014,+0.566 +0.862,0.2592250229294547,1.1627016074216892,True,True
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Ankara,RMSE,42 43,0.8211445942353137,+0.373 +1.269,-0.746533170628602,2.451940731560527,True,False
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Ankara,MAE,42 43,3.300849467169119,+3.250 +3.351,1.9885263671177813,4.548182068175798,True,True
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Ankara,CRPS,42 43,1.911162083663946,+1.612 +2.210,1.117382928669685,2.703288376323177,True,True
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Antalya,RMSE,42 43,2.018942186912305,+1.488 +2.550,0.6277995557322104,3.498784107570896,True,True
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Antalya,MAE,42 43,1.7183532435877567,+1.500 +1.937,0.8985063803783183,2.5348749797608923,True,True
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Antalya,CRPS,42 43,0.7221635188250559,+0.416 +1.028,0.14814539631246024,1.3970636346182304,True,True
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Konya,RMSE,42 43,-0.28968468439909145,-0.554 -0.025,-1.9357161896240402,1.4994627695821325,True,False
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Konya,MAE,42 43,1.2394785728644742,+0.984 +1.495,-0.09926725814062738,2.58026941326133,True,False
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Konya,CRPS,42 43,0.30503165267816,+0.116 +0.494,-0.5780278842729885,1.2073449025213625,True,False
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Rize,RMSE,42 43,-2.700135243199803,-3.293 -2.108,-5.17018502461204,-0.1387133692760164,True,True
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Rize,MAE,42 43,0.08004044169040014,-0.004 +0.164,-1.5195361110923709,1.7514959329925424,False,False
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Rize,CRPS,42 43,0.3423402847262089,+0.238 +0.446,-0.7905607405996253,1.5066800255894537,True,False
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Van,RMSE,42 43,0.07371930841755159,-0.228 +0.375,-1.4081194999443727,1.5370848835687123,False,False
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Van,MAE,42 43,0.29363498599195026,+0.791 -0.204,-0.8682762403497085,1.4244404569978775,False,False
+E: per province vs shared without code,E,per_city_mc_dropout,global_no_city_embedding,Van,CRPS,42 43,0.28955237247920707,+0.446 +0.133,-0.3127087895998316,0.9078261035298377,True,False
