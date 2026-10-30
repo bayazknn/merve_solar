@@ -1,0 +1,29 @@
+device=mps
+training_scope=global model_family=lstm
+loss_function=mse
+inference_mode=mc_dropout bootstrap_resample=True pooled draws per element=1600
+active_cities=['Ankara', 'Antalya', 'Konya', 'Rize', 'Van'] excluded=[]
+train_end=2024-09-03 03:00:00 val_end=2025-06-11 09:00:00
+test daylight elements: 560448 of 1099080
+train: 226825 windows
+val: 33515 windows
+test: 45795 windows
+replica 0: best_val_loss=0.0513 best_epoch=3 last_val_loss=0.0631 epochs=9
+replica 1: best_val_loss=0.0527 best_epoch=1 last_val_loss=0.0601 epochs=7
+replica 2: best_val_loss=0.0518 best_epoch=1 last_val_loss=0.0623 epochs=7
+replica 3: best_val_loss=0.0509 best_epoch=2 last_val_loss=0.0586 epochs=8
+replica 4: best_val_loss=0.0532 best_epoch=1 last_val_loss=0.0593 epochs=7
+replica 5: best_val_loss=0.0532 best_epoch=2 last_val_loss=0.0616 epochs=8
+replica 6: best_val_loss=0.0511 best_epoch=2 last_val_loss=0.0620 epochs=8
+replica 7: best_val_loss=0.0521 best_epoch=1 last_val_loss=0.0609 epochs=7
+replica 8: best_val_loss=0.0501 best_epoch=1 last_val_loss=0.0583 epochs=7
+replica 9: best_val_loss=0.0518 best_epoch=2 last_val_loss=0.0632 epochs=8
+replica 10: best_val_loss=0.0533 best_epoch=1 last_val_loss=0.0620 epochs=7
+replica 11: best_val_loss=0.0517 best_epoch=2 last_val_loss=0.0617 epochs=8
+replica 12: best_val_loss=0.0532 best_epoch=2 last_val_loss=0.0599 epochs=8
+replica 13: best_val_loss=0.0526 best_epoch=2 last_val_loss=0.0643 epochs=8
+replica 14: best_val_loss=0.0549 best_epoch=1 last_val_loss=0.0639 epochs=7
+replica 15: best_val_loss=0.0519 best_epoch=2 last_val_loss=0.0614 epochs=8
+clamped 538632 test night elements to zero
+train_time_sec=2687.2
+total_training_time_sec=6924.4
