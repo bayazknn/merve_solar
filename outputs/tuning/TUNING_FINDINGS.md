@@ -17,7 +17,8 @@ decision rule) and the session status. This file holds the results.
 - **Decision rule:** the best arm replaces the incumbent only if its mean paired gain exceeds the
   sd of those paired gains.
 - S1 to S3 train one network without resampling (B=1, T=100 MC-Dropout passes). Their CP and
-  CRPS describe one network's MC-Dropout spread, not the final ensemble's.
+  CRPS describe one network's MC-Dropout spread, not the final ensemble's. S4 on trains the
+  B=8 moving-block bootstrap ensemble and is judged on val CRPS.
 
 ## Decisions so far
 
@@ -28,6 +29,7 @@ decision rule) and the session status. This file holds the results.
 | S3 | dropout rate | 0.3 | **0.2** | −1.33 ± 0.36 | final |
 | S3 | learning rate | 1e-3 | **5e-4** | −0.99 ± 0.96 | final (marginal pass, accepted as written) |
 | — | early-stopping patience, S4 on | 10 | **5** | n/a (no network changes) | final |
+| S4 | bootstrap block length | 168 h | **168 h** | 0 (incumbent kept; criterion val CRPS) | final |
 
 ## S1: lookback (final, decided 2026-10-29)
 
@@ -286,10 +288,84 @@ Sources: `s1_patience.csv`, `s2_patience.csv`, `s3_dropout_patience.csv`, `s3_lr
   observed. A later stage can still detect a too-short patience only down to 3 (its report
   re-evaluates the history it has), not whether 10 would have found a later epoch.
 
+## S4: bootstrap block length (final, decided 2026-10-30)
+
+**Decision: keep 168 h.** The four block lengths are indistinguishable: the best arm (240 h)
+gains 0.15 ± 0.18 W/m² in CRPS, inside its seed sd, so the decision rule keeps the incumbent.
+Every arm is the frozen network (256 × 1, dropout 0.2, learning rate 5e-4, patience 5) at B=8,
+T=100, so these are the first ensemble-fidelity tuning numbers.
+
+| Block (h) | Extra days beyond the 48 h window span | val CRPS | Δ CRPS | val RMSE | Δ RMSE | val MAE | val CP | val PINW | Mean best epoch | Min/run |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 120 | 3 | 46.17 | −0.01 ± 0.37 | 88.41 | +0.03 ± 0.13 | 61.57 | 0.796 | 0.173 | 1.7 | 41.3 |
+| **168 (incumbent)** | 5 | 46.18 | 0 | 88.39 | 0 | 61.65 | 0.797 | 0.173 | 1.6 | 41.8 |
+| 240 | 8 | **46.03** | −0.15 ± 0.18 | **88.22** | −0.16 ± 0.21 | **61.34** | 0.797 | 0.174 | 1.7 | 41.5 |
+| 336 | 12 | 46.08 | −0.10 ± 0.25 | 88.46 | +0.07 ± 0.16 | 61.42 | 0.800 | 0.175 | 1.7 | 41.6 |
+
+Sources: `s4_summary.csv`, `s4_matched_origins.csv`. All arms are scored on the same 1,400
+origins. Runs trained two at a time (two shards), so the minutes per run (8 networks) are
+inflated and only comparable within S4.
+
+**Per province** (Δ CRPS vs 168 h):
+
+| Province | 120 h | 240 h | 336 h | val CP at 168 h |
+|---|---|---|---|---|
+| Ankara | −0.00 ± 0.13 | −0.26 ± 0.27 | +0.10 ± 0.31 | 0.780 |
+| Antalya | +0.00 ± 0.66 | −0.33 ± 0.20 | −0.26 ± 0.72 | 0.852 |
+| Konya | −0.20 ± 0.57 | −0.22 ± 0.40 | −0.17 ± 0.62 | 0.817 |
+| Rize | +0.13 ± 0.36 | +0.20 ± 0.34 | +0.04 ± 0.29 | 0.700 |
+| Van | +0.01 ± 0.54 | −0.12 ± 0.35 | −0.22 ± 0.10 | 0.838 |
+
+Source: `s4_by_province.csv`.
+
+- **The result is insensitive to block length over 120 to 336 h.** The largest mean difference
+  is 0.15 W/m² in CRPS (0.3%) and 0.16 in RMSE; CP and PINW move by under 0.004. With seed sds of
+  0.2 to 0.4, an effect larger than about 0.4 W/m² would have been visible, so the paper can state
+  that the block length within the dependence-respecting range does not matter, rather than claim
+  an optimum.
+- **No province prefers a different block.** Every per-province difference is within its seed sd.
+- **A plausible reason** (an interpretation, not tested): with about 130 to 375 distinct blocks per
+  province (roughly 45,000 training windows over 336 to 120 h), every block length yields equally diverse resamples, and each
+  network trains for under 2 epochs before its best, so most of the between-replica spread comes
+  from initialisation and data order, not from how the resample is cut. S5 and the
+  seed-ensemble ablation (`bootstrap_resample=False`) measure how much the resampling itself adds.
+
+**What the ensemble adds over one network.** The nearest B=1 arm is S3's dropout 0.2 at learning
+rate 1e-3 (the combination 0.2 / 5e-4 was never trained at B=1, so this is indicative only):
+
+| | val CRPS | val RMSE | val CP | val PINW |
+|---|---|---|---|---|
+| B=1, dropout 0.2, lr 1e-3 (S3) | 47.80 | 89.63 | 0.710 | 0.146 |
+| B=8, dropout 0.2, lr 5e-4, 168 h (S4) | 46.18 | 88.39 | 0.797 | 0.173 |
+
+- The ensemble raises CP by about 0.09 and widens PINW by about 18%, but daylight coverage at
+  B=8 is still 0.80, against a nominal 0.95. Rize is at 0.70.
+- **Raw intervals will not reach nominal coverage through B alone.** The pooled distribution has
+  no aleatoric term, and the spread that bootstrap plus MC-Dropout adds is much smaller than the
+  error. Calibration has to come from the conformal layer. This matters for the paper: the
+  conformal layer should be presented as a necessary part of the method, not an optional extra,
+  and the ablation should show raw against recalibrated coverage.
+
+**Early stopping at patience 5 is safe for the ensemble.** All 96 networks (8 per run, 12 runs)
+kept their best epoch at 1 to 3 (mean 1.7) and stopped after 7 to 9 epochs. The longest wait for
+a new best was 2 epochs, and patience 3 would have changed none of them. Source:
+`s4_patience.csv`. Bootstrap replicas peak no later than single networks.
+
+**The optimum keeps moving earlier.** Mean best epoch was 3.7 at 256 × 1 / dropout 0.3 / lr 1e-3
+(S2), 2.3 at dropout 0.2 (S3), and is 1.7 here. Each choice that improved validation accuracy
+also brought the peak forward. With about 1,700 steps per epoch, the selected network is
+effectively chosen from 2 or 3 checkpoints. This is the epoch-selection coarseness noted in the
+training-dynamics findings; the ensemble averages over it, which is consistent with the smaller
+seed sd at B=8: val CRPS sd averages 0.15 over the S4 arms, against 0.40 over the seven 256 × 1
+arms at B=1 (S2, S3).
+
 ## Carried forward
 
 - **Patience** is 5 from S4 on (above). Ablations that change the architecture's width restore 10.
-- **Cost.** At 256 × 1 a network takes about 6.5 min on MPS at dropout 0.2, at patience 10.
+- **Cost.** At 256 × 1 a network takes about 6.5 min on MPS at dropout 0.2 and patience 10
+  (alone), and about 5.2 min at patience 5 with two shards sharing the GPU (S4).
+- **Coverage.** Raw ensemble CP at B=8 is 0.80 (Rize 0.70). The conformal layer is required to
+  reach nominal coverage; S5 measures how far B and T move it.
 - **MC-Dropout spread at 1 layer** (S2) and the smoke-run gap between MC-averaged and
   dropout-off predictions (`TUNING_PLAN.md`) are both measured on fully trained weights by the
   S5 ensemble curves.

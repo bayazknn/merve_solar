@@ -8,8 +8,9 @@ in `TUNING_FINDINGS.md`**, backed by the `<stage>_*.csv` tables next to this fil
 
 ## Status (update at the end of every session)
 
-**As of 2026-10-30: S1 to S3 are decided (lookback 24 h, 256 × 1, dropout 0.2, learning rate
-5e-4), and patience is 5 from S4 on. S4 is unlocked and ready to run on the remote Mac.**
+**As of 2026-10-30 (after the S4 pull): S1 to S4 are decided (lookback 24 h, 256 × 1, dropout
+0.2, learning rate 5e-4, block 168 h), and patience is 5. S5 is unlocked and ready to run on the
+remote Mac.**
 
 | Stage | Group | State | Decision |
 |---|---|---|---|
@@ -19,8 +20,9 @@ in `TUNING_FINDINGS.md`**, backed by the `<stage>_*.csv` tables next to this fil
 | S3 dropout | `tune_s3_dropout` | Done (12 runs, MPS); findings final | **0.2** |
 | S3 learning rate | `tune_s3_lr` | Done (6 runs, MPS); findings final | **5e-4** (marginal pass, rule applied as written) |
 | Patience | | Decided from S1 to S3 patience tables | **5** from S4 on (`FROZEN_PATIENCE`) |
-| S4 block length | `tune_s4_block` | Unlocked: 12 runs at B=8, patience 5 | pending |
-| S5, final | | Locked until the previous decision is in `DECISIONS` | |
+| S4 block length | `tune_s4_block` | Done (12 runs at B=8, MPS, 2 shards); findings final | **168 h** (incumbent kept; all blocks within 0.15 W/m² CRPS) |
+| S5 ensemble size, MC passes | `tune_s5_ensemble` | Unlocked: 3 runs at B=16, with ensemble curves | pending |
+| Final | `final_reference` | Locked until `DECISIONS["s5"]` | |
 
 Findings for every stage, with per-province tables and robustness checks: `TUNING_FINDINGS.md`.
 
@@ -38,35 +40,38 @@ Findings for every stage, with per-province tables and robustness checks: `TUNIN
 check_outputs passed`. They start with "partial" and name the failed id if a run failed, and
 they copy any WARNING lines from the check.
 
-**Next session, in order** (after S4 finishes on the remote Mac):
-1. `git pull`, then check the group. Every run should be mps, and only the gitignored
-   `test_predictions.npz` should be reported missing:
+**Next session, in order** (after S5 finishes on the remote Mac):
+1. `git pull`, then check the group with the curves. Every run should be mps, and only the
+   gitignored `test_predictions.npz` should be reported missing:
    ```bash
-   uv run python scripts/check_outputs.py --group tune_s4_block
+   uv run python scripts/check_outputs.py --group tune_s5_ensemble --ensemble-curves
    ```
-2. Run the report. S4 is judged on `val_CRPS_daylight` against the 168 h block; val CP is
-   reported beside it:
+2. Run the report. It reads `ensemble_curves.csv` and scores every (B, T) cell on val CRPS; the
+   choice is the cheapest cell within one seed sd of the best (see Grids):
    ```bash
-   uv run python scripts/15_tuning_report.py --stage s4
+   uv run python scripts/15_tuning_report.py --stage s5
    ```
-   Also look at the patience table: S4 is the first stage at patience 5 and on bootstrap
-   replicas, so any network changed at patience 3 is a warning sign.
-3. Write `DECISIONS["s4"]`, add the S4 section to `TUNING_FINDINGS.md`, commit with the `s4_*`
-   tables, then confirm `tune_s5_ensemble --list` shows 3 runs.
-4. Give the user the S5 commands (3 runs at B=16, with `--ensemble-curves`). Update this Status
-   section.
+   Also look at:
+   - The MC-Dropout versus dropout-off contrast on identical weights (Open observations).
+   - How far B moves val CP: at B=8 it is 0.80 (Rize 0.70), so the conformal layer is expected
+     to carry calibration.
+3. Write `DECISIONS["s5"]`, add the S5 section to `TUNING_FINDINGS.md`, commit with the `s5_*`
+   tables, then confirm `final_reference --list`. If S5 picks (8, 100), the three 168 h S4 runs
+   are reused and only seeds 45 and 46 are new.
+4. Give the user the final-reference commands. Update this Status section.
 
-**S4 commands for the remote Mac** (12 runs × 8 networks, about 6 to 7 h single-process, so two
-shards):
+**S5 commands for the remote Mac** (3 runs × 16 networks, about 4 h single-process plus the
+curves; one shard per run):
 ```bash
 git pull && uv sync --dev
-uv run python scripts/run_all_experiments.py --group tune_s4_block --list
-uv run python scripts/run_all_experiments.py --group tune_s4_block --skip-existing --continue-on-error --shard 0/2
-uv run python scripts/run_all_experiments.py --group tune_s4_block --skip-existing --continue-on-error --shard 1/2
-uv run python scripts/check_outputs.py --group tune_s4_block
-git add outputs/experiments outputs/experiments_ledger.csv && git commit -m "Tuning S4 (block length): 12 runs on Mac mini, check_outputs passed" && git push
+uv run python scripts/run_all_experiments.py --group tune_s5_ensemble --list
+uv run python scripts/run_all_experiments.py --group tune_s5_ensemble --ensemble-curves --skip-existing --continue-on-error --shard 0/3
+uv run python scripts/run_all_experiments.py --group tune_s5_ensemble --ensemble-curves --skip-existing --continue-on-error --shard 1/3
+uv run python scripts/run_all_experiments.py --group tune_s5_ensemble --ensemble-curves --skip-existing --continue-on-error --shard 2/3
+uv run python scripts/check_outputs.py --group tune_s5_ensemble --ensemble-curves
+git add outputs/experiments outputs/experiments_ledger.csv && git commit -m "Tuning S5 (ensemble size, MC passes): 3 runs on Mac mini, check_outputs passed" && git push
 ```
-The two shard commands run in separate terminals; the check and commit run once both finish.
+The three shard commands run in separate terminals; the check and commit run once all finish.
 
 **Open observations to carry forward:**
 - In the 2-epoch smoke run, the average of the MC-Dropout passes was about 6 W/m² worse in
@@ -243,10 +248,10 @@ Estimates per stage (lookback 24; longer lookbacks scale roughly linearly):
 | S1 | ~1 h |
 | S2 | 2 to 3 h |
 | S3 | 1 to 1.5 h at 64 × 2; done in 18 runs at 256 × 1 (6 to 8 min per network) |
-| S4 | ~6 to 7 h at 256 × 1, patience 5 (96 networks) |
+| S4 | done: 12 runs at about 41.5 min each with 2 shards (5.2 min per network) |
 | S5 | ~3.5 to 4 h at 256 × 1, patience 5, curves included |
 | Final | ~1 h at 256 × 1, patience 5 (2 new seeds at B=8) |
-| **Total** | **about 11 to 12 h** for the remaining stages |
+| **Total** | **about 5 h** for the remaining stages (S5 and final) |
 
 S2 chose a network that trains in about 7.6 min (6.5 min at dropout 0.2) instead of 3.5 to
 4 min. Patience 5 cuts a dropout-0.2 network from about 13 epochs to about 8, which takes back
