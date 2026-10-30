@@ -4,14 +4,15 @@ This document explains the ablation experiments: what they are, why we run them,
 them, and how to read the results. It is written for a reader who does not know the project.
 Results are added in the last section once the runs finish.
 
-**Status (2026-10-30).** Two run groups, both in `configs/experiment_grid.py`:
+**Status (2026-10-30).** Three run groups, all in `configs/experiment_grid.py`:
 
 | Group | Runs | What it tests | State |
 |---|---|---|---|
 | `abl_scope_dropout` | 12 | All provinces vs one model per province × MC-Dropout / normal dropout / plain LSTM benchmark (Sections 5.1 to 5.3) | Running on the remote Mac, 3 shards |
 | `abl_daylight_loss` | 2 | Training on daylight hours only (Section 5.4) | Started next to the shards, `scripts/run_abl_daylight_loss.sh` |
+| `abl_no_city_embedding` | 2 | The shared model without the province code (Section 5.5) | Added after the others; `scripts/run_abl_no_city_embedding.sh` |
 
-Next step: once all four processes finish, run the checks and commit once (Section 6), then
+Next step: once every process has finished, run the checks and commit once (Section 6), then
 pull here and fill Section 7.
 
 ## 1. The project in one paragraph
@@ -285,12 +286,44 @@ cannot affect any metric. Only daylight accuracy can change.
 - CP should stay near 0.95 because of the correction. A change in width shows whether the raw
   spread moved.
 
-### 5.5 Candidates for later discussion
+### 5.5 Added arm: no province code (`abl_no_city_embedding`)
+
+**Question:** does the shared model need to be told which province it is forecasting?
+
+In the final method, one network serves all five provinces, and a small learned code of 4
+numbers (the city embedding) tells it which province each window comes from. Without the code,
+the network can only tell the provinces apart from the weather itself, for example Rize's
+humidity or Van's low pressure at high altitude.
+
+| Arm | What changes | Seeds | New runs |
+|---|---|---|---|
+| `global_mc_dropout` (reference) | Nothing (the final method) | 42, 43 | 0 (final runs reused) |
+| `global_no_city_embedding` | The province code is removed: the network sees only the 13 weather variables. | 42, 43 | 2 |
+
+Everything else is the final method: one model for all provinces, 6 networks, MC-Dropout,
+correction. Only the shared model is tested, because a model trained on one province has no
+province code to remove.
+
+**How to read the results** (daylight metrics, against the reference, seed by seed):
+- **Look at each province, not only the aggregate.** If the code matters, it will matter most
+  for the province that differs most from the others: Rize (cloudy, humid coast), and perhaps
+  Antalya.
+- **Worse without the code:** the network uses the province identity, and the shared model
+  is partly a set of province-specific models sharing their weights.
+- **No real difference** (Section 4 rule): the weather inputs already identify the province.
+  The model then transfers across provinces through the weather alone. This supports the
+  paper's cross-province claim more strongly, and the code could be dropped.
+- **Better without the code:** unlikely. It would mean the code lets the network memorise
+  province-specific noise.
+- Read it together with question A (Section 5.2). If the shared model beats per-province models
+  **and** does not need the code, the gain comes from shared weather physics, not from
+  province bookkeeping.
+
+### 5.6 Candidates for later discussion
 
 These were in the earlier draft and are left out to save time. Each can be added later without
 changing the runs above:
 - 6 networks trained on the same data instead of resampled data (does the resampling matter?)
-- the shared model without the province code
 - the shared model without Rize, or without each other province in turn
 - no penalty for negative forecasts
 - input-feature changes (these need a code change first)
@@ -298,9 +331,9 @@ changing the runs above:
 ## 6. Running it
 
 The runs train on the remote Mac (Apple GPU, "MPS"). Rough estimate: about 2 hours with three runs
-in parallel, plus about 1 hour for the 2 daylight-only runs in a fourth process. Each new code
+in parallel, plus about 1 hour each for the 2 daylight-only runs and the 2 no-province-code runs. Each new code
 path passed a short trial run first: per-province models with the correction and with dropout
-off, and the daylight-only loss.
+off, the daylight-only loss, and the model without the province code.
 
 **`abl_scope_dropout`**, three terminals:
 
@@ -323,12 +356,21 @@ bash scripts/run_abl_daylight_loss.sh
 ledger, and the running processes have already loaded their run lists. The script runs the two
 runs and then checks them. It does not commit.
 
-**After all four processes have finished**, check both groups and commit once:
+**`abl_no_city_embedding`**, after `git pull`. Start it in a fifth terminal, or in the fourth
+once the daylight script has finished. Five processes share the GPU, so each runs slower, but
+the total time is about the same:
+
+```bash
+bash scripts/run_abl_no_city_embedding.sh
+```
+
+**After every process has finished**, check all three groups and commit once:
 
 ```bash
 uv run python scripts/check_outputs.py --group abl_scope_dropout
 uv run python scripts/check_outputs.py --group abl_daylight_loss
-git add outputs/experiments outputs/experiments_ledger.csv && git commit -m "Ablation abl_scope_dropout (12 runs) and abl_daylight_loss (2 runs) on Mac mini, check_outputs passed" && git push
+uv run python scripts/check_outputs.py --group abl_no_city_embedding
+git add outputs/experiments outputs/experiments_ledger.csv && git commit -m "Ablation abl_scope_dropout (12), abl_daylight_loss (2), abl_no_city_embedding (2) on Mac mini, check_outputs passed" && git push
 ```
 
 ## 7. Results
@@ -336,5 +378,6 @@ git add outputs/experiments outputs/experiments_ledger.csv && git commit -m "Abl
 *To be filled in after the runs.* The plan is the table in Section 5.1, filled with daylight test
 metrics (mean ± sd over seeds), then per-province tables for question A, raw and corrected
 numbers for question B, the method against the benchmark for question C, and the
-daylight-only arm against the reference (Section 5.4). Each table is
+daylight-only and no-province-code arms against the reference, per province (Sections 5.4
+and 5.5). Each table is
 followed by a short reading in the terms of Section 4.

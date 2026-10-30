@@ -215,8 +215,9 @@ are **not** benchmarks; the naive baseline rows stay in the ledger as descriptiv
   benchmark). 12 new runs: ensemble arms at seeds 42-43 (global MC-Dropout reuses
   `final_s42`, `final_s43`), plain LSTM at 42-44. Plus group `abl_daylight_loss` (2 runs,
   `loss_daylight_only=True`, global MC-Dropout, seeds 42-43; `scripts/run_abl_daylight_loss.sh`),
-  kept separate so the running shards were not reshuffled. Further arms are listed there as
-  candidates.
+  and group `abl_no_city_embedding` (2 runs, `city_embedding_dim=0`, global MC-Dropout,
+  seeds 42-43; `scripts/run_abl_no_city_embedding.sh`), both kept separate so the running
+  shards were not reshuffled. Further arms are listed there as candidates.
 
 - `config_005_default_full` was the pre-tuning reference run; scripts 09 and 12 and the numbers
   in `METHODOLOGY.md` still come from it and must be regenerated on the final reference. `config_000_smoke` and

@@ -255,9 +255,18 @@ def _abl_daylight_loss() -> dict:
             "global_daylight_loss": _ablation("global_daylight_loss", loss_daylight_only=True)}
 
 
+def _abl_no_city_embedding() -> dict:
+    """The shared model without the province code (city_embedding_dim=0): does the network need
+    to be told which province it is forecasting? Global scope only, since a per-province model
+    has no code to remove. Its own group, for the same reason as abl_daylight_loss."""
+    (final,) = _final().values()
+    return {"global_mc_dropout": [c for c in final if c.seed in ABLATION_SEEDS],
+            "global_no_city_embedding": _ablation("global_no_city_embedding", city_embedding_dim=0)}
+
+
 STAGES = {"s1": _s1, "s2": _s2, "s3_dropout": _s3_dropout, "s3_lr": _s3_lr, "s4": _s4,
           "s5": _s5, "final": _final, "abl_scope_dropout": _abl_scope_dropout,
-          "abl_daylight_loss": _abl_daylight_loss}
+          "abl_daylight_loss": _abl_daylight_loss, "abl_no_city_embedding": _abl_no_city_embedding}
 
 
 def stage_arms(stage: str) -> dict:
@@ -315,6 +324,7 @@ EXPERIMENT_GROUPS = {
     "final_reference": _new_runs("final", "final_"),
     "abl_scope_dropout": _new_runs("abl_scope_dropout", "abl_"),
     "abl_daylight_loss": _new_runs("abl_daylight_loss", "abl_"),
+    "abl_no_city_embedding": _new_runs("abl_no_city_embedding", "abl_"),
 }
 
 

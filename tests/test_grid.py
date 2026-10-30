@@ -212,3 +212,17 @@ def test_adding_the_daylight_loss_group_leaves_the_running_shards_unchanged(deci
     scope = [c.experiment_id for c in build_experiment_grid(["abl_scope_dropout"])]
     assert len(scope) == 12 and not any("daylight" in i for i in scope)
     assert len(build_experiment_grid(["abl_daylight_loss"])) == 2
+
+
+def test_the_no_city_embedding_arm_changes_only_the_embedding(decided):
+    decided()
+    arms = stage_arms("abl_no_city_embedding")
+    reference = arms.pop("global_mc_dropout")
+    (configs,) = arms.values()
+    assert [c.seed for c in configs] == list(grid.ABLATION_SEEDS)
+    for ref, arm in zip(reference, configs):
+        assert _diff(ref, arm) == {"experiment_id", "city_embedding_dim"}
+        assert arm.city_embedding_dim == 0 and arm.training_scope == "global"
+    decided(s5=(6, 100))
+    assert [c.experiment_id for c in build_experiment_grid(["abl_no_city_embedding"])] == [
+        "abl_global_no_city_embedding_s42", "abl_global_no_city_embedding_s43"]
